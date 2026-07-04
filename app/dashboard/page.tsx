@@ -86,7 +86,7 @@ export default function Dashboard() {
       setAseguradoras((aseg as Aseguradora[]) || [])
       setAsesores((ases as Asesor[]) || [])
       setResumenMensual((resumen as ResumenMensual[]) || [])
-      setMesesDisponibles(((meses as unknown as {mes:string}[]) || []).map(m => m.mes))
+      setMesesDisponibles(((meses as unknown as {mes:string}[]) || []).map(m => m.mes).filter(Boolean))
       setLoading(false)
     }
     fetchData()
@@ -293,7 +293,7 @@ export default function Dashboard() {
           <span className="font-mono text-xs text-brand-subtle uppercase tracking-wider">Mes</span>
           <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-brand-text text-sm min-w-[140px] outline-none focus:border-brand-teal">
             <option value="todos">Todos</option>
-            {meses.filter(m => m !== 'todos').map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>)}
+            {meses.filter(m => m && m !== 'todos').map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1">
@@ -392,7 +392,7 @@ export default function Dashboard() {
                   <p className="text-brand-muted text-xs mt-1 font-mono">Tendencia lineal</p>
                 </div>
               )}
-              {proyeccionMes.historico.slice(-3).reverse().map(h => (
+              {proyeccionMes.historico.filter(h => h.mes).slice(-3).reverse().map(h => (
                 <div key={h.mes} className="bg-brand-bg border border-brand-border rounded-xl p-3">
                   <p className="font-mono text-xs text-brand-subtle">{h.mes}</p>
                   <p className="font-title text-sm font-bold text-brand-text">{fmtCOP(h.valorAut as number)}</p>
