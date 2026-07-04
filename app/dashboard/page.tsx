@@ -73,15 +73,28 @@ export default function Dashboard() {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-      const [{ data: s }, { data: f }, { data: aseg }, { data: ases }, { data: resumen }, { data: meses }] = await Promise.all([
-        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,valor_autorizado,estado_autorizacion,ciudad_destino,mes_subasta,anio,tiempo_max_suministro_dias,motivo_no_ganada').order('fecha_subasta', { ascending: false }).limit(5000),
-        supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').order('fecha', { ascending: false }).limit(5000),
+      // Traer subastas en páginas para superar el límite de 1000 de Supabase
+      const PAGE = 1000
+      let allSubastas: Subasta[] = []
+      for (let page = 0; ; page++) {
+        const { data: pageData } = await supabase
+          .from('subastas')
+          .select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,valor_autorizado,estado_autorizacion,ciudad_destino,mes_subasta,anio,tiempo_max_suministro_dias,motivo_no_ganada')
+          .order('fecha_subasta', { ascending: true })
+          .range(page * PAGE, (page + 1) * PAGE - 1)
+        if (!pageData || pageData.length === 0) break
+        allSubastas = [...allSubastas, ...pageData as Subasta[]]
+        if (pageData.length < PAGE) break
+      }
+
+      const [{ data: f }, { data: aseg }, { data: ases }, { data: resumen }, { data: meses }] = await Promise.all([
+        supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').order('fecha', { ascending: false }).limit(2000),
         supabase.from('aseguradoras').select('id,nombre_corto'),
         supabase.from('asesores').select('id,nombre'),
         supabase.from('v_resumen_mensual').select('*'),
         supabase.from('v_meses_disponibles').select('mes,orden').order('orden'),
       ])
-      setSubastas((s as Subasta[]) || [])
+      setSubastas(allSubastas)
       setFacturas((f as Factura[]) || [])
       setAseguradoras((aseg as Aseguradora[]) || [])
       setAsesores((ases as Asesor[]) || [])
