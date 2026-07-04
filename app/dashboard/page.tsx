@@ -86,7 +86,7 @@ export default function Dashboard() {
       setAseguradoras((aseg as Aseguradora[]) || [])
       setAsesores((ases as Asesor[]) || [])
       setResumenMensual((resumen as ResumenMensual[]) || [])
-      setMesesDisponibles(((meses as {mes:string}[]) || []).map(m => m.mes))
+      setMesesDisponibles(((meses as unknown as {mes:string}[]) || []).map(m => m.mes))
       setLoading(false)
     }
     fetchData()
