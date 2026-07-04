@@ -42,7 +42,7 @@ type Factura = {
 }
 
 const ESTADOS_GANADOS = ['Autorizada Completa', 'Autorizada parcial']
-const ESTADOS_RESUELTOS = ['Autorizada Completa', 'Autorizada parcial', 'NO Autorizada', 'Subasta no aplicada']
+const ESTADOS_RESUELTOS = ['Autorizada Completa', 'Autorizada parcial', 'NO Autorizada']
 
 export default function Dashboard() {
   const router = useRouter()
