@@ -1,4 +1,4 @@
-'use client'
+''use client'
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -92,9 +92,14 @@ export default function Dashboard() {
   }
 
   const marcas = useMemo(() => {
-    const ms = subastas.map(s => s.marca).filter((m): m is string => !!m)
+    const ms = subastas
+      .map(s => s.marca)
+      .filter((m): m is string => !!m && m.trim() !== '')
     return ['todas', ...Array.from(new Set(ms)).sort()]
   }, [subastas])
+
+  // Si el filtroMarca ya no está en la lista (por cambio de datos), resetear
+  // Nota: esto se maneja implícitamente porque el selector siempre muestra las opciones correctas
 
   const meses = useMemo(() => {
     const ms = subastas.map(s => s.mes_subasta).filter((m): m is string => !!m)
@@ -109,12 +114,21 @@ export default function Dashboard() {
     (filtroMarca       === 'todas'  || s.marca          === filtroMarca)
   ), [subastas, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
 
-  // Facturas filtradas
-  const ff = useMemo(() => facturas.filter(f =>
-    (filtroAsesor      === 0        || f.asesor_id      === filtroAsesor) &&
-    (filtroAseguradora === 0        || f.aseguradora_id === filtroAseguradora) &&
-    (filtroMes         === 'todos'  || f.mes            === filtroMes)
-  ), [facturas, filtroAsesor, filtroAseguradora, filtroMes])
+  // Mapa placa → marca (construido desde subastas)
+  const placaMarcaMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    subastas.forEach(s => { if (s.placa && s.marca) m[s.placa] = s.marca })
+    return m
+  }, [subastas])
+
+  // Facturas filtradas — marca se obtiene cruzando placa con subastas
+  const ff = useMemo(() => facturas.filter(f => {
+    const marcaFactura = f.placa ? placaMarcaMap[f.placa] : undefined
+    return (filtroAsesor      === 0       || f.asesor_id      === filtroAsesor) &&
+           (filtroAseguradora === 0       || f.aseguradora_id === filtroAseguradora) &&
+           (filtroMes         === 'todos' || f.mes            === filtroMes) &&
+           (filtroMarca       === 'todas' || marcaFactura     === filtroMarca)
+  }), [facturas, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca, placaMarcaMap])
 
   const kpis = useMemo(() => {
     const total      = sf.length
