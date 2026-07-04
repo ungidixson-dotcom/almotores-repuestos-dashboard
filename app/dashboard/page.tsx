@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [filtroAsesor, setFiltroAsesor] = useState('todos')
   const [filtroAseguradora, setFiltroAseguradora] = useState('todas')
   const [filtroMes, setFiltroMes] = useState('todos')
+  const [filtroMarca, setFiltroMarca] = useState('todas')
 
   useEffect(() => {
     async function fetchData() {
@@ -87,6 +88,11 @@ export default function Dashboard() {
     return ['todas', ...Array.from(new Set(nombres))]
   }, [subastas])
 
+  const marcas = useMemo(() => {
+    const ms = subastas.map(s => s.marca).filter((m): m is string => !!m)
+    return ['todas', ...Array.from(new Set(ms))]
+  }, [subastas])
+
   const meses = useMemo(() => {
     const ms = subastas.map(s => s.mes_subasta).filter((m): m is string => !!m)
     return ['todos', ...Array.from(new Set(ms))]
@@ -99,6 +105,7 @@ export default function Dashboard() {
     return (filtroAsesor === 'todos' || asesor === filtroAsesor)
         && (filtroAseguradora === 'todas' || aseg === filtroAseguradora)
         && (filtroMes === 'todos' || s.mes_subasta === filtroMes)
+        && (filtroMarca === 'todas' || s.marca === filtroMarca)
   }), [subastas, filtroAsesor, filtroAseguradora, filtroMes])
 
   // Facturas filtradas — por asesor y mes (aseguradora si aplica)
@@ -215,6 +222,7 @@ export default function Dashboard() {
           { label: 'Asesor', value: filtroAsesor, set: setFiltroAsesor, opts: asesores },
           { label: 'Aseguradora', value: filtroAseguradora, set: setFiltroAseguradora, opts: aseguradoras },
           { label: 'Mes', value: filtroMes, set: setFiltroMes, opts: meses },
+          { label: 'Marca', value: filtroMarca, set: setFiltroMarca, opts: marcas },
         ].map(f => (
           <label key={f.label} className="flex flex-col gap-1">
             <span className="font-mono text-xs text-brand-subtle uppercase tracking-wider">{f.label}</span>
@@ -398,4 +406,3 @@ function Panel({ title, sub, children }: { title: string; sub: string; children:
     </div>
   )
 }
-
