@@ -6,13 +6,14 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { LogOut, TrendingUp, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
+import { LogOut, TrendingUp, CheckCircle, Clock, AlertTriangle, FileCheck, FileX, FileClock } from 'lucide-react'
 
 const COLORES_ESTADO: Record<string, string> = {
   'Autorizada Completa': '#4FD1C5',
   'Autorizada parcial':  '#E8A33D',
   'NO Autorizada':       '#E5484D',
   'Subasta no aplicada': '#5B6472',
+  'Sin respuesta':       '#8AA4C8',
 }
 
 const fmtCOP = (n: number) =>
@@ -40,6 +41,9 @@ type Factura = {
   asesores: { nombre: string } | null
 }
 
+const ESTADOS_GANADOS = ['Autorizada Completa', 'Autorizada parcial']
+const ESTADOS_RESUELTOS = ['Autorizada Completa', 'Autorizada parcial', 'NO Autorizada', 'Subasta no aplicada']
+
 export default function Dashboard() {
   const router = useRouter()
   const [subastas, setSubastas] = useState<Subasta[]>([])
@@ -53,7 +57,6 @@ export default function Dashboard() {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-
       const [{ data: s }, { data: f }] = await Promise.all([
         supabase.from('subastas')
           .select('*, aseguradoras(nombre_corto), asesores(nombre)')
@@ -74,16 +77,22 @@ export default function Dashboard() {
     router.push('/login')
   }
 
-  const asesores = useMemo(() =>
-    ['todos', ...new Set(subastas.map(s => s.asesores?.nombre).filter(Boolean) as string[])],
-    [subastas])
-  const aseguradoras = useMemo(() =>
-    ['todas', ...new Set(subastas.map(s => s.aseguradoras?.nombre_corto).filter(Boolean) as string[])],
-    [subastas])
-  const meses = useMemo(() =>
-    ['todos', ...new Set(subastas.map(s => s.mes_subasta).filter(Boolean) as string[])],
-    [subastas])
+  const asesores = useMemo(() => {
+    const nombres = subastas.map(s => s.asesores?.nombre).filter((n): n is string => !!n)
+    return ['todos', ...Array.from(new Set(nombres))]
+  }, [subastas])
 
+  const aseguradoras = useMemo(() => {
+    const nombres = subastas.map(s => s.aseguradoras?.nombre_corto).filter((n): n is string => !!n)
+    return ['todas', ...Array.from(new Set(nombres))]
+  }, [subastas])
+
+  const meses = useMemo(() => {
+    const ms = subastas.map(s => s.mes_subasta).filter((m): m is string => !!m)
+    return ['todos', ...Array.from(new Set(ms))]
+  }, [subastas])
+
+  // Subastas filtradas
   const sf = useMemo(() => subastas.filter(s => {
     const asesor = s.asesores?.nombre
     const aseg   = s.aseguradoras?.nombre_corto
@@ -92,36 +101,64 @@ export default function Dashboard() {
         && (filtroMes === 'todos' || s.mes_subasta === filtroMes)
   }), [subastas, filtroAsesor, filtroAseguradora, filtroMes])
 
+  // Facturas filtradas — por asesor y mes (aseguradora si aplica)
+  const ff = useMemo(() => facturas.filter(f => {
+    const asesorNombre = f.asesores?.nombre
+    const asegNombre   = f.aseguradoras?.nombre_corto
+    return (filtroAsesor === 'todos' || asesorNombre === filtroAsesor)
+        && (filtroAseguradora === 'todas' || asegNombre === filtroAseguradora)
+        && (filtroMes === 'todos' || f.mes === filtroMes)
+  }), [facturas, filtroAsesor, filtroAseguradora, filtroMes])
+
   const kpis = useMemo(() => {
-    const resueltas = sf.filter(s => s.estado_autorizacion && s.estado_autorizacion !== 'NULL')
-    const ganadas   = sf.filter(s => ['Autorizada Completa','Autorizada parcial'].includes(s.estado_autorizacion))
-    const sinRasp   = sf.filter(s => !s.estado_autorizacion || s.estado_autorizacion === 'NULL')
-    const tasaAuth  = resueltas.length ? (ganadas.length / resueltas.length) * 100 : 0
-    const valorSub  = sf.reduce((a, s) => a + (s.valor_subastado || 0), 0)
-    const valorAut  = ganadas.reduce((a, s) => a + (s.valor_autorizado || 0), 0)
-    const convValor = valorSub ? (valorAut / valorSub) * 100 : 0
-
-    // Cruce con facturas: subastas ganadas sin factura radicada
-    const placasGanadas = new Set(ganadas.map(s => s.placa).filter(Boolean))
+    const total      = sf.length
+    const resueltas  = sf.filter(s => ESTADOS_RESUELTOS.includes(s.estado_autorizacion))
+    const ganadas    = sf.filter(s => ESTADOS_GANADOS.includes(s.estado_autorizacion))
+    const noGanadas  = sf.filter(s => s.estado_autorizacion === 'NO Autorizada')
+    const sinResp    = sf.filter(s => !ESTADOS_RESUELTOS.includes(s.estado_autorizacion))
+    // Tasa = ganadas / resueltas (excluyendo sin respuesta y no aplicada)
+    const tasaAuth   = resueltas.length ? (ganadas.length / resueltas.length) * 100 : 0
+    // Efectividad = ganadas / total
+    const efectividad = total ? (ganadas.length / total) * 100 : 0
+    const valorSub   = sf.reduce((a, s) => a + (s.valor_subastado || 0), 0)
+    const valorAut   = ganadas.reduce((a, s) => a + (s.valor_autorizado || 0), 0)
+    const convValor  = valorSub ? (valorAut / valorSub) * 100 : 0
+    const placasGanadas    = new Set(ganadas.map(s => s.placa).filter(Boolean))
     const placasFacturadas = new Set(facturas.filter(f => f.est_radicacion === 'Radicada').map(f => f.placa))
-    const sinFactura = [...placasGanadas].filter(p => !placasFacturadas.has(p)).length
-
-    return { total: sf.length, tasaAuth, valorSub, valorAut, convValor, sinRespuesta: sinRasp.length, sinFactura }
+    const sinFactura = Array.from(placasGanadas).filter(p => !placasFacturadas.has(p)).length
+    return {
+      total, tasaAuth, efectividad, valorSub, valorAut, convValor,
+      ganadas: ganadas.length, noGanadas: noGanadas.length,
+      sinRespuesta: sinResp.length, sinFactura
+    }
   }, [sf, facturas])
 
+  // Facturas KPIs filtradas
+  const fKpis = useMemo(() => ({
+    radicadas:  ff.filter(f => f.est_radicacion === 'Radicada').length,
+    pendientes: ff.filter(f => ['Pendiente','pendiente'].includes(f.est_radicacion)).length,
+    anuladas:   ff.filter(f => f.est_radicacion === 'Anulada').length,
+  }), [ff])
+
+  // Por asesor con efectividad
   const porAsesor = useMemo(() => {
-    const map: Record<string, { nombre: string; ganadas: number; resueltas: number; valorAut: number }> = {}
+    const map: Record<string, { nombre: string; total: number; ganadas: number; resueltas: number; valorAut: number }> = {}
     sf.forEach(s => {
       const n = s.asesores?.nombre || 'Sin asesor'
-      if (!map[n]) map[n] = { nombre: n, ganadas: 0, resueltas: 0, valorAut: 0 }
-      if (s.estado_autorizacion) map[n].resueltas++
-      if (['Autorizada Completa','Autorizada parcial'].includes(s.estado_autorizacion)) {
+      if (!map[n]) map[n] = { nombre: n, total: 0, ganadas: 0, resueltas: 0, valorAut: 0 }
+      map[n].total++
+      if (ESTADOS_RESUELTOS.includes(s.estado_autorizacion)) map[n].resueltas++
+      if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) {
         map[n].ganadas++
         map[n].valorAut += s.valor_autorizado || 0
       }
     })
     return Object.values(map)
-      .map(a => ({ ...a, tasa: a.resueltas ? (a.ganadas / a.resueltas) * 100 : 0 }))
+      .map(a => ({
+        ...a,
+        tasaAuth:    a.resueltas ? (a.ganadas / a.resueltas) * 100 : 0,
+        efectividad: a.total ? (a.ganadas / a.total) * 100 : 0,
+      }))
       .sort((a, b) => b.valorAut - a.valorAut)
   }, [sf])
 
@@ -140,20 +177,13 @@ export default function Dashboard() {
       const n = s.aseguradoras?.nombre_corto || 'Otra'
       if (!map[n]) map[n] = { nombre: n, total: 0, ganadas: 0, resueltas: 0 }
       map[n].total++
-      if (s.estado_autorizacion) map[n].resueltas++
-      if (['Autorizada Completa','Autorizada parcial'].includes(s.estado_autorizacion)) map[n].ganadas++
+      if (ESTADOS_RESUELTOS.includes(s.estado_autorizacion)) map[n].resueltas++
+      if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) map[n].ganadas++
     })
     return Object.values(map)
       .map(a => ({ ...a, tasa: a.resueltas ? (a.ganadas / a.resueltas) * 100 : 0 }))
       .sort((a, b) => b.total - a.total)
   }, [sf])
-
-  const facturasRadicadas = useMemo(() =>
-    facturas.filter(f => f.est_radicacion === 'Radicada').length, [facturas])
-  const facturasAnuladas = useMemo(() =>
-    facturas.filter(f => f.est_radicacion === 'Anulada').length, [facturas])
-  const facturasPendientes = useMemo(() =>
-    facturas.filter(f => ['Pendiente','pendiente'].includes(f.est_radicacion)).length, [facturas])
 
   if (loading) return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center">
@@ -199,31 +229,38 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      {/* KPIs Subastas */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         <KpiCard icon={<TrendingUp size={16}/>} label="Subastas" value={kpis.total} accent="teal" />
-        <KpiCard icon={<CheckCircle size={16}/>} label="Tasa autorización" value={fmtPct(kpis.tasaAuth)} accent="teal" />
-        <KpiCard icon={<TrendingUp size={16}/>} label="Valor subastado" value={fmtCOP(kpis.valorSub)} accent="blue" small />
-        <KpiCard icon={<CheckCircle size={16}/>} label="Valor autorizado" value={fmtCOP(kpis.valorAut)} accent="teal" small />
+        <KpiCard icon={<CheckCircle size={16}/>} label="Ganadas" value={kpis.ganadas} accent="teal" />
+        <KpiCard icon={<CheckCircle size={16}/>} label="Tasa autorización" value={fmtPct(kpis.tasaAuth)} accent="teal" hint="ganadas / resueltas" />
+        <KpiCard icon={<TrendingUp size={16}/>} label="Efectividad" value={fmtPct(kpis.efectividad)} accent="gold" hint="ganadas / total" />
         <KpiCard icon={<Clock size={16}/>} label="Sin respuesta" value={kpis.sinRespuesta} accent="muted" />
-        <KpiCard icon={<AlertTriangle size={16}/>} label="Sin facturar (placa)" value={kpis.sinFactura} accent="gold" />
+        <KpiCard icon={<AlertTriangle size={16}/>} label="Sin facturar" value={kpis.sinFactura} accent="red" />
       </div>
 
-      {/* Fila de Facturas */}
+      {/* KPIs Valor */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+        <KpiCard icon={<TrendingUp size={16}/>} label="Valor subastado" value={fmtCOP(kpis.valorSub)} accent="blue" small />
+        <KpiCard icon={<CheckCircle size={16}/>} label="Valor autorizado" value={fmtCOP(kpis.valorAut)} accent="teal" small />
+        <KpiCard icon={<TrendingUp size={16}/>} label="Conversión en $" value={fmtPct(kpis.convValor)} accent="gold" />
+      </div>
+
+      {/* KPIs Facturas — filtradas */}
       <div className="grid grid-cols-3 gap-3 mb-6">
-        <StatBadge label="Facturas radicadas" value={facturasRadicadas} color="teal" />
-        <StatBadge label="Facturas pendientes" value={facturasPendientes} color="gold" />
-        <StatBadge label="Facturas anuladas" value={facturasAnuladas} color="red" />
+        <StatBadge icon={<FileCheck size={15}/>} label="Facturas radicadas" value={fKpis.radicadas} color="teal" />
+        <StatBadge icon={<FileClock size={15}/>} label="Facturas pendientes" value={fKpis.pendientes} color="gold" />
+        <StatBadge icon={<FileX size={15}/>}    label="Facturas anuladas"   value={fKpis.anuladas}   color="red" />
       </div>
 
       {/* Gráficas fila 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <Panel title="Valor autorizado por asesor" sub="Subastas ganadas en el periodo filtrado">
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={240}>
             <BarChart data={porAsesor} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false} />
               <XAxis dataKey="nombre" tick={{ fill: '#8AA4C8', fontSize: 11, fontFamily: 'IBM Plex Sans' }} axisLine={{ stroke: '#2A3340' }} tickLine={false} />
-              <YAxis tick={{ fill: '#8AA4C8', fontSize: 10, fontFamily: 'IBM Plex Mono' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v/1e6).toFixed(0)}M`} />
+              <YAxis tick={{ fill: '#8AA4C8', fontSize: 10, fontFamily: 'IBM Plex Mono' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${(v/1e6).toFixed(0)}M`} />
               <Tooltip
                 contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontFamily: 'IBM Plex Sans', fontSize: 12 }}
                 formatter={(v: number) => [fmtCOP(v), 'Valor autorizado']}
@@ -234,9 +271,9 @@ export default function Dashboard() {
         </Panel>
 
         <Panel title="Estado de subastas" sub="Distribución del periodo filtrado">
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={240}>
             <PieChart>
-              <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={3}>
+              <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={3}>
                 {porEstado.map((e, i) => (
                   <Cell key={i} fill={COLORES_ESTADO[e.name] || '#8AA4C8'} stroke="#0F1419" strokeWidth={2} />
                 ))}
@@ -248,7 +285,49 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      {/* Tabla aseguradoras */}
+      {/* Tabla efectividad por asesor */}
+      <Panel title="Efectividad por asesor" sub="Tasa de autorización (ganadas/resueltas) y efectividad (ganadas/total)">
+        <div className="overflow-x-auto mb-6">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-brand-border">
+                {['Asesor','Total','Ganadas','Tasa autorización','Efectividad','Valor autorizado'].map(h => (
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {porAsesor.map(a => (
+                <tr key={a.nombre} className="border-b border-brand-border/50 hover:bg-brand-bg/50 transition-colors">
+                  <td className="py-3 pr-4 text-brand-text font-medium">{a.nombre}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-teal">{a.ganadas}</td>
+                  <td className="py-3 pr-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-brand-teal" style={{ width: `${a.tasaAuth}%` }} />
+                      </div>
+                      <span className="font-mono text-xs">{fmtPct(a.tasaAuth)}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${a.efectividad}%`, background: a.efectividad >= 30 ? '#4FD1C5' : '#E8A33D' }} />
+                      </div>
+                      <span className="font-mono text-xs">{fmtPct(a.efectividad)}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.valorAut)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      {/* Ranking aseguradoras */}
+      <div className="mt-4">
       <Panel title="Ranking por aseguradora" sub="Volumen de subastas y tasa de autorización">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -268,10 +347,7 @@ export default function Dashboard() {
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
                       <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${a.tasa}%`, background: a.tasa >= 40 ? '#4FD1C5' : '#E8A33D' }}
-                        />
+                        <div className="h-full rounded-full" style={{ width: `${a.tasa}%`, background: a.tasa >= 40 ? '#4FD1C5' : '#E8A33D' }} />
                       </div>
                       <span className="font-mono text-xs text-brand-subtle">{fmtPct(a.tasa)}</span>
                     </div>
@@ -282,28 +358,33 @@ export default function Dashboard() {
           </table>
         </div>
       </Panel>
+      </div>
     </div>
   )
 }
 
-function KpiCard({ icon, label, value, accent, small }: {
-  icon: React.ReactNode; label: string; value: string | number; accent: string; small?: boolean
+function KpiCard({ icon, label, value, accent, small, hint }: {
+  icon: React.ReactNode; label: string; value: string | number; accent: string; small?: boolean; hint?: string
 }) {
-  const border = { teal: 'border-t-brand-teal', gold: 'border-t-brand-gold', blue: 'border-t-blue-400', red: 'border-t-brand-red', muted: 'border-t-brand-muted' }[accent] || ''
+  const borderColor: Record<string, string> = {
+    teal: '#4FD1C5', gold: '#E8A33D', blue: '#60A5FA', red: '#E5484D', muted: '#5B6472'
+  }
   return (
-    <div className={`bg-brand-surface border border-brand-border border-t-2 ${border} rounded-xl p-4`}>
+    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 relative overflow-hidden">
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: borderColor[accent] || '#4FD1C5' }} />
       <div className="flex items-center gap-2 text-brand-subtle mb-2">{icon}<span className="text-xs">{label}</span></div>
       <div className={`font-title font-bold text-brand-text ${small ? 'text-lg' : 'text-2xl'}`}>{value}</div>
+      {hint && <div className="text-brand-muted text-xs mt-1 font-mono">{hint}</div>}
     </div>
   )
 }
 
-function StatBadge({ label, value, color }: { label: string; value: number; color: string }) {
-  const cls = { teal: 'text-brand-teal', gold: 'text-brand-gold', red: 'text-brand-red' }[color] || ''
+function StatBadge({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
+  const cls: Record<string, string> = { teal: 'text-brand-teal', gold: 'text-brand-gold', red: 'text-brand-red' }
   return (
     <div className="bg-brand-surface border border-brand-border rounded-xl p-4 flex justify-between items-center">
-      <span className="text-brand-subtle text-sm">{label}</span>
-      <span className={`font-mono font-bold text-xl ${cls}`}>{value}</span>
+      <div className="flex items-center gap-2 text-brand-subtle text-sm">{icon}{label}</div>
+      <span className={`font-mono font-bold text-xl ${cls[color] || ''}`}>{value}</span>
     </div>
   )
 }
@@ -317,3 +398,4 @@ function Panel({ title, sub, children }: { title: string; sub: string; children:
     </div>
   )
 }
+
