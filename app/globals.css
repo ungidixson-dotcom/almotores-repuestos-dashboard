@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+::selection { background: #E8A33D44; }
+
+body { min-height: 100vh; }
