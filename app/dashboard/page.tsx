@@ -208,33 +208,52 @@ export default function Dashboard() {
     return Object.entries(map).map(([motivo,count]) => ({ motivo, count })).sort((a,b) => b.count - a.count)
   }, [sf])
 
-  // 4. Proyección por mes
+  // 4. Proyección por mes — todos los meses 2026
   const proyeccionMes = useMemo(() => {
-    // Datos históricos agrupados por mes
-    const map: Record<string, { mes: string; orden: number; subastas: number; ganadas: number; valorAut: number }> = {}
+    const MESES_2026 = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    
+    // Acumular datos reales por mes
+    const mapGanadas: Record<string, { ganadas: number; valorAut: number }> = {}
     subastas.filter(s => s.mes_subasta && ESTADOS_GANADOS.includes(s.estado_autorizacion)).forEach(s => {
       const m = s.mes_subasta.toLowerCase()
-      if (!map[m]) map[m] = { mes: s.mes_subasta.charAt(0).toUpperCase()+s.mes_subasta.slice(1), orden: ORDEN_MESES[m]||99, subastas: 0, ganadas: 0, valorAut: 0 }
-      map[m].ganadas++
-      map[m].valorAut += s.valor_autorizado || 0
+      if (!mapGanadas[m]) mapGanadas[m] = { ganadas: 0, valorAut: 0 }
+      mapGanadas[m].ganadas++
+      mapGanadas[m].valorAut += s.valor_autorizado || 0
     })
-    subastas.filter(s => s.mes_subasta).forEach(s => {
-      const m = s.mes_subasta.toLowerCase()
-      if (map[m]) map[m].subastas++
-    })
-    const historico = Object.values(map).sort((a,b) => a.orden - b.orden)
 
-    // Proyección lineal simple para el siguiente mes
-    if (historico.length < 2) return { historico, proyectado: null }
-    const valores = historico.map(h => h.valorAut)
-    const n = valores.length
-    const promedio = valores.reduce((a,b) => a+b,0) / n
-    const tendencia = (valores[n-1] - valores[0]) / (n-1)
-    const proyectado = Math.max(0, promedio + tendencia)
-    const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-    const ultimoOrden = historico[historico.length-1].orden
-    const siguienteMes = mesesNombres[ultimoOrden] || 'Próximo mes'
-    return { historico, proyectado, siguienteMes }
+    // Construir serie completa con los 12 meses
+    const serie = MESES_2026.map((mes, idx) => {
+      const key = mes.toLowerCase()
+      const real = mapGanadas[key]
+      return {
+        mes,
+        orden: idx + 1,
+        valorAut:  real ? real.valorAut  : null,  // null = sin datos reales
+        ganadas:   real ? real.ganadas   : null,
+        esReal:    !!real,
+      }
+    })
+
+    // Proyección lineal: solo con meses que tienen datos
+    const conDatos = serie.filter(s => s.valorAut !== null)
+    let proyectado = null
+    let siguienteMes = ''
+    if (conDatos.length >= 2) {
+      const valores = conDatos.map(s => s.valorAut as number)
+      const n = valores.length
+      const promedio = valores.reduce((a,b) => a+b,0) / n
+      const tendencia = (valores[n-1] - valores[0]) / (n-1)
+      proyectado = Math.max(0, promedio + tendencia)
+      // Siguiente mes sin datos
+      const siguiente = serie.find(s => !s.esReal && s.orden > (conDatos[conDatos.length-1].orden))
+      siguienteMes = siguiente ? siguiente.mes : ''
+      // Agregar punto proyectado a la serie
+      if (siguiente) {
+        serie[siguiente.orden - 1] = { ...serie[siguiente.orden - 1], valorAut: proyectado, esReal: false }
+      }
+    }
+
+    return { serie, proyectado, siguienteMes, historico: conDatos }
   }, [subastas])
 
   if (loading) return (
@@ -334,31 +353,48 @@ export default function Dashboard() {
 
       {/* NUEVA: Proyección por mes */}
       <div className="mb-4">
-        <Panel title="Proyección de valor autorizado por mes" sub="Histórico real + proyección lineal del siguiente mes">
+        <Panel title="Valor autorizado por mes — 2026" sub="Histórico real (teal) + proyección siguiente mes (dorado)">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="lg:col-span-3">
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={proyeccionMes.historico} margin={{ left:0, right:16, top:8, bottom:0 }}>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={proyeccionMes.serie} margin={{ left:0, right:16, top:8, bottom:0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false} />
-                  <XAxis dataKey="mes" tick={{ fill:'#8AA4C8', fontSize:11 }} axisLine={{ stroke:'#2A3340' }} tickLine={false} />
-                  <YAxis tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={(v:number) => `$${(v/1e6).toFixed(0)}M`} />
-                  <Tooltip contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }} formatter={(v:number) => [fmtCOP(v),'Valor autorizado']} />
-                  <Line type="monotone" dataKey="valorAut" stroke="#4FD1C5" strokeWidth={2.5} dot={{ fill:'#4FD1C5', r:4 }} />
+                  <XAxis dataKey="mes" tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={{ stroke:'#2A3340' }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40} />
+                  <YAxis tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={(v:number) => v ? `$${(v/1e6).toFixed(0)}M` : ''} />
+                  <Tooltip
+                    contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }}
+                    formatter={(v:number, _:string, props: {payload?: {esReal?: boolean}}) => [
+                      v ? fmtCOP(v) : '—',
+                      props.payload?.esReal ? 'Real' : 'Proyectado'
+                    ]}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="valorAut"
+                    stroke="#4FD1C5"
+                    strokeWidth={2.5}
+                    connectNulls={false}
+                    dot={(props: {cx:number; cy:number; payload:{esReal:boolean; valorAut:number|null}}) => {
+                      if (!props.payload.valorAut) return <circle key={props.cx} cx={0} cy={0} r={0} />
+                      const color = props.payload.esReal ? '#4FD1C5' : '#E8A33D'
+                      return <circle key={props.cx} cx={props.cx} cy={props.cy} r={5} fill={color} stroke="#0F1419" strokeWidth={2} />
+                    }}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
             <div className="flex flex-col gap-3 justify-center">
-              {proyeccionMes.proyectado !== null && (
+              {proyeccionMes.proyectado !== null && proyeccionMes.siguienteMes && (
                 <div className="bg-brand-bg border border-brand-gold/30 rounded-xl p-4">
                   <p className="font-mono text-xs text-brand-gold uppercase tracking-wider mb-1">Proyección {proyeccionMes.siguienteMes}</p>
                   <p className="font-title text-lg font-bold text-brand-text">{fmtCOP(proyeccionMes.proyectado)}</p>
-                  <p className="text-brand-muted text-xs mt-1">Tendencia lineal basada en histórico</p>
+                  <p className="text-brand-muted text-xs mt-1 font-mono">Tendencia lineal</p>
                 </div>
               )}
               {proyeccionMes.historico.slice(-3).reverse().map(h => (
                 <div key={h.mes} className="bg-brand-bg border border-brand-border rounded-xl p-3">
                   <p className="font-mono text-xs text-brand-subtle">{h.mes}</p>
-                  <p className="font-title text-sm font-bold text-brand-text">{fmtCOP(h.valorAut)}</p>
+                  <p className="font-title text-sm font-bold text-brand-text">{fmtCOP(h.valorAut as number)}</p>
                   <p className="text-brand-muted text-xs">{h.ganadas} ganadas</p>
                 </div>
               ))}
