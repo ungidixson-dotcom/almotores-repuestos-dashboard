@@ -39,6 +39,12 @@ type Subasta = {
   motivo_no_ganada: string
 }
 
+type ResumenMensual = {
+  mes: string; orden: number
+  total_subastas: number; ganadas: number
+  no_autorizadas: number; valor_autorizado: number; valor_subastado: number
+}
+
 type Factura = {
   id: number; placa: string; marca: string
   aseguradora_id: number; asesor_id: number
@@ -53,6 +59,8 @@ export default function Dashboard() {
   const [aseguradoras, setAseguradoras] = useState<Aseguradora[]>([])
   const [asesores,     setAsesores]     = useState<Asesor[]>([])
   const [loading,      setLoading]      = useState(true)
+  const [resumenMensual,    setResumenMensual]    = useState<ResumenMensual[]>([])
+  const [mesesDisponibles,  setMesesDisponibles]  = useState<string[]>([])
   const [filtroAsesor,      setFiltroAsesor]      = useState(0)
   const [filtroAseguradora, setFiltroAseguradora] = useState(0)
   const [filtroMes,         setFiltroMes]         = useState('todos')
@@ -65,16 +73,20 @@ export default function Dashboard() {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-      const [{ data: s }, { data: f }, { data: aseg }, { data: ases }] = await Promise.all([
+      const [{ data: s }, { data: f }, { data: aseg }, { data: ases }, { data: resumen }, { data: meses }] = await Promise.all([
         supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,valor_autorizado,estado_autorizacion,ciudad_destino,mes_subasta,anio,tiempo_max_suministro_dias,motivo_no_ganada').order('fecha_subasta', { ascending: false }).limit(5000),
         supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').order('fecha', { ascending: false }).limit(5000),
         supabase.from('aseguradoras').select('id,nombre_corto'),
+        supabase.from('v_resumen_mensual').select('*'),
+        supabase.from('v_meses_disponibles').select('mes,orden').order('orden'),
         supabase.from('asesores').select('id,nombre'),
       ])
       setSubastas((s as Subasta[]) || [])
       setFacturas((f as Factura[]) || [])
       setAseguradoras((aseg as Aseguradora[]) || [])
       setAsesores((ases as Asesor[]) || [])
+      setResumenMensual((resumen as ResumenMensual[]) || [])
+      setMesesDisponibles(((meses as {mes:string}[]) || []).map(m => m.mes))
       setLoading(false)
     }
     fetchData()
@@ -87,10 +99,9 @@ export default function Dashboard() {
     return ['todas', ...Array.from(new Set(ms)).sort()]
   }, [subastas])
 
-  const meses = useMemo(() => {
-    const ms = subastas.map(s => s.mes_subasta).filter((m): m is string => !!m)
-    return ['todos', ...Array.from(new Set(ms)).sort((a,b) => (ORDEN_MESES[a]||99) - (ORDEN_MESES[b]||99))]
-  }, [subastas])
+  const meses = useMemo(() =>
+    ['todos', ...mesesDisponibles]
+  , [mesesDisponibles])
 
   const sf = useMemo(() => subastas.filter(s =>
     (filtroAsesor      === 0       || s.asesor_id      === filtroAsesor) &&
@@ -208,53 +219,43 @@ export default function Dashboard() {
     return Object.entries(map).map(([motivo,count]) => ({ motivo, count })).sort((a,b) => b.count - a.count)
   }, [sf])
 
-  // 4. Proyección por mes — todos los meses 2026
+  // 4. Proyección por mes — usa v_resumen_mensual (datos completos desde Supabase)
   const proyeccionMes = useMemo(() => {
     const MESES_2026 = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
     
-    // Acumular datos reales por mes
-    const mapGanadas: Record<string, { ganadas: number; valorAut: number }> = {}
-    subastas.filter(s => s.mes_subasta && ESTADOS_GANADOS.includes(s.estado_autorizacion)).forEach(s => {
-      const m = s.mes_subasta.toLowerCase()
-      if (!mapGanadas[m]) mapGanadas[m] = { ganadas: 0, valorAut: 0 }
-      mapGanadas[m].ganadas++
-      mapGanadas[m].valorAut += s.valor_autorizado || 0
-    })
+    // Mapa de datos reales desde la vista
+    const mapReal: Record<string, ResumenMensual> = {}
+    resumenMensual.forEach(r => { if (r.mes) mapReal[r.mes.toLowerCase()] = r })
 
-    // Construir serie completa con los 12 meses
+    // Serie completa 12 meses
     const serie = MESES_2026.map((mes, idx) => {
       const key = mes.toLowerCase()
-      const real = mapGanadas[key]
+      const real = mapReal[key]
       return {
         mes,
         orden: idx + 1,
-        valorAut:  real ? real.valorAut  : null,  // null = sin datos reales
-        ganadas:   real ? real.ganadas   : null,
-        esReal:    !!real,
+        valorAut: real ? real.valor_autorizado : null,
+        ganadas:  real ? real.ganadas : null,
+        esReal:   !!real,
       }
     })
 
-    // Proyección lineal: solo con meses que tienen datos
     const conDatos = serie.filter(s => s.valorAut !== null)
     let proyectado = null
     let siguienteMes = ''
     if (conDatos.length >= 2) {
       const valores = conDatos.map(s => s.valorAut as number)
       const n = valores.length
-      const promedio = valores.reduce((a,b) => a+b,0) / n
+      const promedio = valores.reduce((a,b) => a+b, 0) / n
       const tendencia = (valores[n-1] - valores[0]) / (n-1)
       proyectado = Math.max(0, promedio + tendencia)
-      // Siguiente mes sin datos
       const siguiente = serie.find(s => !s.esReal && s.orden > (conDatos[conDatos.length-1].orden))
       siguienteMes = siguiente ? siguiente.mes : ''
-      // Agregar punto proyectado a la serie
-      if (siguiente) {
-        serie[siguiente.orden - 1] = { ...serie[siguiente.orden - 1], valorAut: proyectado, esReal: false }
-      }
+      if (siguiente) serie[siguiente.orden - 1] = { ...serie[siguiente.orden - 1], valorAut: proyectado, esReal: false }
     }
 
     return { serie, proyectado, siguienteMes, historico: conDatos }
-  }, [subastas])
+  }, [resumenMensual])
 
   if (loading) return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center">
