@@ -148,24 +148,30 @@ export default function Dashboard() {
   }), [ff])
 
   const porAsesor = useMemo(() => {
-    const map: Record<number, { id: number; total: number; ganadas: number; resueltas: number; valorAut: number }> = {}
+    const map: Record<number, { id: number; total: number; ganadas: number; noAutorizadas: number; pendientes: number; valorAut: number }> = {}
     sf.forEach(s => {
       if (!s.asesor_id) return
-      if (!map[s.asesor_id]) map[s.asesor_id] = { id: s.asesor_id, total: 0, ganadas: 0, resueltas: 0, valorAut: 0 }
+      if (!map[s.asesor_id]) map[s.asesor_id] = { id: s.asesor_id, total: 0, ganadas: 0, noAutorizadas: 0, pendientes: 0, valorAut: 0 }
       map[s.asesor_id].total++
-      if (ESTADOS_RESUELTOS.includes(s.estado_autorizacion)) map[s.asesor_id].resueltas++
       if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) {
         map[s.asesor_id].ganadas++
         map[s.asesor_id].valorAut += s.valor_autorizado || 0
+      } else if (s.estado_autorizacion === 'NO Autorizada') {
+        map[s.asesor_id].noAutorizadas++
+      } else {
+        map[s.asesor_id].pendientes++
       }
     })
     return Object.values(map)
-      .map(a => ({
-        ...a,
-        nombre:      asesMap[a.id] || `Asesor ${a.id}`,
-        tasaAuth:    a.resueltas ? (a.ganadas / a.resueltas) * 100 : 0,
-        efectividad: a.total     ? (a.ganadas / a.total)     * 100 : 0,
-      }))
+      .map(a => {
+        const decididas = a.ganadas + a.noAutorizadas
+        return {
+          ...a,
+          nombre:      asesMap[a.id] || 'Sin asesor',
+          tasaAuth:    decididas ? (a.ganadas / decididas) * 100 : 0,
+          efectividad: a.total   ? (a.ganadas / a.total)   * 100 : 0,
+        }
+      })
       .sort((a, b) => b.valorAut - a.valorAut)
   }, [sf, asesMap])
 
@@ -298,7 +304,7 @@ export default function Dashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
-                {['Asesor','Total','Ganadas','Tasa autorización','Efectividad','Valor autorizado'].map(h => (
+                {['Asesor','Total','Ganadas','No autorizadas','Pendientes','Tasa autorización','Efectividad','Valor autorizado'].map(h => (
                   <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4">{h}</th>
                 ))}
               </tr>
@@ -309,6 +315,8 @@ export default function Dashboard() {
                   <td className="py-3 pr-4 text-brand-text font-medium">{a.nombre}</td>
                   <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total}</td>
                   <td className="py-3 pr-4 font-mono text-brand-teal">{a.ganadas}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-red">{a.noAutorizadas}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-subtle">{a.pendientes}</td>
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
