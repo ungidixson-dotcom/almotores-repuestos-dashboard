@@ -77,9 +77,9 @@ export default function Dashboard() {
         supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,valor_autorizado,estado_autorizacion,ciudad_destino,mes_subasta,anio,tiempo_max_suministro_dias,motivo_no_ganada').order('fecha_subasta', { ascending: false }).limit(5000),
         supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').order('fecha', { ascending: false }).limit(5000),
         supabase.from('aseguradoras').select('id,nombre_corto'),
+        supabase.from('asesores').select('id,nombre'),
         supabase.from('v_resumen_mensual').select('*'),
         supabase.from('v_meses_disponibles').select('mes,orden').order('orden'),
-        supabase.from('asesores').select('id,nombre'),
       ])
       setSubastas((s as Subasta[]) || [])
       setFacturas((f as Factura[]) || [])
