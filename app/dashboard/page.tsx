@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  LineChart, Line,
 } from 'recharts'
-import { LogOut, TrendingUp, CheckCircle, Clock, AlertTriangle, FileCheck, FileX, FileClock } from 'lucide-react'
+import { LogOut, TrendingUp, CheckCircle, Clock, AlertTriangle, FileCheck, FileX, FileClock, MapPin, Timer, TrendingDown } from 'lucide-react'
 
 const COLORES_ESTADO: Record<string, string> = {
   'Autorizada Completa': '#4FD1C5',
@@ -17,6 +18,8 @@ const COLORES_ESTADO: Record<string, string> = {
 }
 const ESTADOS_GANADOS   = ['Autorizada Completa', 'Autorizada parcial']
 const ESTADOS_RESUELTOS = ['Autorizada Completa', 'Autorizada parcial', 'NO Autorizada']
+const ORDEN_MESES: Record<string, number> = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, octubre:10, noviembre:11, diciembre:12 }
+const COLORES_CIUDADES = ['#4FD1C5','#E8A33D','#8AA4C8','#E5484D','#60A5FA','#A78BFA','#34D399','#F87171','#FBBF24','#6EE7B7']
 
 const fmtCOP = (n: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
@@ -32,6 +35,8 @@ type Subasta = {
   valor_subastado: number; valor_autorizado: number
   estado_autorizacion: string; ciudad_destino: string
   mes_subasta: string; anio: number
+  tiempo_max_suministro_dias: number
+  motivo_no_ganada: string
 }
 
 type Factura = {
@@ -53,26 +58,15 @@ export default function Dashboard() {
   const [filtroMes,         setFiltroMes]         = useState('todos')
   const [filtroMarca,       setFiltroMarca]       = useState('todas')
 
-  // Mapas de lookup
-  const asegMap = useMemo(() => {
-    const m: Record<number, string> = {}
-    aseguradoras.forEach(a => { m[a.id] = a.nombre_corto })
-    return m
-  }, [aseguradoras])
-
-  const asesMap = useMemo(() => {
-    const m: Record<number, string> = {}
-    asesores.forEach(a => { m[a.id] = a.nombre })
-    return m
-  }, [asesores])
+  const asegMap = useMemo(() => { const m: Record<number,string> = {}; aseguradoras.forEach(a => { m[a.id] = a.nombre_corto }); return m }, [aseguradoras])
+  const asesMap = useMemo(() => { const m: Record<number,string> = {}; asesores.forEach(a => { m[a.id] = a.nombre }); return m }, [asesores])
 
   useEffect(() => {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-
       const [{ data: s }, { data: f }, { data: aseg }, { data: ases }] = await Promise.all([
-        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,valor_autorizado,estado_autorizacion,ciudad_destino,mes_subasta,anio').order('fecha_subasta', { ascending: false }),
+        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,valor_autorizado,estado_autorizacion,ciudad_destino,mes_subasta,anio,tiempo_max_suministro_dias,motivo_no_ganada').order('fecha_subasta', { ascending: false }),
         supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').order('fecha', { ascending: false }),
         supabase.from('aseguradoras').select('id,nombre_corto'),
         supabase.from('asesores').select('id,nombre'),
@@ -86,50 +80,37 @@ export default function Dashboard() {
     fetchData()
   }, [router])
 
-  async function handleLogout() {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
+  async function handleLogout() { await supabase.auth.signOut(); router.push('/login') }
 
   const marcas = useMemo(() => {
-    const ms = subastas
-      .map(s => s.marca)
-      .filter((m): m is string => !!m && m.trim() !== '')
+    const ms = subastas.map(s => s.marca).filter((m): m is string => !!m && m.trim() !== '')
     return ['todas', ...Array.from(new Set(ms)).sort()]
   }, [subastas])
 
-  // Si el filtroMarca ya no está en la lista (por cambio de datos), resetear
-  // Nota: esto se maneja implícitamente porque el selector siempre muestra las opciones correctas
-
   const meses = useMemo(() => {
     const ms = subastas.map(s => s.mes_subasta).filter((m): m is string => !!m)
-    return ['todos', ...Array.from(new Set(ms))]
+    return ['todos', ...Array.from(new Set(ms)).sort((a,b) => (ORDEN_MESES[a]||99) - (ORDEN_MESES[b]||99))]
   }, [subastas])
 
-  // Subastas filtradas
   const sf = useMemo(() => subastas.filter(s =>
-    (filtroAsesor      === 0        || s.asesor_id      === filtroAsesor) &&
-    (filtroAseguradora === 0        || s.aseguradora_id === filtroAseguradora) &&
-    (filtroMes         === 'todos'  || s.mes_subasta    === filtroMes) &&
-    (filtroMarca       === 'todas'  || s.marca          === filtroMarca)
+    (filtroAsesor      === 0       || s.asesor_id      === filtroAsesor) &&
+    (filtroAseguradora === 0       || s.aseguradora_id === filtroAseguradora) &&
+    (filtroMes         === 'todos' || s.mes_subasta    === filtroMes) &&
+    (filtroMarca       === 'todas' || s.marca          === filtroMarca)
   ), [subastas, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
 
-
-  // Facturas filtradas — marca via placa normalizada
-  const ff = useMemo(() => facturas.filter(f => {
-    const marcaFactura = f.marca
-
-    return (filtroAsesor      === 0       || f.asesor_id      === filtroAsesor) &&
-           (filtroAseguradora === 0       || f.aseguradora_id === filtroAseguradora) &&
-           (filtroMes         === "todos" || f.mes            === filtroMes) &&
-           (filtroMarca === "todas" || marcaFactura === filtroMarca)
-  }), [facturas, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
+  const ff = useMemo(() => facturas.filter(f =>
+    (filtroAsesor      === 0       || f.asesor_id      === filtroAsesor) &&
+    (filtroAseguradora === 0       || f.aseguradora_id === filtroAseguradora) &&
+    (filtroMes         === 'todos' || f.mes            === filtroMes) &&
+    (filtroMarca       === 'todas' || f.marca          === filtroMarca)
+  ), [facturas, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
 
   const kpis = useMemo(() => {
     const total      = sf.length
     const resueltas  = sf.filter(s => ESTADOS_RESUELTOS.includes(s.estado_autorizacion))
     const ganadas    = sf.filter(s => ESTADOS_GANADOS.includes(s.estado_autorizacion))
-    const sinResp    = sf.filter(s => !ESTADOS_RESUELTOS.includes(s.estado_autorizacion) && s.estado_autorizacion !== 'Subasta no aplicada')
+    const sinResp    = sf.filter(s => !s.estado_autorizacion || (!ESTADOS_RESUELTOS.includes(s.estado_autorizacion) && s.estado_autorizacion !== 'Subasta no aplicada'))
     const tasaAuth   = resueltas.length ? (ganadas.length / resueltas.length) * 100 : 0
     const efectividad = total ? (ganadas.length / total) * 100 : 0
     const valorSub   = sf.reduce((a, s) => a + (s.valor_subastado || 0), 0)
@@ -153,35 +134,20 @@ export default function Dashboard() {
       if (!s.asesor_id) return
       if (!map[s.asesor_id]) map[s.asesor_id] = { id: s.asesor_id, total: 0, ganadas: 0, noAutorizadas: 0, pendientes: 0, valorAut: 0 }
       map[s.asesor_id].total++
-      if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) {
-        map[s.asesor_id].ganadas++
-        map[s.asesor_id].valorAut += s.valor_autorizado || 0
-      } else if (s.estado_autorizacion === 'NO Autorizada') {
-        map[s.asesor_id].noAutorizadas++
-      } else {
-        map[s.asesor_id].pendientes++
-      }
+      if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) { map[s.asesor_id].ganadas++; map[s.asesor_id].valorAut += s.valor_autorizado || 0 }
+      else if (s.estado_autorizacion === 'NO Autorizada') map[s.asesor_id].noAutorizadas++
+      else map[s.asesor_id].pendientes++
     })
-    return Object.values(map)
-      .map(a => {
-        const decididas = a.ganadas + a.noAutorizadas
-        return {
-          ...a,
-          nombre:      asesMap[a.id] || 'Sin asesor',
-          tasaAuth:    decididas ? (a.ganadas / decididas) * 100 : 0,
-          efectividad: a.total   ? (a.ganadas / a.total)   * 100 : 0,
-        }
-      })
-      .sort((a, b) => b.valorAut - a.valorAut)
+    return Object.values(map).map(a => {
+      const decididas = a.ganadas + a.noAutorizadas
+      return { ...a, nombre: asesMap[a.id] || 'Sin asesor', tasaAuth: decididas ? (a.ganadas/decididas)*100 : 0, efectividad: a.total ? (a.ganadas/a.total)*100 : 0 }
+    }).sort((a,b) => b.valorAut - a.valorAut)
   }, [sf, asesMap])
 
   const porEstado = useMemo(() => {
-    const map: Record<string, number> = {}
-    sf.forEach(s => {
-      const k = s.estado_autorizacion || 'Sin respuesta'
-      map[k] = (map[k] || 0) + 1
-    })
-    return Object.entries(map).map(([name, value]) => ({ name, value }))
+    const map: Record<string,number> = {}
+    sf.forEach(s => { const k = s.estado_autorizacion || 'Sin respuesta'; map[k] = (map[k]||0)+1 })
+    return Object.entries(map).map(([name,value]) => ({ name, value }))
   }, [sf])
 
   const porAseguradora = useMemo(() => {
@@ -191,16 +157,85 @@ export default function Dashboard() {
       if (!map[s.aseguradora_id]) map[s.aseguradora_id] = { id: s.aseguradora_id, total: 0, ganadas: 0, resueltas: 0 }
       map[s.aseguradora_id].total++
       if (ESTADOS_RESUELTOS.includes(s.estado_autorizacion)) map[s.aseguradora_id].resueltas++
-      if (ESTADOS_GANADOS.includes(s.estado_autorizacion))   map[s.aseguradora_id].ganadas++
+      if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) map[s.aseguradora_id].ganadas++
     })
-    return Object.values(map)
-      .map(a => ({
-        ...a,
-        nombre: asegMap[a.id] || `Aseg. ${a.id}`,
-        tasa:   a.resueltas ? (a.ganadas / a.resueltas) * 100 : 0,
-      }))
-      .sort((a, b) => b.total - a.total)
+    return Object.values(map).map(a => ({ ...a, nombre: asegMap[a.id] || `Aseg.${a.id}`, tasa: a.resueltas ? (a.ganadas/a.resueltas)*100 : 0 })).sort((a,b) => b.total - a.total)
   }, [sf, asegMap])
+
+  // === NUEVAS SECCIONES ===
+
+  // 1. Ciudades destino (top 10)
+  const porCiudad = useMemo(() => {
+    const map: Record<string, { total: number; ganadas: number }> = {}
+    sf.forEach(s => {
+      const c = s.ciudad_destino ? s.ciudad_destino.trim().toLowerCase() : 'sin ciudad'
+      if (!map[c]) map[c] = { total: 0, ganadas: 0 }
+      map[c].total++
+      if (ESTADOS_GANADOS.includes(s.estado_autorizacion)) map[c].ganadas++
+    })
+    return Object.entries(map)
+      .map(([ciudad, v]) => ({ ciudad: ciudad.charAt(0).toUpperCase() + ciudad.slice(1), ...v, tasa: v.total ? (v.ganadas/v.total)*100 : 0 }))
+      .sort((a,b) => b.total - a.total)
+      .slice(0, 10)
+  }, [sf])
+
+  // 2. Tiempo de suministro (distribución por rangos)
+  const porTiempoSuministro = useMemo(() => {
+    const rangos: Record<string, number> = { '0-3 días': 0, '4-6 días': 0, '7-15 días': 0, '16-30 días': 0, '+30 días': 0 }
+    sf.filter(s => s.tiempo_max_suministro_dias > 0).forEach(s => {
+      const d = s.tiempo_max_suministro_dias
+      if (d <= 3) rangos['0-3 días']++
+      else if (d <= 6) rangos['4-6 días']++
+      else if (d <= 15) rangos['7-15 días']++
+      else if (d <= 30) rangos['16-30 días']++
+      else rangos['+30 días']++
+    })
+    return Object.entries(rangos).map(([rango, cantidad]) => ({ rango, cantidad }))
+  }, [sf])
+
+  const tiempoPromedio = useMemo(() => {
+    const validos = sf.filter(s => s.tiempo_max_suministro_dias > 0).map(s => s.tiempo_max_suministro_dias)
+    return validos.length ? (validos.reduce((a,b) => a+b, 0) / validos.length).toFixed(1) : '—'
+  }, [sf])
+
+  // 3. Motivos de no ganada
+  const motivosNoGanada = useMemo(() => {
+    const map: Record<string,number> = {}
+    sf.filter(s => s.motivo_no_ganada && s.motivo_no_ganada.trim() !== '').forEach(s => {
+      const m = s.motivo_no_ganada.trim()
+      map[m] = (map[m]||0) + 1
+    })
+    return Object.entries(map).map(([motivo,count]) => ({ motivo, count })).sort((a,b) => b.count - a.count)
+  }, [sf])
+
+  // 4. Proyección por mes
+  const proyeccionMes = useMemo(() => {
+    // Datos históricos agrupados por mes
+    const map: Record<string, { mes: string; orden: number; subastas: number; ganadas: number; valorAut: number }> = {}
+    subastas.filter(s => s.mes_subasta && ESTADOS_GANADOS.includes(s.estado_autorizacion)).forEach(s => {
+      const m = s.mes_subasta.toLowerCase()
+      if (!map[m]) map[m] = { mes: s.mes_subasta.charAt(0).toUpperCase()+s.mes_subasta.slice(1), orden: ORDEN_MESES[m]||99, subastas: 0, ganadas: 0, valorAut: 0 }
+      map[m].ganadas++
+      map[m].valorAut += s.valor_autorizado || 0
+    })
+    subastas.filter(s => s.mes_subasta).forEach(s => {
+      const m = s.mes_subasta.toLowerCase()
+      if (map[m]) map[m].subastas++
+    })
+    const historico = Object.values(map).sort((a,b) => a.orden - b.orden)
+
+    // Proyección lineal simple para el siguiente mes
+    if (historico.length < 2) return { historico, proyectado: null }
+    const valores = historico.map(h => h.valorAut)
+    const n = valores.length
+    const promedio = valores.reduce((a,b) => a+b,0) / n
+    const tendencia = (valores[n-1] - valores[0]) / (n-1)
+    const proyectado = Math.max(0, promedio + tendencia)
+    const mesesNombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    const ultimoOrden = historico[historico.length-1].orden
+    const siguienteMes = mesesNombres[ultimoOrden] || 'Próximo mes'
+    return { historico, proyectado, siguienteMes }
+  }, [subastas])
 
   if (loading) return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center">
@@ -210,6 +245,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-brand-bg p-6">
+      {/* Header */}
       <header className="flex items-end justify-between mb-6 flex-wrap gap-3">
         <div>
           <p className="font-mono text-xs tracking-widest text-brand-gold uppercase mb-1">Almotores KIA · Repuestos &amp; Accesorios</p>
@@ -222,25 +258,22 @@ export default function Dashboard() {
 
       {/* Filtros */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <label className="flex flex-col gap-1">
-          <span className="font-mono text-xs text-brand-subtle uppercase tracking-wider">Asesor</span>
-          <select value={filtroAsesor} onChange={e => setFiltroAsesor(Number(e.target.value))} className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-brand-text text-sm min-w-[160px] outline-none focus:border-brand-teal">
-            <option value={0}>Todos</option>
-            {asesores.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="font-mono text-xs text-brand-subtle uppercase tracking-wider">Aseguradora</span>
-          <select value={filtroAseguradora} onChange={e => setFiltroAseguradora(Number(e.target.value))} className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-brand-text text-sm min-w-[160px] outline-none focus:border-brand-teal">
-            <option value={0}>Todas</option>
-            {aseguradoras.map(a => <option key={a.id} value={a.id}>{a.nombre_corto}</option>)}
-          </select>
-        </label>
+        {[
+          { label:'Asesor', isNum:true, val:filtroAsesor, set:setFiltroAsesor, opts: [{id:0,nombre:'Todos'}, ...asesores], keyF:'id', labelF:'nombre' },
+          { label:'Aseguradora', isNum:true, val:filtroAseguradora, set:setFiltroAseguradora, opts:[{id:0,nombre_corto:'Todas'}, ...aseguradoras], keyF:'id', labelF:'nombre_corto' },
+        ].map(f => (
+          <label key={f.label} className="flex flex-col gap-1">
+            <span className="font-mono text-xs text-brand-subtle uppercase tracking-wider">{f.label}</span>
+            <select value={f.val} onChange={e => (f.set as (v:number)=>void)(Number(e.target.value))} className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-brand-text text-sm min-w-[160px] outline-none focus:border-brand-teal">
+              {(f.opts as Record<string,unknown>[]).map(o => <option key={o[f.keyF] as string} value={o[f.keyF] as string}>{o[f.labelF] as string}</option>)}
+            </select>
+          </label>
+        ))}
         <label className="flex flex-col gap-1">
           <span className="font-mono text-xs text-brand-subtle uppercase tracking-wider">Mes</span>
           <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-brand-text text-sm min-w-[140px] outline-none focus:border-brand-teal">
             <option value="todos">Todos</option>
-            {meses.filter(m => m !== 'todos').map(m => <option key={m} value={m}>{m}</option>)}
+            {meses.filter(m => m !== 'todos').map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1">
@@ -252,7 +285,7 @@ export default function Dashboard() {
         </label>
       </div>
 
-      {/* KPIs Subastas */}
+      {/* KPIs principales */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         <KpiCard icon={<TrendingUp size={16}/>} label="Subastas" value={kpis.total} accent="teal" />
         <KpiCard icon={<CheckCircle size={16}/>} label="Ganadas" value={kpis.ganadas} accent="teal" />
@@ -261,10 +294,11 @@ export default function Dashboard() {
         <KpiCard icon={<Clock size={16}/>} label="Sin respuesta" value={kpis.sinRespuesta} accent="muted" />
         <KpiCard icon={<AlertTriangle size={16}/>} label="Sin facturar" value={kpis.sinFactura} accent="red" />
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
         <KpiCard icon={<TrendingUp size={16}/>} label="Valor subastado" value={fmtCOP(kpis.valorSub)} accent="blue" small />
         <KpiCard icon={<CheckCircle size={16}/>} label="Valor autorizado" value={fmtCOP(kpis.valorAut)} accent="teal" small />
         <KpiCard icon={<TrendingUp size={16}/>} label="Conversión en $" value={fmtPct(kpis.convValor)} accent="gold" />
+        <KpiCard icon={<Timer size={16}/>} label="Tiempo prom. suministro" value={`${tiempoPromedio} días`} accent="blue" />
       </div>
       <div className="grid grid-cols-3 gap-3 mb-6">
         <StatBadge icon={<FileCheck size={15}/>} label="Facturas radicadas"  value={fKpis.radicadas}  color="teal" />
@@ -272,34 +306,122 @@ export default function Dashboard() {
         <StatBadge icon={<FileX size={15}/>}     label="Facturas anuladas"   value={fKpis.anuladas}   color="red"  />
       </div>
 
-      {/* Gráficas */}
+      {/* Gráficas principales */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <Panel title="Valor autorizado por asesor" sub="Subastas ganadas en el periodo filtrado">
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={porAsesor} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={porAsesor} margin={{ left:0, right:8, top:8, bottom:0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false} />
-              <XAxis dataKey="nombre" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false} />
-              <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${(v/1e6).toFixed(0)}M`} />
-              <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }} formatter={(v: number) => [fmtCOP(v), 'Valor autorizado']} />
+              <XAxis dataKey="nombre" tick={{ fill:'#8AA4C8', fontSize:11 }} axisLine={{ stroke:'#2A3340' }} tickLine={false} />
+              <YAxis tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={(v:number) => `$${(v/1e6).toFixed(0)}M`} />
+              <Tooltip contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }} formatter={(v:number) => [fmtCOP(v),'Valor autorizado']} />
               <Bar dataKey="valorAut" radius={[6,6,0,0]} fill="#4FD1C5" />
             </BarChart>
           </ResponsiveContainer>
         </Panel>
         <Panel title="Estado de subastas" sub="Distribución del periodo filtrado">
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={3}>
-                {porEstado.map((e, i) => <Cell key={i} fill={COLORES_ESTADO[e.name] || '#8AA4C8'} stroke="#0F1419" strokeWidth={2} />)}
+              <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85} paddingAngle={3}>
+                {porEstado.map((e,i) => <Cell key={i} fill={COLORES_ESTADO[e.name] || '#8AA4C8'} stroke="#0F1419" strokeWidth={2} />)}
               </Pie>
-              <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#8AA4C8' }} />
+              <Tooltip contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }} />
+              <Legend wrapperStyle={{ fontSize:12, color:'#8AA4C8' }} />
             </PieChart>
           </ResponsiveContainer>
         </Panel>
       </div>
 
+      {/* NUEVA: Proyección por mes */}
+      <div className="mb-4">
+        <Panel title="Proyección de valor autorizado por mes" sub="Histórico real + proyección lineal del siguiente mes">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div className="lg:col-span-3">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={proyeccionMes.historico} margin={{ left:0, right:16, top:8, bottom:0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fill:'#8AA4C8', fontSize:11 }} axisLine={{ stroke:'#2A3340' }} tickLine={false} />
+                  <YAxis tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={(v:number) => `$${(v/1e6).toFixed(0)}M`} />
+                  <Tooltip contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }} formatter={(v:number) => [fmtCOP(v),'Valor autorizado']} />
+                  <Line type="monotone" dataKey="valorAut" stroke="#4FD1C5" strokeWidth={2.5} dot={{ fill:'#4FD1C5', r:4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col gap-3 justify-center">
+              {proyeccionMes.proyectado !== null && (
+                <div className="bg-brand-bg border border-brand-gold/30 rounded-xl p-4">
+                  <p className="font-mono text-xs text-brand-gold uppercase tracking-wider mb-1">Proyección {proyeccionMes.siguienteMes}</p>
+                  <p className="font-title text-lg font-bold text-brand-text">{fmtCOP(proyeccionMes.proyectado)}</p>
+                  <p className="text-brand-muted text-xs mt-1">Tendencia lineal basada en histórico</p>
+                </div>
+              )}
+              {proyeccionMes.historico.slice(-3).reverse().map(h => (
+                <div key={h.mes} className="bg-brand-bg border border-brand-border rounded-xl p-3">
+                  <p className="font-mono text-xs text-brand-subtle">{h.mes}</p>
+                  <p className="font-title text-sm font-bold text-brand-text">{fmtCOP(h.valorAut)}</p>
+                  <p className="text-brand-muted text-xs">{h.ganadas} ganadas</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      {/* NUEVA: Ciudades destino + Tiempo suministro */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Panel title="Top ciudades destino" sub="Volumen de subastas por ciudad">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={porCiudad} layout="vertical" margin={{ left:8, right:24, top:4, bottom:0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" horizontal={false} />
+              <XAxis type="number" tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="ciudad" tick={{ fill:'#8AA4C8', fontSize:11 }} axisLine={false} tickLine={false} width={80} />
+              <Tooltip contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }} />
+              <Bar dataKey="total" radius={[0,4,4,0]} name="Total subastas">
+                {porCiudad.map((_,i) => <Cell key={i} fill={COLORES_CIUDADES[i % COLORES_CIUDADES.length]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        <Panel title="Tiempo máximo de suministro" sub="Distribución de subastas por rango de días">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={porTiempoSuministro} margin={{ left:0, right:8, top:8, bottom:0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false} />
+              <XAxis dataKey="rango" tick={{ fill:'#8AA4C8', fontSize:11 }} axisLine={{ stroke:'#2A3340' }} tickLine={false} />
+              <YAxis tick={{ fill:'#8AA4C8', fontSize:10 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background:'#1B232D', border:'1px solid #2A3340', borderRadius:8, fontSize:12 }} />
+              <Bar dataKey="cantidad" radius={[6,6,0,0]} fill="#8AA4C8" name="Subastas" />
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+      </div>
+
+      {/* NUEVA: Motivos de no ganada */}
+      {motivosNoGanada.length > 0 && (
+        <div className="mb-4">
+          <Panel title="Motivos de subasta no ganada" sub="Razones registradas por los asesores">
+            <div className="flex flex-wrap gap-3">
+              {motivosNoGanada.map(m => (
+                <div key={m.motivo} className="bg-brand-bg border border-brand-red/30 rounded-xl px-5 py-4 flex items-center gap-3">
+                  <TrendingDown size={16} className="text-brand-red" />
+                  <div>
+                    <p className="text-brand-text font-medium text-sm">{m.motivo}</p>
+                    <p className="text-brand-subtle font-mono text-xs">{m.count} subastas</p>
+                  </div>
+                </div>
+              ))}
+              {motivosNoGanada.length < 3 && (
+                <div className="bg-brand-bg border border-dashed border-brand-border rounded-xl px-5 py-4 text-brand-muted text-xs font-mono">
+                  Pocos registros — encourage tu equipo a registrar el motivo al perder una subasta
+                </div>
+              )}
+            </div>
+          </Panel>
+        </div>
+      )}
+
       {/* Tabla efectividad por asesor */}
-      <Panel title="Efectividad por asesor" sub="Tasa autorización (ganadas/resueltas) · Efectividad (ganadas/total)">
+      <Panel title="Efectividad por asesor" sub="Tasa autorización (ganadas/decididas) · Efectividad (ganadas/total)">
         <div className="overflow-x-auto mb-6">
           <table className="w-full text-sm">
             <thead>
@@ -320,7 +442,7 @@ export default function Dashboard() {
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-brand-teal" style={{ width: `${a.tasaAuth}%` }} />
+                        <div className="h-full rounded-full bg-brand-teal" style={{ width:`${a.tasaAuth}%` }} />
                       </div>
                       <span className="font-mono text-xs">{fmtPct(a.tasaAuth)}</span>
                     </div>
@@ -328,7 +450,7 @@ export default function Dashboard() {
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${a.efectividad}%`, background: a.efectividad >= 30 ? '#4FD1C5' : '#E8A33D' }} />
+                        <div className="h-full rounded-full" style={{ width:`${a.efectividad}%`, background: a.efectividad>=30?'#4FD1C5':'#E8A33D' }} />
                       </div>
                       <span className="font-mono text-xs">{fmtPct(a.efectividad)}</span>
                     </div>
@@ -363,7 +485,7 @@ export default function Dashboard() {
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-2">
                         <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${a.tasa}%`, background: a.tasa >= 40 ? '#4FD1C5' : '#E8A33D' }} />
+                          <div className="h-full rounded-full" style={{ width:`${a.tasa}%`, background: a.tasa>=40?'#4FD1C5':'#E8A33D' }} />
                         </div>
                         <span className="font-mono text-xs text-brand-subtle">{fmtPct(a.tasa)}</span>
                       </div>
@@ -379,31 +501,29 @@ export default function Dashboard() {
   )
 }
 
-function KpiCard({ icon, label, value, accent, small, hint }: {
-  icon: React.ReactNode; label: string; value: string | number; accent: string; small?: boolean; hint?: string
-}) {
-  const borderColor: Record<string, string> = { teal: '#4FD1C5', gold: '#E8A33D', blue: '#60A5FA', red: '#E5484D', muted: '#5B6472' }
+function KpiCard({ icon, label, value, accent, small, hint }: { icon:React.ReactNode; label:string; value:string|number; accent:string; small?:boolean; hint?:string }) {
+  const borderColor: Record<string,string> = { teal:'#4FD1C5', gold:'#E8A33D', blue:'#60A5FA', red:'#E5484D', muted:'#5B6472' }
   return (
     <div className="bg-brand-surface border border-brand-border rounded-xl p-4 relative overflow-hidden">
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: borderColor[accent] || '#4FD1C5' }} />
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background: borderColor[accent]||'#4FD1C5' }} />
       <div className="flex items-center gap-2 text-brand-subtle mb-2">{icon}<span className="text-xs">{label}</span></div>
-      <div className={`font-title font-bold text-brand-text ${small ? 'text-lg' : 'text-2xl'}`}>{value}</div>
+      <div className={`font-title font-bold text-brand-text ${small?'text-lg':'text-2xl'}`}>{value}</div>
       {hint && <div className="text-brand-muted text-xs mt-1 font-mono">{hint}</div>}
     </div>
   )
 }
 
-function StatBadge({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
-  const cls: Record<string, string> = { teal: 'text-brand-teal', gold: 'text-brand-gold', red: 'text-brand-red' }
+function StatBadge({ icon, label, value, color }: { icon:React.ReactNode; label:string; value:number; color:string }) {
+  const cls: Record<string,string> = { teal:'text-brand-teal', gold:'text-brand-gold', red:'text-brand-red' }
   return (
     <div className="bg-brand-surface border border-brand-border rounded-xl p-4 flex justify-between items-center">
       <div className="flex items-center gap-2 text-brand-subtle text-sm">{icon}{label}</div>
-      <span className={`font-mono font-bold text-xl ${cls[color] || ''}`}>{value}</span>
+      <span className={`font-mono font-bold text-xl ${cls[color]||''}`}>{value}</span>
     </div>
   )
 }
 
-function Panel({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+function Panel({ title, sub, children }: { title:string; sub:string; children:React.ReactNode }) {
   return (
     <div className="bg-brand-surface border border-brand-border rounded-xl p-5">
       <h3 className="font-title text-base font-semibold text-brand-text">{title}</h3>
