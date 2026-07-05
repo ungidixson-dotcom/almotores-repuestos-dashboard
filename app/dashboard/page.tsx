@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line,
 } from 'recharts'
-import { LogOut, TrendingUp, CheckCircle, Clock, Timer, FileCheck, FileX, FileClock, Calendar, Target } from 'lucide-react'
+import { LogOut, TrendingUp, CheckCircle, Clock, Timer, FileCheck, FileX, FileClock, Calendar, Target, RefreshCw } from 'lucide-react'
 
 // ── Constantes ──────────────────────────────────────────────────────────────
 const ESTADOS_GANADOS   = ['Autorizada Completa', 'Autorizada parcial']
@@ -66,6 +66,9 @@ export default function Dashboard() {
   const [resumenMensual,   setResumenMensual]   = useState<ResumenMensual[]>([])
   const [mesesDisponibles, setMesesDisponibles] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [ultimaActualizacion, setUltimaActualizacion] = useState<Date|null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [countdown, setCountdown] = useState(1800) // 30 minutos
   const [filtroAsesor,      setFiltroAsesor]      = useState(0)
   const [filtroAseguradora, setFiltroAseguradora] = useState(0)
   const [filtroMes,         setFiltroMes]         = useState('todos')
@@ -92,10 +95,30 @@ export default function Dashboard() {
       setAsesores((ases as Asesor[])||[])
       setResumenMensual((resumen as ResumenMensual[])||[])
       setMesesDisponibles(((meses as unknown as {mes:string}[])||[]).map(m=>m.mes).filter(Boolean))
+      setUltimaActualizacion(new Date())
       setLoading(false)
     }
     fetchData()
   },[router])
+
+  // Auto-refresh cada 5 minutos
+  useEffect(()=>{
+    if (!autoRefresh) return
+    const interval = setInterval(()=>{
+      setCountdown(c=>{
+        if (c<=1){
+          // Refrescar datos
+          supabase.from('v_kpis_subastas').select('*').then(({data})=>{ if(data) setKpiRows(data as KpiRow[]) })
+          supabase.from('v_resumen_mensual').select('*').then(({data})=>{ if(data) setResumenMensual(data as ResumenMensual[]) })
+          supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').limit(2000).then(({data})=>{ if(data) setFacturas(data as Factura[]) })
+          setUltimaActualizacion(new Date())
+          return 1800
+        }
+        return c-1
+      })
+    }, 1000)
+    return ()=>clearInterval(interval)
+  },[autoRefresh])
 
   async function handleLogout(){await supabase.auth.signOut();router.push('/login')}
 
@@ -265,9 +288,37 @@ export default function Dashboard() {
           <div className="w-2 h-2 rounded-full bg-brand-teal animate-pulse"/>
           <span className="font-mono text-xs text-brand-subtle uppercase tracking-widest">Almotores KIA · Repuestos &amp; Accesorios</span>
         </div>
-        <button onClick={handleLogout} className="flex items-center gap-2 text-brand-subtle hover:text-brand-text text-xs font-mono transition-colors">
-          <LogOut size={13}/> Salir
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Botón refresh manual */}
+            <button
+              onClick={()=>{
+                supabase.from('v_kpis_subastas').select('*').then(({data})=>{ if(data) setKpiRows(data as KpiRow[]) })
+                supabase.from('v_resumen_mensual').select('*').then(({data})=>{ if(data) setResumenMensual(data as ResumenMensual[]) })
+                supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').limit(2000).then(({data})=>{ if(data) setFacturas(data as Factura[]) })
+                setUltimaActualizacion(new Date())
+                setCountdown(1800)
+              }}
+              className="flex items-center gap-1.5 text-xs font-mono text-brand-subtle hover:text-brand-teal transition-colors border border-brand-border rounded-lg px-2.5 py-1"
+              title="Actualizar ahora"
+            >
+              <RefreshCw size={12}/> Actualizar
+            </button>
+            {/* Contador auto-refresh */}
+            <div className="flex items-center gap-1.5 text-xs font-mono text-brand-muted" title="Próxima actualización automática">
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-teal animate-pulse"/>
+              {`Auto en ${Math.floor(countdown/60)}:${String(countdown%60).padStart(2,'0')}`}
+            </div>
+            {ultimaActualizacion&&(
+              <span className="text-brand-muted font-mono text-xs hidden md:block">
+                {ultimaActualizacion.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}
+              </span>
+            )}
+          </div>
+          <button onClick={handleLogout} className="flex items-center gap-2 text-brand-subtle hover:text-brand-text text-xs font-mono transition-colors">
+            <LogOut size={13}/> Salir
+          </button>
+        </div>
       </div>
 
       <div className="p-6">
