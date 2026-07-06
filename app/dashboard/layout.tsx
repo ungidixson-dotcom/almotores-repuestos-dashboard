@@ -3,7 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Gavel, Receipt, FolderOpen, Calendar, Shield, User,
+  Receipt, FolderOpen, Calendar, Shield, User,
   ChevronDown, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 
@@ -21,7 +21,6 @@ const CANALES: NavItem[] = [
 ]
 
 const NAV: NavGroup[] = [
-  { label: 'Subastas', icon: <Gavel size={16} />, href: '/dashboard' },
   {
     label: 'Facturación', icon: <Receipt size={16} />,
     children: [
