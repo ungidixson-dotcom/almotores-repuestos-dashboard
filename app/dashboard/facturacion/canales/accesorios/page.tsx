@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { Package, TrendingUp, ShoppingBag, Building2 } from 'lucide-react'
+import { Package, TrendingUp, ShoppingBag, Building2, Percent } from 'lucide-react'
 import { KpiCard, Panel, fmtCOP, fmtM } from '@/components/dashboard-ui'
 
 type FilaAccesorio = {
@@ -21,6 +22,7 @@ export default function FacturacionAccesoriosPage() {
   const [filas, setFilas] = useState<FilaAccesorio[]>([])
   const [loading, setLoading] = useState(true)
   const [filtroSede, setFiltroSede] = useState('todas')
+  const [filtroMes, setFiltroMes] = useState('todos')
 
   useEffect(() => {
     async function fetchData() {
@@ -48,9 +50,30 @@ export default function FacturacionAccesoriosPage() {
     return ['todas', ...Array.from(new Set(s)).sort()]
   }, [filas])
 
+  const mesesDisponibles = useMemo(() => {
+    const map: Record<string, { label: string; orden: number }> = {}
+    filas.forEach(f => {
+      if (!f.fecha_cierre) return
+      const d = new Date(f.fecha_cierre)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!map[key]) map[key] = { label: `${MESES[d.getMonth()]} ${d.getFullYear()}`, orden: d.getFullYear() * 12 + d.getMonth() }
+    })
+    return Object.entries(map)
+      .sort((a, b) => b[1].orden - a[1].orden)
+      .map(([key, v]) => ({ key, label: v.label }))
+  }, [filas])
+
   const ff = useMemo(
-    () => filas.filter(f => filtroSede === 'todas' || f.sede === filtroSede),
-    [filas, filtroSede]
+    () => filas.filter(f => {
+      if (filtroSede !== 'todas' && f.sede !== filtroSede) return false
+      if (filtroMes !== 'todos' && f.fecha_cierre) {
+        const d = new Date(f.fecha_cierre)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        if (key !== filtroMes) return false
+      }
+      return true
+    }),
+    [filas, filtroSede, filtroMes]
   )
 
   const kpis = useMemo(() => {
@@ -108,9 +131,17 @@ export default function FacturacionAccesoriosPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="font-title text-2xl font-bold text-brand-text">Facturación · Accesorios</h1>
-        <p className="text-brand-subtle text-sm mt-1">Datos sincronizados desde Google Sheet — 2023 a 2026</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-title text-2xl font-bold text-brand-text">Facturación · Accesorios</h1>
+          <p className="text-brand-subtle text-sm mt-1">Datos sincronizados desde Google Sheet — 2023 a 2026</p>
+        </div>
+        <Link
+          href="/dashboard/facturacion/canales/accesorios/comisiones"
+          className="shrink-0 flex items-center gap-2 text-xs font-mono text-brand-gold hover:text-brand-text border border-brand-gold/40 hover:border-brand-gold rounded-lg px-3 py-2 transition-colors"
+        >
+          <Percent size={13} /> Ver Ventas vs Comisiones →
+        </Link>
       </div>
 
       <div className="flex flex-wrap gap-2 mb-6 p-4 bg-brand-surface border border-brand-border rounded-xl">
@@ -125,6 +156,25 @@ export default function FacturacionAccesoriosPage() {
             {sedes.map(s => <option key={s} value={s}>{s === 'todas' ? 'Todas' : s}</option>)}
           </select>
         </label>
+        <label className="flex items-center gap-2">
+          <span className="text-xs text-brand-subtle">Mes de facturación</span>
+          <select
+            value={filtroMes}
+            onChange={e => setFiltroMes(e.target.value)}
+            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal"
+          >
+            <option value="todos">Todos</option>
+            {mesesDisponibles.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          </select>
+        </label>
+        {(filtroSede !== 'todas' || filtroMes !== 'todos') && (
+          <button
+            onClick={() => { setFiltroSede('todas'); setFiltroMes('todos') }}
+            className="ml-auto text-xs font-mono text-brand-muted hover:text-brand-red transition-colors border border-brand-border rounded-lg px-3 py-1.5"
+          >
+            × Limpiar filtros
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
