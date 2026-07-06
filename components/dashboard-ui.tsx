@@ -1,124 +1,60 @@
-'use client'
-import { useState } from 'react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import {
-  Gavel, Receipt, FolderOpen, Calendar, Shield, User,
-  ChevronDown, ChevronRight, LayoutGrid,
-} from 'lucide-react'
+// Componentes UI compartidos — mismo lenguaje visual que app/dashboard/page.tsx (v21)
+import React from 'react'
 
-// ── Estructura de navegación del Workspace ──────────────────────────────────
-type NavItem = { label: string; href: string; icon?: React.ReactNode }
-type NavGroup = { label: string; icon: React.ReactNode; href?: string; children?: NavItem[] }
+export const fmtCOP = (n: number) =>
+  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
+export const fmtPct = (n: number) => `${(n || 0).toFixed(1)}%`
+export const fmtM = (n: number) =>
+  n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(0)}M` : `$${(n / 1e3).toFixed(0)}K`
 
-const CANALES: NavItem[] = [
-  { label: 'Accesorios', href: '/dashboard/facturacion/canales/accesorios' },
-  { label: 'Taller',     href: '/dashboard/facturacion/canales/taller' },
-  { label: 'Mostrador',  href: '/dashboard/facturacion/canales/mostrador' },
-  { label: 'Mayoristas', href: '/dashboard/facturacion/canales/mayoristas' },
-  { label: 'Subasta',    href: '/dashboard/facturacion/canales/subasta' },
-  { label: 'Colisión',   href: '/dashboard/facturacion/canales/colision' },
-]
-
-const NAV: NavGroup[] = [
-  { label: 'Subastas', icon: <Gavel size={16} />, href: '/dashboard' },
-  {
-    label: 'Facturación', icon: <Receipt size={16} />,
-    children: [
-      { label: 'Facturación General', href: '/dashboard/facturacion' },
-      ...CANALES.map(c => ({ label: c.label, href: c.href })),
-    ],
-  },
-  { label: 'Resumen Mensual', icon: <Calendar size={16} />, href: '/dashboard/resumen-mensual' },
-  { label: 'Aseguradoras',    icon: <Shield size={16} />,   href: '/dashboard/aseguradoras' },
-  { label: 'Asesores',        icon: <User size={16} />,     href: '/dashboard/asesores' },
-]
-
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ Facturación: true })
-
-  const toggleGroup = (label: string) =>
-    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }))
-
-  const isActive = (href?: string) => href && pathname === href
-  const isGroupActive = (children?: NavItem[]) => children?.some(c => pathname === c.href)
-
+export function KpiCard({
+  icon, label, value, accent, small, hint,
+}: { icon: React.ReactNode; label: string; value: string | number; accent: string; small?: boolean; hint?: string }) {
+  const bc: Record<string, string> = { teal: '#4FD1C5', gold: '#E8A33D', blue: '#60A5FA', red: '#E5484D', muted: '#5B6472' }
   return (
-    <div className="flex min-h-screen bg-brand-bg text-brand-text font-sans">
-      {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 bg-brand-surface border-r border-brand-border flex flex-col">
-        <div className="p-5 border-b border-brand-border">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-teal/15 border border-brand-teal/30 flex items-center justify-center">
-              <LayoutGrid size={16} className="text-brand-teal" />
-            </div>
-            <div>
-              <p className="font-title font-bold text-sm text-brand-text leading-tight">AlmotoresKIA</p>
-              <p className="text-[10px] text-brand-muted font-mono tracking-wider">WORKSPACE</p>
-            </div>
-          </div>
+    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 relative overflow-hidden">
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: bc[accent] || '#4FD1C5' }} />
+      <div className="flex items-center gap-2 text-brand-subtle mb-2">{icon}<span className="text-xs">{label}</span></div>
+      <div className={`font-title font-bold text-brand-text ${small ? 'text-lg' : 'text-2xl'}`}>{value}</div>
+      {hint && <p className="text-brand-muted text-xs mt-1 font-mono">{hint}</p>}
+    </div>
+  )
+}
+
+export function Panel({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-brand-surface border border-brand-border rounded-xl p-5">
+      <h3 className="font-title text-base font-semibold text-brand-text">{title}</h3>
+      {sub && <p className="text-xs text-brand-subtle mb-4">{sub}</p>}
+      {children}
+    </div>
+  )
+}
+
+export function StatBadge({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number | string; color: string }) {
+  const cls: Record<string, string> = { teal: 'text-brand-teal', gold: 'text-brand-gold', red: 'text-brand-red' }
+  return (
+    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 flex justify-between items-center">
+      <div className="flex items-center gap-2 text-brand-subtle text-sm">{icon}{label}</div>
+      <span className={`font-mono font-bold text-xl ${cls[color] || ''}`}>{value}</span>
+    </div>
+  )
+}
+
+export function EnConstruccion({ titulo, detalle }: { titulo: string; detalle: string }) {
+  return (
+    <div className="p-6">
+      <h1 className="font-title text-2xl font-bold text-brand-text mb-1">{titulo}</h1>
+      <p className="text-brand-subtle text-sm mb-6">{detalle}</p>
+      <div className="bg-brand-surface border border-dashed border-brand-border rounded-xl p-12 flex flex-col items-center justify-center text-center">
+        <div className="w-12 h-12 rounded-full bg-brand-gold/10 border border-brand-gold/30 flex items-center justify-center mb-4">
+          <span className="text-brand-gold text-xl">⚠</span>
         </div>
-
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
-          <p className="font-mono text-[10px] text-brand-muted uppercase tracking-wider px-2 mb-2">Informes</p>
-          <ul className="space-y-1">
-            {NAV.map(item => (
-              <li key={item.label}>
-                {item.children ? (
-                  <>
-                    <button
-                      onClick={() => toggleGroup(item.label)}
-                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                        ${isGroupActive(item.children) ? 'text-brand-teal' : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
-                    >
-                      <span className="flex items-center gap-2">{item.icon}{item.label}</span>
-                      {openGroups[item.label] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-                    {openGroups[item.label] && (
-                      <ul className="mt-1 ml-4 pl-3 border-l border-brand-border space-y-0.5">
-                        {item.children.map(sub => (
-                          <li key={sub.href}>
-                            <Link
-                              href={sub.href}
-                              className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
-                                ${isActive(sub.href)
-                                  ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                  : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
-                            >
-                              {sub.label}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                ) : (
-                  <Link
-                    href={item.href!}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                      ${isActive(item.href)
-                        ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                        : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
-                  >
-                    {item.icon}{item.label}
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="p-4 border-t border-brand-border">
-          <div className="flex items-center gap-2">
-            <FolderOpen size={13} className="text-brand-muted" />
-            <p className="text-[10px] text-brand-muted font-mono">Repuestos & Accesorios</p>
-          </div>
-        </div>
-      </aside>
-
-      {/* ── CONTENIDO ───────────────────────────────────────────────────── */}
-      <main className="flex-1 min-w-0">{children}</main>
+        <p className="font-title text-brand-text font-semibold mb-1">Módulo en construcción</p>
+        <p className="text-brand-subtle text-sm max-w-md">
+          Este informe está pendiente de conexión de datos. Se irá activando a medida que se sincronicen las fuentes correspondientes.
+        </p>
+      </div>
     </div>
   )
 }
