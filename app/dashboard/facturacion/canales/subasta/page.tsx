@@ -1,12 +1,13 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line,
 } from 'recharts'
-import { LogOut, TrendingUp, CheckCircle, Clock, Timer, FileCheck, FileX, FileClock, Calendar, Target, RefreshCw } from 'lucide-react'
+import { LogOut, TrendingUp, CheckCircle, Clock, Timer, FileCheck, FileX, FileClock, Calendar, Target, RefreshCw, BarChart3 } from 'lucide-react'
 
 // ── Constantes ──────────────────────────────────────────────────────────────
 const ESTADOS_GANADOS   = ['Autorizada Completa', 'Autorizada parcial']
@@ -53,6 +54,7 @@ const fmtM   = (n: number) => n>=1e9?`$${(n/1e9).toFixed(1)}B`:n>=1e6?`$${(n/1e6
 type Aseguradora    = { id: number; nombre_corto: string }
 type Asesor         = { id: number; nombre: string }
 type ResumenMensual = { mes: string; orden: number; total_subastas: number; ganadas: number; no_autorizadas: number; valor_autorizado: number; valor_subastado: number }
+type ResumenHistorico = { anio: number; mes_num: number; mes: string; total_subastas: number; ganadas: number; no_autorizadas: number; valor_autorizado: number; valor_subastado: number }
 type KpiRow = { mes_subasta: string; marca: string; aseguradora_id: number; asesor_id: number; estado_autorizacion: string; ciudad_destino: string; total: number; valor_subastado: number; valor_autorizado: number; tiempo_promedio: number }
 type Factura = { id: number; placa: string; marca: string; aseguradora_id: number; asesor_id: number; est_radicacion: string; fecha_radicado: string; base_imp: number; mes: string }
 
@@ -64,6 +66,7 @@ export default function Dashboard() {
   const [aseguradoras, setAseguradoras] = useState<Aseguradora[]>([])
   const [asesores,     setAsesores]     = useState<Asesor[]>([])
   const [resumenMensual,   setResumenMensual]   = useState<ResumenMensual[]>([])
+  const [resumenHistorico, setResumenHistorico] = useState<ResumenHistorico[]>([])
   const [mesesDisponibles, setMesesDisponibles] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [ultimaActualizacion, setUltimaActualizacion] = useState<Date|null>(null)
@@ -73,6 +76,8 @@ export default function Dashboard() {
   const [filtroAseguradora, setFiltroAseguradora] = useState(0)
   const [filtroMes,         setFiltroMes]         = useState('todos')
   const [filtroMarca,       setFiltroMarca]       = useState('todas')
+  const [rangoMesInicio, setRangoMesInicio] = useState(1)  // enero
+  const [rangoMesFin,    setRangoMesFin]    = useState(12) // se ajusta al ultimo mes con datos, ver abajo
 
   const asegMap = useMemo(()=>{const m:Record<number,string>={};aseguradoras.forEach(a=>{m[a.id]=a.nombre_corto});return m},[aseguradoras])
   const asesMap = useMemo(()=>{const m:Record<number,string>={};asesores.forEach(a=>{m[a.id]=a.nombre});return m},[asesores])
@@ -81,19 +86,21 @@ export default function Dashboard() {
     async function fetchData() {
       const {data:{user}} = await supabase.auth.getUser()
       if (!user){router.push('/login');return}
-      const [{data:kpis},{data:f},{data:aseg},{data:ases},{data:resumen},{data:meses}] = await Promise.all([
+      const [{data:kpis},{data:f},{data:aseg},{data:ases},{data:resumen},{data:meses},{data:historico}] = await Promise.all([
         supabase.from('v_kpis_subastas').select('*'),
         supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').limit(2000),
         supabase.from('aseguradoras').select('id,nombre_corto'),
         supabase.from('asesores').select('id,nombre'),
         supabase.from('v_resumen_mensual').select('*'),
         supabase.from('v_meses_disponibles').select('mes,orden').order('orden'),
+        supabase.from('resumen_historico_subastas').select('*').order('mes_num'),
       ])
       setKpiRows((kpis as KpiRow[])||[])
       setFacturas((f as Factura[])||[])
       setAseguradoras((aseg as Aseguradora[])||[])
       setAsesores((ases as Asesor[])||[])
       setResumenMensual((resumen as ResumenMensual[])||[])
+      setResumenHistorico((historico as ResumenHistorico[])||[])
       setMesesDisponibles(((meses as unknown as {mes:string}[])||[]).map(m=>m.mes).filter(Boolean))
       setUltimaActualizacion(new Date())
       setLoading(false)
@@ -122,8 +129,16 @@ export default function Dashboard() {
 
   async function handleLogout(){await supabase.auth.signOut();router.push('/login')}
 
+  // Normaliza marca para evitar duplicados por may/minusculas inconsistentes en el origen (ej: "KIA" vs "Kia")
+  const normalizeMarca = (raw: string | null | undefined): string => {
+    if (!raw) return ''
+    const key = raw.trim().toLowerCase()
+    const CANONICAL: Record<string, string> = { kia: 'Kia', vw: 'VW', jac: 'Jac', renault: 'Renault' }
+    return CANONICAL[key] || (key.charAt(0).toUpperCase() + key.slice(1))
+  }
+
   const marcas = useMemo(()=>{
-    const ms=kpiRows.map(r=>r.marca).filter((m):m is string=>!!m&&m.trim()!=='')
+    const ms=kpiRows.map(r=>normalizeMarca(r.marca)).filter((m):m is string=>!!m&&m.trim()!=='')
     return ['todas',...Array.from(new Set(ms)).sort()]
   },[kpiRows])
 
@@ -133,14 +148,14 @@ export default function Dashboard() {
     (filtroAsesor===0      ||r.asesor_id===filtroAsesor)&&
     (filtroAseguradora===0 ||r.aseguradora_id===filtroAseguradora)&&
     (filtroMes==='todos'   ||r.mes_subasta===filtroMes)&&
-    (filtroMarca==='todas' ||r.marca===filtroMarca)
+    (filtroMarca==='todas' ||normalizeMarca(r.marca)===filtroMarca)
   ),[kpiRows,filtroAsesor,filtroAseguradora,filtroMes,filtroMarca])
 
   const ff = useMemo(()=>facturas.filter(f=>
     (filtroAsesor===0      ||f.asesor_id===filtroAsesor)&&
     (filtroAseguradora===0 ||f.aseguradora_id===filtroAseguradora)&&
     (filtroMes==='todos'   ||f.mes===filtroMes)&&
-    (filtroMarca==='todas' ||f.marca===filtroMarca)
+    (filtroMarca==='todas' ||normalizeMarca(f.marca)===filtroMarca)
   ),[facturas,filtroAsesor,filtroAseguradora,filtroMes,filtroMarca])
 
   const kpis = useMemo(()=>{
@@ -161,6 +176,93 @@ export default function Dashboard() {
       tiempoProm,
     }
   },[sf])
+
+  const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+
+  // Meses que realmente tienen datos del año en curso (para fijar el limite superior del selector)
+  const mesesConDatosActualNums = useMemo(() => {
+    const nums: number[] = []
+    resumenMensual.forEach(r => {
+      const idx = MESES_ES.indexOf((r.mes || '').toLowerCase().trim())
+      if (idx >= 0) nums.push(idx + 1)
+    })
+    return nums.sort((a, b) => a - b)
+  }, [resumenMensual])
+
+  const ultimoMesConDatos = mesesConDatosActualNums.length
+    ? mesesConDatosActualNums[mesesConDatosActualNums.length - 1]
+    : 12
+
+  // Ajusta el rango por defecto la primera vez que llegan datos (enero -> ultimo mes con info)
+  useEffect(() => {
+    if (mesesConDatosActualNums.length > 0) {
+      setRangoMesFin(prev => (prev === 12 ? ultimoMesConDatos : prev))
+    }
+  }, [ultimoMesConDatos, mesesConDatosActualNums.length])
+
+  const comparativo2025 = useMemo(() => {
+    const hist2025: Record<number, ResumenHistorico> = {}
+    resumenHistorico.filter(r => r.anio === 2025).forEach(r => { hist2025[r.mes_num] = r })
+
+    const actualPorMes: Record<number, ResumenMensual> = {}
+    resumenMensual.forEach(r => {
+      const idx = MESES_ES.indexOf((r.mes || '').toLowerCase().trim())
+      if (idx >= 0) actualPorMes[idx + 1] = r
+    })
+
+    const desde = Math.min(rangoMesInicio, rangoMesFin)
+    const hasta = Math.max(rangoMesInicio, rangoMesFin)
+
+    // Meses dentro del rango elegido (sin importar si el año actual ya tiene datos o no,
+    // para que el usuario vea claramente en cuales meses aun no hay info)
+    const mesesRango: number[] = []
+    for (let m = desde; m <= hasta; m++) mesesRango.push(m)
+
+    const filas = mesesRango.map(mesNum => {
+      const act = actualPorMes[mesNum]
+      const his = hist2025[mesNum]
+      return {
+        mes: MESES_ES[mesNum - 1].slice(0, 3),
+        subastas2025: his?.total_subastas || 0,
+        subastasActual: act?.total_subastas || 0,
+        facturacion2025: his?.valor_autorizado || 0,
+        facturacionActual: act?.valor_autorizado || 0,
+        tieneDatoActual: !!act,
+      }
+    })
+
+    // Para promedios y totales solo cuentan los meses del rango que YA tienen dato del año actual
+    const filasConDato = filas.filter(f => f.tieneDatoActual)
+    const numMesesConDato = filasConDato.length || 1 // evita division por 0
+
+    const totalSubastas2025 = filasConDato.reduce((a, f) => a + f.subastas2025, 0)
+    const totalSubastasActual = filasConDato.reduce((a, f) => a + f.subastasActual, 0)
+    const totalFacturacion2025 = filasConDato.reduce((a, f) => a + f.facturacion2025, 0)
+    const totalFacturacionActual = filasConDato.reduce((a, f) => a + f.facturacionActual, 0)
+
+    const promedioSubastas2025 = totalSubastas2025 / numMesesConDato
+    const promedioSubastasActual = totalSubastasActual / numMesesConDato
+    const promedioFacturacion2025 = totalFacturacion2025 / numMesesConDato
+    const promedioFacturacionActual = totalFacturacionActual / numMesesConDato
+
+    const varSubastas = totalSubastas2025 ? ((totalSubastasActual - totalSubastas2025) / totalSubastas2025) * 100 : 0
+    const varFacturacion = totalFacturacion2025 ? ((totalFacturacionActual - totalFacturacion2025) / totalFacturacion2025) * 100 : 0
+    const varPromedioSubastas = promedioSubastas2025 ? ((promedioSubastasActual - promedioSubastas2025) / promedioSubastas2025) * 100 : 0
+    const varPromedioFacturacion = promedioFacturacion2025 ? ((promedioFacturacionActual - promedioFacturacion2025) / promedioFacturacion2025) * 100 : 0
+
+    const totalSubastas2025Completo = resumenHistorico.filter(r => r.anio === 2025).reduce((a, r) => a + r.total_subastas, 0)
+    const totalFacturacion2025Completo = resumenHistorico.filter(r => r.anio === 2025).reduce((a, r) => a + r.valor_autorizado, 0)
+
+    return {
+      filas,
+      numMesesConDato,
+      totalSubastas2025YTD: totalSubastas2025, totalSubastasActualYTD: totalSubastasActual,
+      totalFacturacion2025YTD: totalFacturacion2025, totalFacturacionActualYTD: totalFacturacionActual,
+      promedioSubastas2025, promedioSubastasActual, promedioFacturacion2025, promedioFacturacionActual,
+      varPromedioSubastas, varPromedioFacturacion,
+      varSubastas, varFacturacion, totalSubastas2025Completo, totalFacturacion2025Completo,
+    }
+  }, [resumenMensual, resumenHistorico, rangoMesInicio, rangoMesFin])
 
   const fKpis = useMemo(()=>({
     radicadas:  ff.filter(f=>f.est_radicacion==='Radicada').length,
@@ -322,9 +424,17 @@ export default function Dashboard() {
       </div>
 
       <div className="p-6">
-        <div className="mb-6">
-          <h1 className="font-title text-2xl font-bold text-brand-text">Torre de Control · Subastas</h1>
-          <p className="text-brand-subtle text-sm mt-1">Análisis en tiempo real — Enero a Julio 2026</p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-title text-2xl font-bold text-brand-text">Torre de Control · Subastas</h1>
+            <p className="text-brand-subtle text-sm mt-1">Análisis en tiempo real — Enero a Julio 2026</p>
+          </div>
+          <Link
+            href="/dashboard/facturacion/canales/subasta/comparativo"
+            className="shrink-0 flex items-center gap-2 text-xs font-mono text-brand-gold hover:text-brand-text border border-brand-gold/40 hover:border-brand-gold rounded-lg px-3 py-2 transition-colors"
+          >
+            <BarChart3 size={13} /> Análisis Comparativo de Períodos →
+          </Link>
         </div>
 
         {/* Filtros */}
@@ -404,6 +514,122 @@ export default function Dashboard() {
           <KpiCard icon={<CheckCircle size={15}/>} label="Valor autorizado"  value={fmtCOP(kpis.valorAut)} accent="teal"  small/>
           <KpiCard icon={<TrendingUp size={15}/>}  label="Conversión en $"   value={fmtPct(kpis.convValor)} accent="gold"/>
         </div>
+
+        {/* ── COMPARATIVO VS 2025 ──────────────────────────────────────────── */}
+        <Panel title="Comparativo vs 2025" sub="Elige el rango de meses a comparar (año actual vs 2025)">
+          {/* Selector de rango de meses */}
+          <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-brand-bg border border-brand-border rounded-xl">
+            <span className="font-mono text-[10px] text-brand-muted uppercase tracking-wider mr-1">Rango</span>
+            <label className="flex items-center gap-2">
+              <span className="text-xs text-brand-subtle">Desde</span>
+              <select
+                value={rangoMesInicio}
+                onChange={e => setRangoMesInicio(Number(e.target.value))}
+                className="bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text text-xs outline-none focus:border-brand-teal"
+              >
+                {MESES_ES.map((m, i) => <option key={m} value={i + 1}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-xs text-brand-subtle">Hasta</span>
+              <select
+                value={rangoMesFin}
+                onChange={e => setRangoMesFin(Number(e.target.value))}
+                className="bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text text-xs outline-none focus:border-brand-teal"
+              >
+                {MESES_ES.map((m, i) => <option key={m} value={i + 1}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
+              </select>
+            </label>
+            <span className="text-[10px] text-brand-muted font-mono ml-auto">
+              {comparativo2025.numMesesConDato} {comparativo2025.numMesesConDato === 1 ? 'mes' : 'meses'} con dato del año actual en este rango
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="bg-brand-bg border border-brand-border rounded-xl p-4">
+              <p className="text-xs text-brand-subtle mb-1">Subastas realizadas (total del rango)</p>
+              <div className="flex items-end gap-3">
+                <p className="font-title text-2xl font-bold text-brand-text">{comparativo2025.totalSubastasActualYTD}</p>
+                <p className="text-xs text-brand-muted font-mono mb-1">vs {comparativo2025.totalSubastas2025YTD} en 2025</p>
+              </div>
+              <p className={`text-xs font-mono mt-1 ${comparativo2025.varSubastas >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
+                {comparativo2025.varSubastas >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(comparativo2025.varSubastas))} {comparativo2025.varSubastas >= 0 ? 'más' : 'menos'} que 2025 en este rango
+              </p>
+            </div>
+            <div className="bg-brand-bg border border-brand-border rounded-xl p-4">
+              <p className="text-xs text-brand-subtle mb-1">Facturación (total del rango)</p>
+              <div className="flex items-end gap-3">
+                <p className="font-title text-2xl font-bold text-brand-text">{fmtM(comparativo2025.totalFacturacionActualYTD)}</p>
+                <p className="text-xs text-brand-muted font-mono mb-1">vs {fmtM(comparativo2025.totalFacturacion2025YTD)} en 2025</p>
+              </div>
+              <p className={`text-xs font-mono mt-1 ${comparativo2025.varFacturacion >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
+                {comparativo2025.varFacturacion >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(comparativo2025.varFacturacion))} {comparativo2025.varFacturacion >= 0 ? 'más' : 'menos'} que 2025 en este rango
+              </p>
+            </div>
+          </div>
+
+          {/* Promedios mensuales del rango elegido */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-brand-surface border border-brand-border rounded-xl p-4">
+              <p className="text-xs text-brand-subtle mb-1">Promedio mensual de subastas</p>
+              <div className="flex items-end gap-3">
+                <p className="font-title text-xl font-bold text-brand-teal">{comparativo2025.promedioSubastasActual.toFixed(1)}</p>
+                <p className="text-xs text-brand-muted font-mono mb-0.5">vs {comparativo2025.promedioSubastas2025.toFixed(1)} en 2025</p>
+              </div>
+              <p className={`text-xs font-mono mt-1 ${comparativo2025.varPromedioSubastas >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
+                {comparativo2025.varPromedioSubastas >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(comparativo2025.varPromedioSubastas))}
+              </p>
+            </div>
+            <div className="bg-brand-surface border border-brand-border rounded-xl p-4">
+              <p className="text-xs text-brand-subtle mb-1">Promedio mensual de facturación</p>
+              <div className="flex items-end gap-3">
+                <p className="font-title text-xl font-bold text-brand-gold">{fmtM(comparativo2025.promedioFacturacionActual)}</p>
+                <p className="text-xs text-brand-muted font-mono mb-0.5">vs {fmtM(comparativo2025.promedioFacturacion2025)} en 2025</p>
+              </div>
+              <p className={`text-xs font-mono mt-1 ${comparativo2025.varPromedioFacturacion >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
+                {comparativo2025.varPromedioFacturacion >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(comparativo2025.varPromedioFacturacion))}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-brand-subtle mb-2 font-mono uppercase tracking-wider">Subastas por mes</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={comparativo2025.filas} margin={{left:0,right:8,top:4,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
+                  <XAxis dataKey="mes" tick={{fill:'#8AA4C8',fontSize:11}} axisLine={{stroke:'#2A3340'}} tickLine={false}/>
+                  <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false}/>
+                  <Tooltip contentStyle={{background:'#1B232D',border:'1px solid #2A3340',borderRadius:8,fontSize:12}}
+                    formatter={(v:number,name:string)=>[v, name==='subastas2025'?'2025':'Actual']}/>
+                  <Legend wrapperStyle={{fontSize:11,color:'#8AA4C8'}}/>
+                  <Bar dataKey="subastas2025" fill="#5B6472" radius={[4,4,0,0]} name="2025"/>
+                  <Bar dataKey="subastasActual" fill="#4FD1C5" radius={[4,4,0,0]} name="Actual"/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div>
+              <p className="text-xs text-brand-subtle mb-2 font-mono uppercase tracking-wider">Facturación por mes</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={comparativo2025.filas} margin={{left:0,right:8,top:4,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
+                  <XAxis dataKey="mes" tick={{fill:'#8AA4C8',fontSize:11}} axisLine={{stroke:'#2A3340'}} tickLine={false}/>
+                  <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={(v:number)=>fmtM(v)}/>
+                  <Tooltip contentStyle={{background:'#1B232D',border:'1px solid #2A3340',borderRadius:8,fontSize:12}}
+                    formatter={(v:number,name:string)=>[fmtCOP(v), name==='facturacion2025'?'2025':'Actual']}/>
+                  <Legend wrapperStyle={{fontSize:11,color:'#8AA4C8'}}/>
+                  <Bar dataKey="facturacion2025" fill="#5B6472" radius={[4,4,0,0]} name="2025"/>
+                  <Bar dataKey="facturacionActual" fill="#E8A33D" radius={[4,4,0,0]} name="Actual"/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <p className="text-[10px] text-brand-muted font-mono mt-3">
+            2025 completo: {comparativo2025.totalSubastas2025Completo} subastas · {fmtCOP(comparativo2025.totalFacturacion2025Completo)} facturación total
+          </p>
+        </Panel>
+        <div className="mb-3" />
+
         <div className="grid grid-cols-3 gap-3 mb-6">
           <StatBadge icon={<FileCheck size={14}/>} label="Facturas radicadas"  value={fKpis.radicadas}  color="teal"/>
           <StatBadge icon={<FileClock size={14}/>} label="Facturas pendientes" value={fKpis.pendientes} color="gold"/>
