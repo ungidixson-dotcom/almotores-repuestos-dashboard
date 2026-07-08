@@ -146,7 +146,7 @@ export default function ComparativoPeriodosPage() {
     async function fetchData() {
       const [{ data: rh }, { data: sub }, { data: aseg }, { data: ases }] = await Promise.all([
         supabase.from('resumen_historico_subastas').select('*').order('anio,mes_num'),
-        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta').limit(8000),
+        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta').order('anio', {ascending: false}).limit(25000),
         supabase.from('aseguradoras').select('id,nombre_corto').order('nombre_corto'),
         supabase.from('asesores').select('id,nombre').order('nombre'),
       ])
@@ -166,7 +166,8 @@ export default function ComparativoPeriodosPage() {
         .then(({data})=>{ if(data) setHistorico(data as HistoricoRow[]) })
       supabase.from('subastas')
         .select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta')
-        .limit(8000)
+        .order('anio', {ascending: false})
+        .limit(25000)
         .then(({data})=>{ if(data) setSubastas(data as SubastaRow[]) })
     }
     const chSub  = supabase.channel('cmp-rt-subastas').on('postgres_changes',{event:'*',schema:'public',table:'subastas'},  refetch).subscribe()
