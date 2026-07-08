@@ -127,6 +127,22 @@ export default function Dashboard() {
     return ()=>clearInterval(interval)
   },[autoRefresh])
 
+  // Supabase Realtime: actualización inmediata cuando el Apps Script inserta datos
+  useEffect(()=>{
+    const refetch = () => {
+      supabase.from('v_kpis_subastas').select('*').then(({data})=>{ if(data) setKpiRows(data as KpiRow[]) })
+      supabase.from('v_resumen_mensual').select('*').then(({data})=>{ if(data) setResumenMensual(data as ResumenMensual[]) })
+      supabase.from('resumen_historico_subastas').select('*').order('mes_num').then(({data})=>{ if(data) setResumenHistorico(data as ResumenHistorico[]) })
+      supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').limit(2000).then(({data})=>{ if(data) setFacturas(data as Factura[]) })
+      setUltimaActualizacion(new Date())
+      setCountdown(1800)
+    }
+    const chSub  = supabase.channel('rt-subastas').on('postgres_changes',{event:'*',schema:'public',table:'subastas'},  refetch).subscribe()
+    const chHist = supabase.channel('rt-historico').on('postgres_changes',{event:'*',schema:'public',table:'resumen_historico_subastas'}, refetch).subscribe()
+    const chFact = supabase.channel('rt-facturas').on('postgres_changes',{event:'*',schema:'public',table:'facturas'},  refetch).subscribe()
+    return ()=>{ supabase.removeChannel(chSub); supabase.removeChannel(chHist); supabase.removeChannel(chFact) }
+  },[])
+
   async function handleLogout(){await supabase.auth.signOut();router.push('/login')}
 
   // Normaliza marca para evitar duplicados por may/minusculas inconsistentes en el origen (ej: "KIA" vs "Kia")
