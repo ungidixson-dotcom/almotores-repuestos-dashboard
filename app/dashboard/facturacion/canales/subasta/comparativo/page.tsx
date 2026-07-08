@@ -14,7 +14,7 @@ import { KpiCard, Panel, fmtCOP, fmtM, fmtPct } from '@/components/dashboard-ui'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 type HistoricoRow  = { anio: number; mes_num: number; mes: string; total_subastas: number; ganadas: number; no_autorizadas: number; valor_autorizado: number; valor_subastado: number }
-type SubastaRow    = { id: number; placa: string | null; marca: string | null; aseguradora_id: number | null; asesor_id: number | null; estado_autorizacion: string | null; valor_subastado: number | null; valor_autorizado: number | null; fecha_subasta: string | null }
+type SubastaRow    = { id: number; placa: string | null; marca: string | null; aseguradora_id: number | null; asesor_id: number | null; estado_autorizacion: string | null; valor_subastado: number | null; valor_autorizado: number | null; fecha_subasta: string | null; anio: number | null }
 type Aseguradora   = { id: number; nombre_corto: string }
 type Asesor        = { id: number; nombre: string }
 
@@ -146,7 +146,7 @@ export default function ComparativoPeriodosPage() {
     async function fetchData() {
       const [{ data: rh }, { data: sub }, { data: aseg }, { data: ases }] = await Promise.all([
         supabase.from('resumen_historico_subastas').select('*').order('anio,mes_num'),
-        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta').order('anio', {ascending: false}).limit(25000),
+        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta,anio').order('anio', {ascending: false}).limit(25000),
         supabase.from('aseguradoras').select('id,nombre_corto').order('nombre_corto'),
         supabase.from('asesores').select('id,nombre').order('nombre'),
       ])
@@ -165,7 +165,7 @@ export default function ComparativoPeriodosPage() {
       supabase.from('resumen_historico_subastas').select('*').order('anio,mes_num')
         .then(({data})=>{ if(data) setHistorico(data as HistoricoRow[]) })
       supabase.from('subastas')
-        .select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta')
+        .select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta,anio')
         .order('anio', {ascending: false})
         .limit(25000)
         .then(({data})=>{ if(data) setSubastas(data as SubastaRow[]) })
@@ -233,9 +233,9 @@ export default function ComparativoPeriodosPage() {
   const filtrarSubastas = (anio: number) =>
     subastas.filter(s => {
       if (!s.fecha_subasta) return false
-      const d = new Date(s.fecha_subasta)
-      if (d.getFullYear() !== anio) return false
-      const m = d.getMonth() + 1
+      const sAnio = s.anio || new Date(s.fecha_subasta).getFullYear()
+      if (sAnio !== anio) return false
+      const m = parseInt(s.fecha_subasta.slice(5,7), 10)
       if (m < desde || m > hasta) return false
       if (filtroMarca !== 'todas' && normMarca(s.marca) !== filtroMarca) return false
       if (filtroAseguradora !== 0 && s.aseguradora_id !== filtroAseguradora) return false
@@ -243,7 +243,7 @@ export default function ComparativoPeriodosPage() {
     })
 
   // Para el año de comparación también podemos filtrar si tiene datos row-by-row
-  const tieneDetalle = (anio: number) => anio >= 2026 || subastas.some(s => s.fecha_subasta && new Date(s.fecha_subasta).getFullYear() === anio)
+  const tieneDetalle = (anio: number) => subastas.some(s => (s.anio === anio) || (s.fecha_subasta && new Date(s.fecha_subasta).getFullYear() === anio))
 
   // ── Función para calcular stats de un conjunto de subastas row-by-row ────
   const calcStats = (rows: SubastaRow[]) => {
