@@ -306,12 +306,23 @@ export default function ComparativoPeriodosPage() {
     Object.entries(nombres).forEach(([id, nombre]) => {
       mapa[Number(id)] = { nombre, subObj:0, subComp:0, ganObj:0, ganComp:0, valObj:0, valComp:0 }
     })
-    filtrarSubastas(anioActivo).forEach(s => {
+    // Usar campo anio directamente para evitar problemas de parseo de fecha
+    subastas.filter(s => {
+      const sAnio = s.anio || (s.fecha_subasta ? parseInt(s.fecha_subasta.slice(0,4),10) : 0)
+      if (sAnio !== anioActivo) return false
+      const m = s.fecha_subasta ? parseInt(s.fecha_subasta.slice(5,7),10) : 0
+      return m >= desde && m <= hasta
+    }).forEach(s => {
       const k = getKey(s); if (!k || !mapa[k]) return
       mapa[k].subObj++
       if (esGanada(s.estado_autorizacion)) { mapa[k].ganObj++; mapa[k].valObj += s.valor_autorizado||0 }
     })
-    filtrarSubastas(anioComp).forEach(s => {
+    subastas.filter(s => {
+      const sAnio = s.anio || (s.fecha_subasta ? parseInt(s.fecha_subasta.slice(0,4),10) : 0)
+      if (sAnio !== anioComp) return false
+      const m = s.fecha_subasta ? parseInt(s.fecha_subasta.slice(5,7),10) : 0
+      return m >= desde && m <= hasta
+    }).forEach(s => {
       const k = getKey(s); if (!k || !mapa[k]) return
       mapa[k].subComp++
       if (esGanada(s.estado_autorizacion)) { mapa[k].ganComp++; mapa[k].valComp += s.valor_autorizado||0 }
