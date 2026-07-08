@@ -159,6 +159,21 @@ export default function ComparativoPeriodosPage() {
     fetchData()
   }, [])
 
+  // Realtime: recarga cuando el Apps Script sincroniza datos
+  useEffect(()=>{
+    const refetch = () => {
+      supabase.from('resumen_historico_subastas').select('*').order('anio,mes_num')
+        .then(({data})=>{ if(data) setHistorico(data as HistoricoRow[]) })
+      supabase.from('subastas')
+        .select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta')
+        .limit(8000)
+        .then(({data})=>{ if(data) setSubastas(data as SubastaRow[]) })
+    }
+    const chSub  = supabase.channel('cmp-rt-subastas').on('postgres_changes',{event:'*',schema:'public',table:'subastas'},  refetch).subscribe()
+    const chHist = supabase.channel('cmp-rt-historico').on('postgres_changes',{event:'*',schema:'public',table:'resumen_historico_subastas'}, refetch).subscribe()
+    return ()=>{ supabase.removeChannel(chSub); supabase.removeChannel(chHist) }
+  },[])
+
   // ── Agrupar histórico en estructura anio → mesNum → stats ─────────────────
   // El año actual (2026) viene SOLO de la tabla subastas (v_resumen_mensual ya no la usamos)
   const allData = useMemo(() => {
