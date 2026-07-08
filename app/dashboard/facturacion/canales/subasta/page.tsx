@@ -62,6 +62,7 @@ type Factura = { id: number; placa: string; marca: string; aseguradora_id: numbe
 export default function Dashboard() {
   const router = useRouter()
   const [kpiRows,      setKpiRows]      = useState<KpiRow[]>([])
+  const [kpiRows2025,  setKpiRows2025]  = useState<{aseguradora_id:number;asesor_id:number;estado_autorizacion:string;valor_autorizado:number;total:number}[]>([])
   const [facturas,     setFacturas]     = useState<Factura[]>([])
   const [aseguradoras, setAseguradoras] = useState<Aseguradora[]>([])
   const [asesores,     setAsesores]     = useState<Asesor[]>([])
@@ -86,7 +87,7 @@ export default function Dashboard() {
     async function fetchData() {
       const {data:{user}} = await supabase.auth.getUser()
       if (!user){router.push('/login');return}
-      const [{data:kpis},{data:f},{data:aseg},{data:ases},{data:resumen},{data:meses},{data:historico}] = await Promise.all([
+      const [{data:kpis},{data:f},{data:aseg},{data:ases},{data:resumen},{data:meses},{data:historico},{data:rows2025}] = await Promise.all([
         supabase.from('v_kpis_subastas').select('*'),
         supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').limit(2000),
         supabase.from('aseguradoras').select('id,nombre_corto'),
@@ -94,8 +95,10 @@ export default function Dashboard() {
         supabase.from('v_resumen_mensual').select('*'),
         supabase.from('v_meses_disponibles').select('mes,orden').order('orden'),
         supabase.from('resumen_historico_subastas').select('*').order('mes_num'),
+        supabase.from('subastas').select('aseguradora_id,asesor_id,estado_autorizacion,valor_autorizado').eq('anio',2025),
       ])
       setKpiRows((kpis as KpiRow[])||[])
+      setKpiRows2025((rows2025 as any[])||[])
       setFacturas((f as Factura[])||[])
       setAseguradoras((aseg as Aseguradora[])||[])
       setAsesores((ases as Asesor[])||[])
@@ -314,20 +317,28 @@ export default function Dashboard() {
 
   // ── Por asesor ───────────────────────────────────────────────────────────
   const porAsesor = useMemo(()=>{
-    const map:Record<number,{id:number;total:number;ganadas:number;noAut:number;pendientes:number;valorAut:number}>={}
+    const map:Record<number,{id:number;total:number;ganadas:number;noAut:number;pendientes:number;valorAut:number;total2025:number;ganadas2025:number;valorAut2025:number}>={}
     sf.forEach(r=>{
       if(!r.asesor_id)return
-      if(!map[r.asesor_id])map[r.asesor_id]={id:r.asesor_id,total:0,ganadas:0,noAut:0,pendientes:0,valorAut:0}
+      if(!map[r.asesor_id])map[r.asesor_id]={id:r.asesor_id,total:0,ganadas:0,noAut:0,pendientes:0,valorAut:0,total2025:0,ganadas2025:0,valorAut2025:0}
       map[r.asesor_id].total+=r.total||0
       if(ESTADOS_GANADOS.includes(r.estado_autorizacion)){map[r.asesor_id].ganadas+=r.total||0;map[r.asesor_id].valorAut+=r.valor_autorizado||0}
       else if(r.estado_autorizacion==='NO Autorizada')map[r.asesor_id].noAut+=r.total||0
       else map[r.asesor_id].pendientes+=r.total||0
     })
+    kpiRows2025.forEach(r=>{
+      if(!r.asesor_id)return
+      if(!map[r.asesor_id])map[r.asesor_id]={id:r.asesor_id,total:0,ganadas:0,noAut:0,pendientes:0,valorAut:0,total2025:0,ganadas2025:0,valorAut2025:0}
+      map[r.asesor_id].total2025+=1
+      if(ESTADOS_GANADOS.includes(r.estado_autorizacion)){map[r.asesor_id].ganadas2025+=1;map[r.asesor_id].valorAut2025+=r.valor_autorizado||0}
+    })
     return Object.values(map).map(a=>{
       const d=a.ganadas+a.noAut
-      return {...a,nombre:asesMap[a.id]||`Asesor ${a.id}`,tasaAuth:d?(a.ganadas/d)*100:0,efectividad:a.total?(a.ganadas/a.total)*100:0}
+      const conv2025=a.total2025?(a.ganadas2025/a.total2025)*100:0
+      const convActual=a.total?(a.ganadas/a.total)*100:0
+      return {...a,nombre:asesMap[a.id]||`Asesor ${a.id}`,tasaAuth:d?(a.ganadas/d)*100:0,efectividad:a.total?(a.ganadas/a.total)*100:0,conv2025,convActual,varConv:convActual-conv2025,varSub:a.total2025?((a.total-a.total2025)/a.total2025)*100:null,varFact:a.valorAut2025?((a.valorAut-a.valorAut2025)/a.valorAut2025)*100:null}
     }).sort((a,b)=>b.valorAut-a.valorAut)
-  },[sf,asesMap])
+  },[sf,asesMap,kpiRows2025])
 
   const porEstado = useMemo(()=>{
     const map:Record<string,number>={}
@@ -336,16 +347,26 @@ export default function Dashboard() {
   },[sf])
 
   const porAseguradora = useMemo(()=>{
-    const map:Record<number,{id:number;total:number;ganadas:number;resueltas:number}>={}
+    const map:Record<number,{id:number;total:number;ganadas:number;resueltas:number;total2025:number;ganadas2025:number;valorAut:number;valorAut2025:number}>={}
     sf.forEach(r=>{
       if(!r.aseguradora_id)return
-      if(!map[r.aseguradora_id])map[r.aseguradora_id]={id:r.aseguradora_id,total:0,ganadas:0,resueltas:0}
+      if(!map[r.aseguradora_id])map[r.aseguradora_id]={id:r.aseguradora_id,total:0,ganadas:0,resueltas:0,total2025:0,ganadas2025:0,valorAut:0,valorAut2025:0}
       map[r.aseguradora_id].total+=r.total||0
       if(ESTADOS_RESUELTOS.includes(r.estado_autorizacion))map[r.aseguradora_id].resueltas+=r.total||0
-      if(ESTADOS_GANADOS.includes(r.estado_autorizacion))map[r.aseguradora_id].ganadas+=r.total||0
+      if(ESTADOS_GANADOS.includes(r.estado_autorizacion)){map[r.aseguradora_id].ganadas+=r.total||0;map[r.aseguradora_id].valorAut+=r.valor_autorizado||0}
     })
-    return Object.values(map).map(a=>({...a,nombre:asegMap[a.id]||`Aseg.${a.id}`,tasa:a.resueltas?(a.ganadas/a.resueltas)*100:0})).sort((a,b)=>b.total-a.total)
-  },[sf,asegMap])
+    kpiRows2025.forEach(r=>{
+      if(!r.aseguradora_id)return
+      if(!map[r.aseguradora_id])map[r.aseguradora_id]={id:r.aseguradora_id,total:0,ganadas:0,resueltas:0,total2025:0,ganadas2025:0,valorAut:0,valorAut2025:0}
+      map[r.aseguradora_id].total2025+=1
+      if(ESTADOS_GANADOS.includes(r.estado_autorizacion)){map[r.aseguradora_id].ganadas2025+=1;map[r.aseguradora_id].valorAut2025+=r.valor_autorizado||0}
+    })
+    return Object.values(map).map(a=>{
+      const conv2025=a.total2025?(a.ganadas2025/a.total2025)*100:0
+      const convActual=a.total?(a.ganadas/a.total)*100:0
+      return {...a,nombre:asegMap[a.id]||`Aseg.${a.id}`,tasa:a.resueltas?(a.ganadas/a.resueltas)*100:0,conv2025,convActual,varConv:convActual-conv2025,varSub:a.total2025?((a.total-a.total2025)/a.total2025)*100:null,varFact:a.valorAut2025?((a.valorAut-a.valorAut2025)/a.valorAut2025)*100:null}
+    }).sort((a,b)=>b.total-a.total)
+  },[sf,asegMap,kpiRows2025])
 
   const porCiudad = useMemo(()=>{
     const map:Record<string,{total:number;ganadas:number}>={}
@@ -752,73 +773,83 @@ export default function Dashboard() {
           </Panel>
         </div>
 
-        {/* ── TABLA ASESORES ───────────────────────────────────────────── */}
+        {/* ── DESGLOSE POR ASESOR ──────────────────────────────────────── */}
         <div className="mb-4">
-          <Panel title="Efectividad por asesor" sub="Tasa autorización (ganadas/decididas) · Efectividad (ganadas/total)">
+          <Panel title="Desglose por asesor" sub="2026 vs 2025 · subastas, conversión y facturación">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-brand-border">
-                    {['Asesor','Total','Ganadas','No autorizadas','Pendientes','Tasa autorización','Efectividad','Valor autorizado'].map(h=>(
-                      <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
+                    {['Nombre','Sub. 2026','Sub. 2025','Var.','%Conv. Actual','%Conv. Ant.','Var. PP','Factur. 2026','Factur. 2025','Var. $'].map(h=>(
+                      <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {porAsesor.map(a=>(
                     <tr key={a.id} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                      <td className="py-3 pr-6 text-brand-text font-medium">{a.nombre}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-subtle">{a.total}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-teal font-semibold">{a.ganadas}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-red">{a.noAut}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-subtle">{a.pendientes}</td>
-                      <td className="py-3 pr-6">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full bg-brand-teal" style={{width:`${a.tasaAuth}%`}}/></div>
-                          <span className="font-mono text-xs text-brand-subtle">{fmtPct(a.tasaAuth)}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-6">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width:`${a.efectividad}%`,background:a.efectividad>=30?'#4FD1C5':'#E8A33D'}}/></div>
-                          <span className="font-mono text-xs text-brand-subtle">{fmtPct(a.efectividad)}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.valorAut)}</td>
+                      <td className="py-3 pr-4 text-brand-text font-medium">{a.nombre}</td>
+                      <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total}</td>
+                      <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total2025||'—'}</td>
+                      <td className="py-3 pr-4 font-mono text-xs">{a.varSub!=null?<span className={a.varSub>=0?'text-brand-teal':'text-brand-red'}>{a.varSub>=0?'▲':'▼'} {Math.abs(a.varSub).toFixed(1)}%</span>:'—'}</td>
+                      <td className="py-3 pr-4 font-mono text-brand-subtle">{fmtPct(a.convActual)}</td>
+                      <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total2025?fmtPct(a.conv2025):'—'}</td>
+                      <td className="py-3 pr-4 font-mono text-xs">{a.total2025?<span className={a.varConv>=0?'text-brand-teal':'text-brand-red'}>{a.varConv>=0?'+':''}{a.varConv.toFixed(1)} pp</span>:'—'}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtM(a.valorAut)}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{a.valorAut2025?fmtM(a.valorAut2025):'—'}</td>
+                      <td className="py-3 pr-4 font-mono text-xs">{a.varFact!=null?<span className={a.varFact>=0?'text-brand-teal':'text-brand-red'}>{a.varFact>=0?'▲':'▼'} {Math.abs(a.varFact).toFixed(1)}%</span>:'—'}</td>
                     </tr>
                   ))}
+                  <tr className="border-t border-brand-border font-bold">
+                    <td className="py-3 pr-4 text-brand-text font-mono text-xs uppercase">Total</td>
+                    <td className="py-3 pr-4 font-mono text-brand-text">{porAsesor.reduce((s,a)=>s+a.total,0)}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{porAsesor.reduce((s,a)=>s+a.total2025,0)||'—'}</td>
+                    <td colSpan={4} className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(porAsesor.reduce((s,a)=>s+a.ganadas,0)/Math.max(1,porAsesor.reduce((s,a)=>s+a.total,0))*100)}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-text">{fmtM(porAsesor.reduce((s,a)=>s+a.valorAut,0))}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{fmtM(porAsesor.reduce((s,a)=>s+a.valorAut2025,0))}</td>
+                    <td/>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </Panel>
         </div>
 
-        {/* ── RANKING ASEGURADORAS ─────────────────────────────────────── */}
-        <Panel title="Ranking por aseguradora" sub="Volumen de subastas y tasa de autorización (ganadas/resueltas)">
+        {/* ── DESGLOSE POR ASEGURADORA ─────────────────────────────────── */}
+        <Panel title="Desglose por aseguradora" sub="2026 vs 2025 · subastas, conversión y facturación">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-brand-border">
-                  {['Aseguradora','Total','Ganadas','Resueltas','Tasa autorización'].map(h=>(
-                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
+                  {['Nombre','Sub. 2026','Sub. 2025','Var.','%Conv. Actual','%Conv. Ant.','Var. PP','Factur. 2026','Factur. 2025','Var. $'].map(h=>(
+                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {porAseguradora.map(a=>(
                   <tr key={a.id} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                    <td className="py-3 pr-6 text-brand-text">{a.nombre}</td>
-                    <td className="py-3 pr-6 font-mono text-brand-subtle">{a.total}</td>
-                    <td className="py-3 pr-6 font-mono text-brand-teal font-semibold">{a.ganadas}</td>
-                    <td className="py-3 pr-6 font-mono text-brand-subtle">{a.resueltas}</td>
-                    <td className="py-3 pr-6">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width:`${a.tasa}%`,background:a.tasa>=40?'#4FD1C5':'#E8A33D'}}/></div>
-                        <span className="font-mono text-xs text-brand-subtle">{fmtPct(a.tasa)}</span>
-                      </div>
-                    </td>
+                    <td className="py-3 pr-4 text-brand-text">{a.nombre}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total2025||'—'}</td>
+                    <td className="py-3 pr-4 font-mono text-xs">{a.varSub!=null?<span className={a.varSub>=0?'text-brand-teal':'text-brand-red'}>{a.varSub>=0?'▲':'▼'} {Math.abs(a.varSub).toFixed(1)}%</span>:'—'}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{fmtPct(a.convActual)}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total2025?fmtPct(a.conv2025):'—'}</td>
+                    <td className="py-3 pr-4 font-mono text-xs">{a.total2025?<span className={a.varConv>=0?'text-brand-teal':'text-brand-red'}>{a.varConv>=0?'+':''}{a.varConv.toFixed(1)} pp</span>:'—'}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtM(a.valorAut)}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{a.valorAut2025?fmtM(a.valorAut2025):'—'}</td>
+                    <td className="py-3 pr-4 font-mono text-xs">{a.varFact!=null?<span className={a.varFact>=0?'text-brand-teal':'text-brand-red'}>{a.varFact>=0?'▲':'▼'} {Math.abs(a.varFact).toFixed(1)}%</span>:'—'}</td>
                   </tr>
                 ))}
+                <tr className="border-t border-brand-border font-bold">
+                  <td className="py-3 pr-4 text-brand-text font-mono text-xs uppercase">Total</td>
+                  <td className="py-3 pr-4 font-mono text-brand-text">{porAseguradora.reduce((s,a)=>s+a.total,0)}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-subtle">{porAseguradora.reduce((s,a)=>s+a.total2025,0)||'—'}</td>
+                  <td colSpan={4} className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(porAseguradora.reduce((s,a)=>s+a.ganadas,0)/Math.max(1,porAseguradora.reduce((s,a)=>s+a.total,0))*100)}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-text">{fmtM(porAseguradora.reduce((s,a)=>s+a.valorAut,0))}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-subtle">{fmtM(porAseguradora.reduce((s,a)=>s+a.valorAut2025,0))}</td>
+                  <td/>
+                </tr>
               </tbody>
             </table>
           </div>
