@@ -186,20 +186,23 @@ export default function ComparativoPeriodosPage() {
       data[r.anio][r.mes_num] = r
     })
 
-    // 2. Construir 2026 en tiempo real desde la tabla subastas
-    const year2026: Record<number, HistoricoRow> = {}
+    // 2. Construir año actual en tiempo real desde la tabla subastas (usando campo anio)
+    const yearMap: Record<number, Record<number, HistoricoRow>> = {}
     subastas.forEach(s => {
       if (!s.fecha_subasta) return
-      const d = new Date(s.fecha_subasta)
-      if (d.getFullYear() !== 2026) return
-      const m = d.getMonth() + 1
-      if (!year2026[m]) year2026[m] = { anio:2026, mes_num:m, mes:MESES_ES[m-1], total_subastas:0, ganadas:0, no_autorizadas:0, valor_autorizado:0, valor_subastado:0 }
-      year2026[m].total_subastas++
-      year2026[m].valor_subastado += s.valor_subastado || 0
-      if (esGanada(s.estado_autorizacion)) { year2026[m].ganadas++; year2026[m].valor_autorizado += s.valor_autorizado || 0 }
-      else if (s.estado_autorizacion === 'NO Autorizada') year2026[m].no_autorizadas++
+      const sAnio = s.anio || parseInt(s.fecha_subasta.slice(0,4), 10)
+      if (!sAnio || data[sAnio]) return // solo años no cubiertos por historico
+      const m = parseInt(s.fecha_subasta.slice(5,7), 10)
+      if (!yearMap[sAnio]) yearMap[sAnio] = {}
+      if (!yearMap[sAnio][m]) yearMap[sAnio][m] = { anio:sAnio, mes_num:m, mes:MESES_ES[m-1], total_subastas:0, ganadas:0, no_autorizadas:0, valor_autorizado:0, valor_subastado:0 }
+      yearMap[sAnio][m].total_subastas++
+      yearMap[sAnio][m].valor_subastado += s.valor_subastado || 0
+      if (esGanada(s.estado_autorizacion)) { yearMap[sAnio][m].ganadas++; yearMap[sAnio][m].valor_autorizado += s.valor_autorizado || 0 }
+      else if (s.estado_autorizacion === 'NO Autorizada') yearMap[sAnio][m].no_autorizadas++
     })
-    if (Object.keys(year2026).length > 0) data[2026] = year2026
+    Object.entries(yearMap).forEach(([anio, meses]) => {
+      if (Object.keys(meses).length > 0) data[Number(anio)] = meses
+    })
 
     return data
   }, [historico, subastas])
@@ -221,6 +224,16 @@ export default function ComparativoPeriodosPage() {
   const anioComp   = anioActivo - 1
   const desde = Math.min(mesInicio, mesFin)
   const hasta = Math.max(mesInicio, mesFin)
+
+  // Reset rango cuando cambia el año
+  useEffect(() => {
+    if (!inicializado) return
+    const meses = Object.keys(allData[anioActivo] || {}).map(Number)
+    if (meses.length) {
+      setMesInicio(Math.min(...meses))
+      setMesFin(Math.max(...meses))
+    }
+  }, [anioActivo])
 
   // ── Marcas disponibles ───────────────────────────────────────────────────
   const marcas = useMemo(() => {
