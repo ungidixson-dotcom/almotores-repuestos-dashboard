@@ -36,6 +36,19 @@ const parseCOP = (s: string) => {
   return isNaN(n) ? 0 : n
 }
 
+function parseFecha(s: string): Date | null {
+  if (!s) return null
+  // Formato DD/MM/YY o DD/MM/YYYY
+  const parts = s.trim().split('/')
+  if (parts.length === 3) {
+    const [d, m, y] = parts
+    const anio = parseInt(y) < 100 ? 2000 + parseInt(y) : parseInt(y)
+    return new Date(anio, parseInt(m) - 1, parseInt(d))
+  }
+  const dt = new Date(s)
+  return isNaN(dt.getTime()) ? null : dt
+}
+
 function esDiaHabil(d: Date): boolean {
   const dow = d.getDay() // 0=dom, 6=sab
   if (dow === 0) return false // domingo no
@@ -241,25 +254,16 @@ export default function FacGeneralPage() {
 
   // ── Parsear taller ───────────────────────────────────────────────────────
   const facturadoTaller = useMemo(() => {
-    // Columnas típicas: N° taller, prefijo/codigo, fecha, valor...
-    // Buscamos columna de valor y columna de fecha para filtrar por mes/año
+    // A=0 Taller, G=6 Fecha(DD/MM/YY), I=8 Prefijo, P=15 Neto
     if (tallerRaw.length < 2) return { Taller: 0, Colisión: 0 }
-    const headers = tallerRaw[0].map(h => h?.trim().toLowerCase())
-    const iVal  = headers.findIndex(h => h?.includes('valor') || h?.includes('total') || h?.includes('factura'))
-    const iFec  = headers.findIndex(h => h?.includes('fecha'))
-    const iTall = headers.findIndex(h => h?.includes('taller') || h?.includes('n°') || h?.includes('nro'))
-    
     let taller = 0, colision = 0
     tallerRaw.slice(1).forEach(row => {
-      if (!row.length) return
-      const fecStr = iFec >= 0 ? row[iFec] : ''
-      if (fecStr) {
-        const d = new Date(fecStr)
-        if (isNaN(d.getTime())) return
-        if (d.getFullYear() !== anio || d.getMonth() + 1 !== mes) return
-      }
-      const val = parseCOP(iVal >= 0 ? row[iVal] : row[row.length - 1])
-      const tallNum = iTall >= 0 ? row[iTall]?.trim() : ''
+      if (!row[0] || !row[15]) return
+      const fec = parseFecha(row[6])
+      if (!fec) return
+      if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
+      const val     = parseCOP(row[15])
+      const tallNum = row[0]?.toString().trim()
       if (tallNum === '16') colision += val
       else taller += val
     })
@@ -268,61 +272,48 @@ export default function FacGeneralPage() {
 
   // ── Parsear mostrador ────────────────────────────────────────────────────
   const facturadoMostrador = useMemo(() => {
+    // A=0 Almacen, G=6 Fecha(DD/MM/YY), I=8 Prefijo, P=15 Neto
     if (mostradorRaw.length < 2) return { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
-    const headers = mostradorRaw[0].map(h => h?.trim().toLowerCase())
-    const iVal    = headers.findIndex(h => h?.includes('valor') || h?.includes('total') || h?.includes('base'))
-    const iFec    = headers.findIndex(h => h?.includes('fecha'))
-    const iPref   = headers.findIndex(h => h?.includes('prefijo') || h?.includes('tipo'))
-
     const result: Record<string, number> = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
     mostradorRaw.slice(1).forEach(row => {
-      if (!row.length) return
-      const fecStr = iFec >= 0 ? row[iFec] : ''
-      if (fecStr) {
-        const d = new Date(fecStr)
-        if (isNaN(d.getTime())) return
-        if (d.getFullYear() !== anio || d.getMonth() + 1 !== mes) return
-      }
-      const pref  = iPref >= 0 ? row[iPref]?.trim().toUpperCase() : ''
-      const val   = parseCOP(iVal >= 0 ? row[iVal] : row[row.length - 1])
-      const canal = prefijosMap[pref] || 'Mostrador'
+      if (!row[15]) return
+      const fec = parseFecha(row[6])
+      if (!fec) return
+      if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
+      const pref  = row[8]?.trim().toUpperCase() || ''
+      const val   = parseCOP(row[15])
+      // Clasificar por prefijo
+      const pref3 = pref.slice(0,3)
+      let canal = 'Mostrador'
+      if (pref3 === 'EAA' || pref3 === 'EAM' || pref3 === 'EAL') canal = 'Accesorios'
+      else if (pref3 === 'ENR' && pref !== 'ENR2') canal = 'Mayoristas'
+      else if (pref3 === 'EVC' || pref3 === 'EVK') canal = 'Subastas'
+      else if (pref3 === 'ETT' || pref3 === 'ETK' || pref3 === 'ETS') canal = 'Mostrador'
       if (result[canal] !== undefined) result[canal] += val
       else result['Mostrador'] += val
     })
     return result
-  }, [mostradorRaw, prefijosMap, anio, mes])
+  }, [mostradorRaw, anio, mes])
 
   // ── Parsear ventas a crédito ─────────────────────────────────────────────
   const facturadoCredito = useMemo(() => {
+    // A=0 Almacen, B=1 Refer(vacio=linea secundaria), G=6 Fecha, I=8 Prefijo, Q=16 Neto
+    // Solo primera linea de cada factura (B=Refer no vacio)
+    // ENR2 = devoluciones (restan)
     if (creditoRaw.length < 2) return 0
-    const headers = creditoRaw[0].map(h => h?.trim().toLowerCase())
-    const iVal  = headers.findIndex(h => h?.includes('valor') || h?.includes('total') || h?.includes('base'))
-    const iFec  = headers.findIndex(h => h?.includes('fecha'))
-    const iPref = headers.findIndex(h => h?.includes('prefijo') || h?.includes('tipo'))
-    const iLinea = headers.findIndex(h => h?.includes('linea') || h?.includes('línea') || h?.includes('item'))
-
-    // Solo primera línea de cada factura y restar devoluciones ENR2
-    const facturas: Record<string, { val: number; esDevol: boolean }> = {}
-    const numFact = headers.findIndex(h => h?.includes('factura') || h?.includes('numero') || h?.includes('número'))
-
+    let total = 0
     creditoRaw.slice(1).forEach(row => {
-      if (!row.length) return
-      const fecStr = iFec >= 0 ? row[iFec] : ''
-      if (fecStr) {
-        const d = new Date(fecStr)
-        if (isNaN(d.getTime())) return
-        if (d.getFullYear() !== anio || d.getMonth() + 1 !== mes) return
-      }
-      const lineaNum = iLinea >= 0 ? parseInt(row[iLinea]) : 1
-      if (lineaNum > 1) return // solo primera línea
-      const pref = iPref >= 0 ? row[iPref]?.trim().toUpperCase() : ''
-      const val  = parseCOP(iVal >= 0 ? row[iVal] : row[row.length - 1])
-      const key  = numFact >= 0 ? row[numFact] : Math.random().toString()
+      // Primera línea: col B (refer) tiene valor
+      if (!row[1]?.trim()) return // línea secundaria, saltar
+      const fec = parseFecha(row[6])
+      if (!fec) return
+      if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
+      const pref    = row[8]?.trim().toUpperCase() || ''
+      const val     = parseCOP(row[16])
       const esDevol = pref === 'ENR2'
-      facturas[key] = { val, esDevol }
+      total += esDevol ? -val : val
     })
-
-    return Object.values(facturas).reduce((s, f) => s + (f.esDevol ? -f.val : f.val), 0)
+    return total
   }, [creditoRaw, anio, mes])
 
   // ── Totales por canal ────────────────────────────────────────────────────
