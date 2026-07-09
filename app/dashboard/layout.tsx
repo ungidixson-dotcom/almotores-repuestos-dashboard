@@ -24,7 +24,7 @@ const NAV: NavGroup[] = [
   {
     label: 'Facturación', icon: <Receipt size={16} />,
     children: [
-      { label: 'Facturación General', href: '/dashboard/facturacion' },
+      { label: 'Facturación General', href: '/dashboard/facturacion/general' },
       ...CANALES.map(c => ({ label: c.label, href: c.href })),
     ],
   },
