@@ -150,6 +150,7 @@ export default function FacGeneralPage() {
   const [creditoRaw,      setCreditoRaw]      = useState<string[][]>([])
   const [prefijosRaw,     setPrefijosRaw]     = useState<string[][]>([])
   const [tipoClientesRaw, setTipoClientesRaw] = useState<string[][]>([])
+  const [debugCanal,      setDebugCanal]      = useState<string|null>(null)
 
   const cargar = useCallback(async () => {
     setLoading(true); setError('')
@@ -230,6 +231,24 @@ export default function FacGeneralPage() {
       else                                        { taller+=val; costoTaller+=costo }
     })
     return { Taller:taller, Colisión:colision, AccTaller:accTaller, CostoTaller:costoTaller, CostoColision:costoColision }
+  }, [tallerRaw, anio, mes])
+
+  // ── Debug: filas por canal ────────────────────────────────────────────────
+  const debugFilas = useMemo(() => {
+    const result: Record<string, {fecha:string;taller:string;neto:number;prefijo:string;cuenta:string;cliente:string}[]> = {
+      Taller:[], Colisión:[], AccTaller:[]
+    }
+    tallerRaw.slice(1).forEach(r => {
+      if (!r[0] || !r[14]) return
+      const fec = parseFecha(r[6]); if (!fec) return
+      if (fec.getFullYear()!==anio || fec.getMonth()+1!==mes) return
+      const t = r[0].toString().trim().toUpperCase()
+      const entry = { fecha: r[6]?.slice(0,10)||'', taller:r[0], neto:parseCOP(r[14]), prefijo:r[7]||'', cuenta:r[4]||'', cliente:r[5]||'' }
+      if (t==='16') result['Colisión'].push(entry)
+      else if (['11A','12A','13A'].includes(t)) result['AccTaller'].push(entry)
+      else result['Taller'].push(entry)
+    })
+    return result
   }, [tallerRaw, anio, mes])
 
   // ── MOSTRADOR ─────────────────────────────────────────────────────────────
@@ -555,6 +574,58 @@ export default function FacGeneralPage() {
             </tbody>
           </table>
         </div>
+      </Panel>
+
+      {/* Debug: detalle por canal */}
+      <Panel>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle">
+            Debug — Detalle filas por canal (Taller)
+          </h2>
+          <div className="flex gap-2">
+            {['Taller','Colisión','AccTaller'].map(c => (
+              <button key={c} onClick={()=>setDebugCanal(debugCanal===c?null:c)}
+                className={`text-xs px-3 py-1 rounded-lg font-mono border transition-colors ${debugCanal===c?'bg-brand-teal text-black border-brand-teal':'border-brand-border text-brand-subtle hover:border-brand-teal'}`}>
+                {c} ({debugFilas[c]?.length||0} filas)
+              </button>
+            ))}
+          </div>
+        </div>
+        {debugCanal && (
+          <div className="overflow-auto max-h-64">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr className="border-b border-brand-border text-brand-subtle">
+                  <th className="text-left pb-2 pr-4">Taller</th>
+                  <th className="text-left pb-2 pr-4">Fecha</th>
+                  <th className="text-left pb-2 pr-4">Prefijo</th>
+                  <th className="text-left pb-2 pr-4">Cliente</th>
+                  <th className="text-right pb-2">Neto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {debugFilas[debugCanal]?.map((f,i) => (
+                  <tr key={i} className="border-b border-brand-border/30">
+                    <td className="py-1 pr-4">{f.taller}</td>
+                    <td className="py-1 pr-4">{f.fecha}</td>
+                    <td className="py-1 pr-4">{f.prefijo}</td>
+                    <td className="py-1 pr-4 max-w-[200px] truncate">{f.cliente}</td>
+                    <td className="py-1 text-right text-brand-teal">{fmtCOP(f.neto)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-brand-border font-bold">
+                  <td colSpan={4} className="py-2 text-brand-subtle">Total</td>
+                  <td className="py-2 text-right text-brand-teal">
+                    {fmtCOP(debugFilas[debugCanal]?.reduce((s,f)=>s+f.neto,0)||0)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-xs text-brand-subtle mt-3 font-mono">
+          Total filas taller CSV: {tallerRaw.length-1} · Filtrando: {MESES[mes-1]} {anio}
+        </p>
       </Panel>
 
       <p className="text-xs text-brand-subtle font-mono text-center pb-4">
