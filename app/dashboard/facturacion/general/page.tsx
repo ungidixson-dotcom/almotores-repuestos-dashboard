@@ -43,16 +43,22 @@ const normCuenta = (v: unknown): string => {
 
 function parseFecha(s: string | undefined | null): Date | null {
   if (!s) return null
-  const str = String(s).trim()
+  const str = String(s).trim().replace(/"/g,'')
+  // Formato YYYY-MM-DD o YYYY-MM-DD HH:MM:SS
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    const d = new Date(str); return isNaN(d.getTime()) ? null : d
+    const [y,m,d] = str.slice(0,10).split('-').map(Number)
+    return new Date(y, m-1, d)  // usa constructor local, no UTC
   }
+  // Formato DD/MM/YY o DD/MM/YYYY
   if (str.includes('/')) {
-    const [d,m,y] = str.split('/')
-    const anio = parseInt(y) < 100 ? 2000 + parseInt(y) : parseInt(y)
-    return new Date(anio, parseInt(m)-1, parseInt(d))
+    const parts = str.split('/')
+    if (parts.length === 3) {
+      const d = parseInt(parts[0]), m = parseInt(parts[1])
+      const y = parseInt(parts[2]) < 100 ? 2000 + parseInt(parts[2]) : parseInt(parts[2])
+      return new Date(y, m-1, d)
+    }
   }
-  const dt = new Date(str); return isNaN(dt.getTime()) ? null : dt
+  return null
 }
 
 function esDiaHabil(d: Date): boolean {
