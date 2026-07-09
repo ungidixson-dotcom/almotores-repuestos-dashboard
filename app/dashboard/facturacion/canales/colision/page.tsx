@@ -31,8 +31,13 @@ const fmtCOP = (v: number) => {
 
 const parseCOP = (s: string | undefined): number => {
   if (!s) return 0
-  const str = s.replace(/[$\s"]/g, '').trim()
-  const n = parseFloat(str.replace(/,/g, ''))
+  let str = s.toString().replace(/"/g, '').trim()
+  // Formato contable: (123,456) → negativo
+  const esParentesis = str.startsWith('(') && str.endsWith(')')
+  if (esParentesis) str = '-' + str.slice(1, -1)
+  // Quitar $, espacios, puntos de miles — preservar signo y comas decimales
+  str = str.replace(/[$\s]/g, '').replace(/,/g, '')
+  const n = parseFloat(str)
   return isNaN(n) ? 0 : n
 }
 
