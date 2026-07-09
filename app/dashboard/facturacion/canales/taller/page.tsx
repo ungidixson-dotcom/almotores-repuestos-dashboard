@@ -340,8 +340,9 @@ export default function TallerPage() {
           const util = datos.neto - datos.costo
           const pctU = datos.neto ? (util/datos.neto)*100 : 0
           return (
-            <Panel key={sede} className="cursor-pointer hover:border-brand-teal/50 transition-colors"
-              onClick={() => setFiltroSede(filtroSede===sede?'todas':sede)}>
+            <Panel key={sede}>
+              <div className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => setFiltroSede(filtroSede===sede?'todas':sede)}>
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <p className="font-semibold text-brand-text">Taller {sede}</p>
@@ -355,6 +356,7 @@ export default function TallerPage() {
               <p className="text-xs text-brand-subtle font-mono mt-1">
                 Utilidad: {fmtCOP(util)} ({pctU.toFixed(1)}%)
               </p>
+              </div>
             </Panel>
           )
         })}
