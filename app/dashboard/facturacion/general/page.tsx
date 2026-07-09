@@ -302,8 +302,8 @@ export default function FacGeneralPage() {
   const facturadoMostrador = useMemo((): { Mostrador: number; Accesorios: number; Mayoristas: number; Subastas: number; porAsesor: Record<string, number> } => {
     // A=0 Almacen, B=1 Refer, C=2 Vendedor, E=4 Cuenta, G=6 Fecha, I=8 Prefijo, P=15 Neto
     if (mostradorRaw.length < 2) return { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0, porAsesor: {} }
-    const result: Record<string, number> = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
     const porAsesor: Record<string, number> = {}
+    const mostrador  = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
     mostradorRaw.slice(1).forEach(row => {
       if (!row[15]) return
       const fec = parseFecha(row[6])
@@ -313,24 +313,21 @@ export default function FacGeneralPage() {
       const val    = parseCOP(row[15])
       const cuenta = row[4]?.trim() || ''
       const asesor = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
-      // Clasificar por tipo de cliente primero, luego por prefijo
-      let canal = 'Mostrador'
+      let canal: 'Mostrador'|'Accesorios'|'Mayoristas'|'Subastas' = 'Mostrador'
       if (clientesMayoristas.has(cuenta))       canal = 'Mayoristas'
       else if (clientesSubastas.has(cuenta))    canal = 'Subastas'
       else {
         const pref3 = pref.slice(0,3)
         if (pref3 === 'EAA' || pref3 === 'EAM' || pref3 === 'EAL') canal = 'Accesorios'
-        else if (pref3 === 'ENR' && pref !== 'ENR2')                  canal = 'Mayoristas'
-        else if (pref3 === 'EVC' || pref3 === 'EVK')                  canal = 'Subastas'
+        else if (pref3 === 'ENR' && pref !== 'ENR2')                canal = 'Mayoristas'
+        else if (pref3 === 'EVC' || pref3 === 'EVK')                canal = 'Subastas'
       }
-      if (result[canal] !== undefined) result[canal] += val
-      else result['Mostrador'] += val
-      // Acumular por asesor (solo Mostrador, Crédito y Accesorios)
-      if (['Mostrador','Accesorios'].includes(canal)) {
+      mostrador[canal] += val
+      if (canal === 'Mostrador' || canal === 'Accesorios') {
         porAsesor[asesor] = (porAsesor[asesor] || 0) + val
       }
     })
-    return { ...result, porAsesor }
+    return { ...mostrador, porAsesor }
   }, [mostradorRaw, clientesMayoristas, clientesSubastas, anio, mes])
 
   // ── Parsear ventas a crédito ─────────────────────────────────────────────
