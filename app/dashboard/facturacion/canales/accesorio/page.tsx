@@ -376,16 +376,16 @@ export default function SubastasAccesoriosPage() {
   // Totales
   const totalSub = facturasSubastas.reduce((s,f)=>s+f.neto,0)
   const totalAcc = facturasAccesorios.reduce((s,f)=>s+f.neto,0)
-  const total    = canal==='subastas' ? totalSub : totalAcc
-  const ppto     = canal==='subastas' ? pptoSubastas : pptoAccesorios
+  const total    = totalAcc
+  const ppto     = pptoAccesorios
   const pctAvance   = ppto ? (total/ppto)*100 : 0
   const porDia      = dhTransc ? total/dhTransc : 0
   const necesario   = dhRest>0 ? (ppto-total)/dhRest : 0
   const pronostico  = total + porDia*dhRest
   const pctPronos   = ppto ? (pronostico/ppto)*100 : 0
   const colorAvance = pctAvance>=pctDias ? '#68D391' : pctAvance>=pctDias*0.8 ? '#F6AD55' : '#FC8181'
-  const facturas    = canal==='subastas' ? facturasSubastas : facturasAccesorios
-  const utilidad    = facturas.reduce((s,f)=>s+(f.neto-f.costo),0)
+  const facturas    = facturasAccesorios
+  const utilidad    = facturasAccesorios.reduce((s,f)=>s+(f.neto-f.costo),0)
   const pctUtil     = total ? (utilidad/total)*100 : 0
 
   if (loading) return (
@@ -404,12 +404,10 @@ export default function SubastasAccesoriosPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold font-title text-brand-text mb-1">
-            {canal==='subastas' ? '🔨 Subastas' : '🎁 Accesorios'}
+            {'🎁 Accesorios'}
           </h1>
           <p className="text-sm text-brand-subtle">
-            {canal==='subastas'
-              ? 'Repuestos para vehículos siniestrados · aseguradoras · mostrador y crédito'
-              : 'Accesorios KIA · talleres 11A, 12A, 13A y mostrador'}
+            {'Accesorios KIA · talleres 11A, 12A, 13A y mostrador'}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -505,7 +503,7 @@ export default function SubastasAccesoriosPage() {
       {/* Tabla */}
       <TablaFacturas
         facturas={facturas}
-        titulo={`Detalle de facturas — ${canal==='subastas'?'Subastas (mostrador + crédito)':'Accesorios (taller + mostrador)'}`}
+        titulo={`Detalle de facturas — ${'Accesorios (taller + mostrador)'}`}
       />
 
       <p className="text-xs text-brand-subtle font-mono text-center pb-4">
