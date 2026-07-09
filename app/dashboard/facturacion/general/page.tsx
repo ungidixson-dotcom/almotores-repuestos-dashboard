@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Line
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQgv_V93SUlbyd5gXHKs0znKRVwwTgUSF4WpkmJurZ8N4RxaRj1cTAgCqG0klE4i8BBoiUpbjOMnsxt/pub'
 const GID = {
   taller:'1968437267', mostrador:'143806698', credito:'1646038872',
-  presupuesto:'1013471630', prefijos:'83279873', tipoClientes:'1039901350',
+  presupuesto:'1013471670', prefijos:'83279873', tipoClientes:'1039901350',
 }
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio',
