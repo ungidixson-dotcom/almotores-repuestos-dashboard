@@ -277,7 +277,7 @@ export default function FacGeneralPage() {
   }, [tipoClientesRaw])
 
   // ── Parsear taller ───────────────────────────────────────────────────────
-  const facturadoTaller = useMemo(() => {
+  const facturadoTaller = useMemo((): { Taller: number; Colisión: number; AccesoriosTaller: number } => {
     // A=0 Taller, G=6 Fecha(DD/MM/YY), P=15 Neto
     // 16 = Colisión
     // 11,11ex,12,13,13ex = Taller (Norte, Pasoancho, Calle 9)
@@ -299,10 +299,9 @@ export default function FacGeneralPage() {
   }, [tallerRaw, anio, mes])
 
   // ── Parsear mostrador ────────────────────────────────────────────────────
-  const facturadoMostrador = useMemo(() => {
+  const facturadoMostrador = useMemo((): { Mostrador: number; Accesorios: number; Mayoristas: number; Subastas: number; porAsesor: Record<string, number> } => {
     // A=0 Almacen, B=1 Refer, C=2 Vendedor, E=4 Cuenta, G=6 Fecha, I=8 Prefijo, P=15 Neto
-    const empty = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0, porAsesor: {} as Record<string, number> }
-    if (mostradorRaw.length < 2) return empty
+    if (mostradorRaw.length < 2) return { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0, porAsesor: {} }
     const result: Record<string, number> = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
     const porAsesor: Record<string, number> = {}
     mostradorRaw.slice(1).forEach(row => {
@@ -335,12 +334,11 @@ export default function FacGeneralPage() {
   }, [mostradorRaw, clientesMayoristas, clientesSubastas, anio, mes])
 
   // ── Parsear ventas a crédito ─────────────────────────────────────────────
-  const facturadoCredito = useMemo(() => {
+  const facturadoCredito = useMemo((): { total: number; porAsesor: Record<string, number> } => {
     // A=0 Almacen, B=1 Refer(vacio=linea secundaria), C=2 Vendedor, E=4 Cuenta,
     // G=6 Fecha, I=8 Prefijo, Q=16 Neto
     // Solo primera linea (B=Refer no vacio). ENR2 = devoluciones (restan).
-    const emptyC = { total: 0, porAsesor: {} as Record<string,number> }
-    if (creditoRaw.length < 2) return emptyC
+    if (creditoRaw.length < 2) return { total: 0, porAsesor: {} }
     let total = 0
     const porAsesor: Record<string, number> = {}
     creditoRaw.slice(1).forEach(row => {
