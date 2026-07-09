@@ -86,11 +86,13 @@ const fetchCSV = async (gid: string): Promise<string[][]> => {
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface Factura {
-  numero:  string
-  cliente: string
-  neto:    number
-  costo:   number
-  items:   number
+  numero:       string
+  registro:     string
+  numFactura:   string
+  cliente:      string
+  neto:         number
+  costo:        number
+  items:        number
   esDevolucion: boolean
 }
 
@@ -192,8 +194,10 @@ export default function ColisionPage() {
       const costo  = parseCOP(r[15])
       if (!mapa[num]) {
         mapa[num] = {
-          numero: num,
-          cliente: r[5]?.trim() || '',
+          numero:     num,
+          registro:   r[1]?.trim() || '',
+          numFactura: r[8]?.trim() || '',
+          cliente:    r[5]?.trim() || '',
           neto: 0, costo: 0, items: 0,
           esDevolucion: false
         }
@@ -408,7 +412,10 @@ export default function ColisionPage() {
             <thead>
               <tr className="border-b border-brand-border">
                 <th className={thClass('numero')} onClick={() => ordenar('numero')}>
-                  N° Factura {ordenCol === 'numero' ? (ordenDir === 'asc' ? '↑' : '↓') : '↕'}
+                  N° Registro {ordenCol === 'numero' ? (ordenDir === 'asc' ? '↑' : '↓') : '↕'}
+                </th>
+                <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">
+                  N° Factura
                 </th>
                 <th className={thClass('cliente')} onClick={() => ordenar('cliente')}>
                   Cliente {ordenCol === 'cliente' ? (ordenDir === 'asc' ? '↑' : '↓') : '↕'}
@@ -437,7 +444,8 @@ export default function ColisionPage() {
                   <tr key={f.numero}
                     className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors
                       ${f.esDevolucion ? 'bg-red-500/5' : ''}`}>
-                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.numero}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.registro}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.numFactura}</td>
                     <td className="py-3 pr-4 text-brand-text font-medium max-w-[250px] truncate">{f.cliente}</td>
                     <td className="py-3 pr-4 text-right font-mono text-xs text-brand-subtle">{f.items}</td>
                     <td className="py-3 pr-4 text-right font-mono text-xs text-brand-subtle">{fmtCOP(f.costo)}</td>
@@ -458,7 +466,7 @@ export default function ColisionPage() {
             <tfoot>
               <tr className="border-t-2 border-brand-border">
                 <td className="pt-3 font-mono text-xs uppercase text-brand-text font-bold">Total</td>
-                <td className="pt-3 font-mono text-xs text-brand-subtle">
+                <td className="pt-3 font-mono text-xs text-brand-subtle" colSpan={2}>
                   {facturasFiltradas.length} factura{facturasFiltradas.length !== 1 ? 's' : ''}
                 </td>
                 <td className="pt-3 text-right font-mono text-xs text-brand-subtle">
