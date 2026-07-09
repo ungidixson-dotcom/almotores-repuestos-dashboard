@@ -301,10 +301,8 @@ export default function FacGeneralPage() {
   // ── Parsear mostrador ────────────────────────────────────────────────────
   const facturadoMostrador = useMemo(() => {
     // A=0 Almacen, B=1 Refer, C=2 Vendedor, E=4 Cuenta, G=6 Fecha, I=8 Prefijo, P=15 Neto
-    if (mostradorRaw.length < 2) return {
-      Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0,
-      porAsesor: {} as Record<string, number>
-    }
+    const empty = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0, porAsesor: {} as Record<string, number> }
+    if (mostradorRaw.length < 2) return empty
     const result: Record<string, number> = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
     const porAsesor: Record<string, number> = {}
     mostradorRaw.slice(1).forEach(row => {
@@ -341,7 +339,8 @@ export default function FacGeneralPage() {
     // A=0 Almacen, B=1 Refer(vacio=linea secundaria), C=2 Vendedor, E=4 Cuenta,
     // G=6 Fecha, I=8 Prefijo, Q=16 Neto
     // Solo primera linea (B=Refer no vacio). ENR2 = devoluciones (restan).
-    if (creditoRaw.length < 2) return { total: 0, porAsesor: {} as Record<string,number> }
+    const emptyC = { total: 0, porAsesor: {} as Record<string,number> }
+    if (creditoRaw.length < 2) return emptyC
     let total = 0
     const porAsesor: Record<string, number> = {}
     creditoRaw.slice(1).forEach(row => {
@@ -364,11 +363,11 @@ export default function FacGeneralPage() {
     const datos: Record<string, number> = {
       'Taller':     facturadoTaller.Taller,
       'Colisión':   facturadoTaller.Colisión,
-      'Mostrador':  facturadoMostrador.Mostrador + facturadoCredito.total,
+      'Mostrador':  (facturadoMostrador?.Mostrador ?? 0) + (facturadoCredito?.total ?? 0),
       // Accesorios = Accesorios Taller (11A,12A,13A) + Accesorios Mostrador
-      'Accesorios': facturadoTaller.AccesoriosTaller + facturadoMostrador.Accesorios,
-      'Mayoristas': facturadoMostrador.Mayoristas,
-      'Subastas':   facturadoMostrador.Subastas,
+      'Accesorios': (facturadoTaller?.AccesoriosTaller ?? 0) + (facturadoMostrador?.Accesorios ?? 0),
+      'Mayoristas': facturadoMostrador?.Mayoristas ?? 0,
+      'Subastas':   facturadoMostrador?.Subastas ?? 0,
     }
 
     return Object.entries(datos).map(([nombre, facturado]) => {
