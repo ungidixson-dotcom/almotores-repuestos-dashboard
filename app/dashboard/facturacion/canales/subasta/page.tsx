@@ -455,8 +455,28 @@ export default function SubastasAccesoriosPage() {
         ))}
       </div>
 
-      {/* Días hábiles */}
-      <Panel>
+      {/* Hojas auxiliares Subastas */}
+      <div className="flex flex-wrap gap-3">
+        <p className="w-full text-xs font-mono uppercase tracking-wider text-brand-subtle">Análisis de subastas</p>
+        <Link href="/dashboard/facturacion/canales/subasta"
+          className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-surface px-4 py-3 hover:border-brand-teal/50 transition-colors">
+          <span>📊</span>
+          <div>
+            <p className="text-sm font-semibold text-brand-text">Torre de Control</p>
+            <p className="text-xs text-brand-subtle font-mono">Análisis en tiempo real · subastas Supabase</p>
+          </div>
+          <span className="ml-2 text-brand-subtle font-mono text-xs">→</span>
+        </Link>
+        <Link href="/dashboard/facturacion/canales/subasta/comparativo"
+          className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-surface px-4 py-3 hover:border-brand-teal/50 transition-colors">
+          <span>📈</span>
+          <div>
+            <p className="text-sm font-semibold text-brand-text">Comparativo de Períodos</p>
+            <p className="text-xs text-brand-subtle font-mono">2026 vs 2025 · por aseguradora y asesor</p>
+          </div>
+          <span className="ml-2 text-brand-subtle font-mono text-xs">→</span>
+        </Link>
+      </div>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
           <div>
             <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">Días hábiles — {MESES[mes-1]} {anio}</p>
