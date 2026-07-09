@@ -183,23 +183,26 @@ export default function FacGeneralPage() {
   const [mostradorRaw,   setMostradorRaw]   = useState<string[][]>([])
   const [creditoRaw,     setCreditoRaw]     = useState<string[][]>([])
   const [prefijosRaw,    setPrefijosRaw]    = useState<string[][]>([])
+  const [tipoClientesRaw, setTipoClientesRaw] = useState<string[][]>([])
 
   const cargar = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [pres, tal, most, cred, pref] = await Promise.all([
+      const [pres, tal, most, cred, pref, tipoC] = await Promise.all([
         fetchCSV(GID.presupuesto),
         fetchCSV(GID.taller),
         fetchCSV(GID.mostrador),
         fetchCSV(GID.credito),
         fetchCSV(GID.prefijos),
+        fetchCSV(GID.tipoClientes),
       ])
       setPresupuestoRaw(pres)
       setTallerRaw(tal)
       setMostradorRaw(most)
       setCreditoRaw(cred)
       setPrefijosRaw(pref)
+      setTipoClientesRaw(tipoC)
       setUltimaAct(new Date())
     } catch(e) {
       setError('Error cargando datos del Sheet. Verifica que esté publicado.')
@@ -252,68 +255,108 @@ export default function FacGeneralPage() {
     return map
   }, [prefijosRaw])
 
+  // ── Clientes Mayoristas y Subastas (facturan por mostrador/crédito) ──────
+  const clientesMayoristas = useMemo(() => {
+    const set = new Set<string>()
+    tipoClientesRaw.slice(1).forEach(row => {
+      const cuenta = row[0]?.trim()
+      const tipo   = row[1]?.trim().toLowerCase() || row[2]?.trim().toLowerCase()
+      if (cuenta && tipo?.includes('mayorist')) set.add(cuenta)
+    })
+    return set
+  }, [tipoClientesRaw])
+
+  const clientesSubastas = useMemo(() => {
+    const set = new Set<string>()
+    tipoClientesRaw.slice(1).forEach(row => {
+      const cuenta = row[0]?.trim()
+      const tipo   = row[1]?.trim().toLowerCase() || row[2]?.trim().toLowerCase()
+      if (cuenta && tipo?.includes('subast')) set.add(cuenta)
+    })
+    return set
+  }, [tipoClientesRaw])
+
   // ── Parsear taller ───────────────────────────────────────────────────────
   const facturadoTaller = useMemo(() => {
-    // A=0 Taller, G=6 Fecha(DD/MM/YY), I=8 Prefijo, P=15 Neto
-    if (tallerRaw.length < 2) return { Taller: 0, Colisión: 0 }
-    let taller = 0, colision = 0
+    // A=0 Taller, G=6 Fecha(DD/MM/YY), P=15 Neto
+    // 16 = Colisión
+    // 11,11ex,12,13,13ex = Taller (Norte, Pasoancho, Calle 9)
+    // 11A,12A,13A = Accesorios Taller
+    if (tallerRaw.length < 2) return { Taller: 0, Colisión: 0, AccesoriosTaller: 0 }
+    let taller = 0, colision = 0, accesoriosTaller = 0
     tallerRaw.slice(1).forEach(row => {
       if (!row[0] || !row[15]) return
       const fec = parseFecha(row[6])
       if (!fec) return
       if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
       const val     = parseCOP(row[15])
-      const tallNum = row[0]?.toString().trim()
-      if (tallNum === '16') colision += val
-      else taller += val
+      const tallNum = row[0]?.toString().trim().toUpperCase()
+      if (tallNum === '16')                                    colision += val
+      else if (['11A','12A','13A'].includes(tallNum))          accesoriosTaller += val
+      else                                                     taller += val
     })
-    return { Taller: taller, Colisión: colision }
+    return { Taller: taller, Colisión: colision, AccesoriosTaller: accesoriosTaller }
   }, [tallerRaw, anio, mes])
 
   // ── Parsear mostrador ────────────────────────────────────────────────────
   const facturadoMostrador = useMemo(() => {
-    // A=0 Almacen, G=6 Fecha(DD/MM/YY), I=8 Prefijo, P=15 Neto
-    if (mostradorRaw.length < 2) return { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
+    // A=0 Almacen, B=1 Refer, C=2 Vendedor, E=4 Cuenta, G=6 Fecha, I=8 Prefijo, P=15 Neto
+    if (mostradorRaw.length < 2) return {
+      Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0,
+      porAsesor: {} as Record<string, number>
+    }
     const result: Record<string, number> = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
+    const porAsesor: Record<string, number> = {}
     mostradorRaw.slice(1).forEach(row => {
       if (!row[15]) return
       const fec = parseFecha(row[6])
       if (!fec) return
       if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
-      const pref  = row[8]?.trim().toUpperCase() || ''
-      const val   = parseCOP(row[15])
-      // Clasificar por prefijo
-      const pref3 = pref.slice(0,3)
+      const pref   = row[8]?.trim().toUpperCase() || ''
+      const val    = parseCOP(row[15])
+      const cuenta = row[4]?.trim() || ''
+      const asesor = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
+      // Clasificar por tipo de cliente primero, luego por prefijo
       let canal = 'Mostrador'
-      if (pref3 === 'EAA' || pref3 === 'EAM' || pref3 === 'EAL') canal = 'Accesorios'
-      else if (pref3 === 'ENR' && pref !== 'ENR2') canal = 'Mayoristas'
-      else if (pref3 === 'EVC' || pref3 === 'EVK') canal = 'Subastas'
-      else if (pref3 === 'ETT' || pref3 === 'ETK' || pref3 === 'ETS') canal = 'Mostrador'
+      if (clientesMayoristas.has(cuenta))       canal = 'Mayoristas'
+      else if (clientesSubastas.has(cuenta))    canal = 'Subastas'
+      else {
+        const pref3 = pref.slice(0,3)
+        if (pref3 === 'EAA' || pref3 === 'EAM' || pref3 === 'EAL') canal = 'Accesorios'
+        else if (pref3 === 'ENR' && pref !== 'ENR2')                  canal = 'Mayoristas'
+        else if (pref3 === 'EVC' || pref3 === 'EVK')                  canal = 'Subastas'
+      }
       if (result[canal] !== undefined) result[canal] += val
       else result['Mostrador'] += val
+      // Acumular por asesor (solo Mostrador, Crédito y Accesorios)
+      if (['Mostrador','Accesorios'].includes(canal)) {
+        porAsesor[asesor] = (porAsesor[asesor] || 0) + val
+      }
     })
-    return result
-  }, [mostradorRaw, anio, mes])
+    return { ...result, porAsesor }
+  }, [mostradorRaw, clientesMayoristas, clientesSubastas, anio, mes])
 
   // ── Parsear ventas a crédito ─────────────────────────────────────────────
   const facturadoCredito = useMemo(() => {
-    // A=0 Almacen, B=1 Refer(vacio=linea secundaria), G=6 Fecha, I=8 Prefijo, Q=16 Neto
-    // Solo primera linea de cada factura (B=Refer no vacio)
-    // ENR2 = devoluciones (restan)
-    if (creditoRaw.length < 2) return 0
+    // A=0 Almacen, B=1 Refer(vacio=linea secundaria), C=2 Vendedor, E=4 Cuenta,
+    // G=6 Fecha, I=8 Prefijo, Q=16 Neto
+    // Solo primera linea (B=Refer no vacio). ENR2 = devoluciones (restan).
+    if (creditoRaw.length < 2) return { total: 0, porAsesor: {} as Record<string,number> }
     let total = 0
+    const porAsesor: Record<string, number> = {}
     creditoRaw.slice(1).forEach(row => {
-      // Primera línea: col B (refer) tiene valor
-      if (!row[1]?.trim()) return // línea secundaria, saltar
+      if (!row[1]?.trim()) return // línea secundaria
       const fec = parseFecha(row[6])
       if (!fec) return
       if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
       const pref    = row[8]?.trim().toUpperCase() || ''
       const val     = parseCOP(row[16])
       const esDevol = pref === 'ENR2'
+      const asesor  = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
       total += esDevol ? -val : val
+      if (!esDevol) porAsesor[asesor] = (porAsesor[asesor] || 0) + val
     })
-    return total
+    return { total, porAsesor }
   }, [creditoRaw, anio, mes])
 
   // ── Totales por canal ────────────────────────────────────────────────────
@@ -321,8 +364,9 @@ export default function FacGeneralPage() {
     const datos: Record<string, number> = {
       'Taller':     facturadoTaller.Taller,
       'Colisión':   facturadoTaller.Colisión,
-      'Mostrador':  facturadoMostrador.Mostrador + facturadoCredito,
-      'Accesorios': facturadoMostrador.Accesorios,
+      'Mostrador':  facturadoMostrador.Mostrador + facturadoCredito.total,
+      // Accesorios = Accesorios Taller (11A,12A,13A) + Accesorios Mostrador
+      'Accesorios': facturadoTaller.AccesoriosTaller + facturadoMostrador.Accesorios,
       'Mayoristas': facturadoMostrador.Mayoristas,
       'Subastas':   facturadoMostrador.Subastas,
     }
@@ -562,6 +606,58 @@ export default function FacGeneralPage() {
           )
         })}
       </div>
+
+      {/* ── Facturación por asesor ──────────────────────────────────────── */}
+      <Panel>
+        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+          Facturación por asesor — Mostrador, Crédito y Accesorios
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-brand-border">
+                {['Asesor','Mostrador','Crédito','Total'].map(h => (
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const mostradorAsesor = facturadoMostrador.porAsesor || {}
+                const creditoAsesor   = facturadoCredito.porAsesor   || {}
+                const asesores = Array.from(new Set([...Object.keys(mostradorAsesor), ...Object.keys(creditoAsesor)]))
+                  .map(a => ({
+                    nombre: a,
+                    mostrador: mostradorAsesor[a] || 0,
+                    credito:   creditoAsesor[a]   || 0,
+                    total:    (mostradorAsesor[a] || 0) + (creditoAsesor[a] || 0),
+                  }))
+                  .sort((a,b) => b.total - a.total)
+                const totalMost = asesores.reduce((s,a) => s + a.mostrador, 0)
+                const totalCred = asesores.reduce((s,a) => s + a.credito, 0)
+                return (
+                  <>
+                    {asesores.map(a => (
+                      <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                        <td className="py-3 pr-6 text-brand-text font-medium">{a.nombre}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.mostrador)}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.credito)}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.total)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-brand-border font-bold">
+                      <td className="py-3 pr-6 font-mono text-xs uppercase text-brand-text">Total</td>
+                      <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(totalMost)}</td>
+                      <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(totalCred)}</td>
+                      <td className="py-3 pr-6 font-mono text-xs text-brand-teal">{fmtCOP(totalMost+totalCred)}</td>
+                    </tr>
+                  </>
+                )
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
 
       <p className="text-xs text-brand-subtle font-mono text-center pb-4">
         Datos desde Google Sheets · Actualización automática cada 6 horas · Días hábiles: lunes–sábado sin festivos Colombia
