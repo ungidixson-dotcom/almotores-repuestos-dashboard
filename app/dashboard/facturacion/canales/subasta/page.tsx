@@ -233,7 +233,7 @@ export default function SubastasAccesoriosPage() {
   const hoy = new Date()
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mes,  setMes]  = useState(hoy.getMonth()+1)
-  const [canal, setCanal] = useState<'subastas'|'accesorios'>('subastas')
+  const canal = 'subastas'
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState('')
   const [ultimaAct,     setUltimaAct]     = useState<Date|null>(null)
@@ -437,8 +437,8 @@ export default function SubastasAccesoriosPage() {
           { label:'🔧 Taller',    href:'/dashboard/facturacion/canales/taller',    neto: null },
           { label:'🚗 Colisión',  href:'/dashboard/facturacion/canales/colision',  neto: null },
           { label:'🛒 Mostrador', href:'/dashboard/facturacion/canales/mostrador', neto: null },
-          { label:'🔨 Subastas',  href:'#', onClick: ()=>setCanal('subastas'),  neto: totalSub, activo: canal==='subastas' },
-          { label:'🎁 Accesorios',href:'#', onClick: ()=>setCanal('accesorios'),neto: totalAcc, activo: canal==='accesorios' },
+          { label:'🔨 Subastas',  href:'#', onClick: ()=>{}, neto: totalSub, activo: true },
+          { label:'🎁 Accesorios', href:'/dashboard/facturacion/canales/accesorio', neto: null },
         ].map((item, i) => (
           item.href === '#'
             ? <button key={i} onClick={item.onClick}
@@ -477,6 +477,9 @@ export default function SubastasAccesoriosPage() {
           <span className="ml-2 text-brand-subtle font-mono text-xs">→</span>
         </Link>
       </div>
+
+      {/* Días hábiles */}
+      <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
           <div>
             <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">Días hábiles — {MESES[mes-1]} {anio}</p>
