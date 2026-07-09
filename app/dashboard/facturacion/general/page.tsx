@@ -263,12 +263,12 @@ export default function FacGeneralPage() {
     return map
   }, [prefijosRaw])
 
-  // ── Clientes Mayoristas y Subastas (facturan por mostrador/crédito) ──────
+  // ── Clientes Mayoristas y Subastas (col A=Cuenta Quiter, col C=T.Cliente) ──
   const clientesMayoristas = useMemo(() => {
     const set = new Set<string>()
     tipoClientesRaw.slice(1).forEach(row => {
-      const cuenta = row[0]?.trim()
-      const tipo   = row[1]?.trim().toLowerCase() || row[2]?.trim().toLowerCase()
+      const cuenta = row[0]?.toString().trim()
+      const tipo   = (row[2] || row[1])?.toString().trim().toLowerCase()
       if (cuenta && tipo?.includes('mayorist')) set.add(cuenta)
     })
     return set
@@ -277,12 +277,23 @@ export default function FacGeneralPage() {
   const clientesSubastas = useMemo(() => {
     const set = new Set<string>()
     tipoClientesRaw.slice(1).forEach(row => {
-      const cuenta = row[0]?.trim()
-      const tipo   = row[1]?.trim().toLowerCase() || row[2]?.trim().toLowerCase()
+      const cuenta = row[0]?.toString().trim()
+      const tipo   = (row[2] || row[1])?.toString().trim().toLowerCase()
       if (cuenta && tipo?.includes('subast')) set.add(cuenta)
     })
     return set
   }, [tipoClientesRaw])
+
+  // ── Mapa de prefijos → canal (de hoja Prefijo de facturación) ────────────
+  const prefijoCanalMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    prefijosRaw.slice(1).forEach(row => {
+      const pref  = row[0]?.toString().trim().toUpperCase()
+      const canal = row[10]?.toString().trim() // col K = Canales
+      if (pref && canal) map[pref] = canal
+    })
+    return map
+  }, [prefijosRaw])
 
   // ── Parsear taller ───────────────────────────────────────────────────────
   const facturadoTaller = useMemo((): { Taller: number; Colisión: number; AccesoriosTaller: number; CostoTaller: number; CostoColision: number } => {
@@ -320,14 +331,16 @@ export default function FacGeneralPage() {
       const val    = parseCOP(row[14])
       const cuenta = row[4]?.trim() || ''
       const asesor = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
+      // Clasificar: primero por cuenta (Mayoristas/Subastas), luego por prefijo
       let canal: 'Mostrador'|'Accesorios'|'Mayoristas'|'Subastas' = 'Mostrador'
-      if (clientesMayoristas.has(cuenta))       canal = 'Mayoristas'
-      else if (clientesSubastas.has(cuenta))    canal = 'Subastas'
+      if (clientesMayoristas.has(cuenta))    canal = 'Mayoristas'
+      else if (clientesSubastas.has(cuenta)) canal = 'Subastas'
       else {
-        const pref3 = pref.slice(0,3)
-        if (pref3 === 'EAA' || pref3 === 'EAM' || pref3 === 'EAL') canal = 'Accesorios'
-        else if (pref3 === 'ENR' && pref !== 'ENR2')                canal = 'Mayoristas'
-        else if (pref3 === 'EVC' || pref3 === 'EVK')                canal = 'Subastas'
+        // Usar mapa de prefijos
+        const canalPref = prefijoCanalMap[pref]
+        if (canalPref?.toLowerCase().includes('accesorio')) canal = 'Accesorios'
+        else if (canalPref?.toLowerCase().includes('mostrador')) canal = 'Mostrador'
+        // Si no está en el mapa, queda Mostrador por defecto
       }
       mostrador[canal] += val
       if (canal === 'Mostrador' || canal === 'Accesorios') {
@@ -335,7 +348,7 @@ export default function FacGeneralPage() {
       }
     })
     return { ...mostrador, porAsesor }
-  }, [mostradorRaw, clientesMayoristas, clientesSubastas, anio, mes])
+  }, [mostradorRaw, clientesMayoristas, clientesSubastas, prefijoCanalMap, anio, mes])
 
   // ── Parsear ventas a crédito ─────────────────────────────────────────────
   const facturadoCredito = useMemo((): { total: number; porAsesor: Record<string, number> } => {
@@ -351,14 +364,19 @@ export default function FacGeneralPage() {
       if (!fec) return
       if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
       const pref    = row[8]?.trim().toUpperCase() || ''
+      const cuenta  = row[4]?.toString().trim() || ''
       const val     = parseCOP(row[16])
       const esDevol = pref === 'ENR2'
       const asesor  = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
+      // Solo sumar al total general si NO es Mayoristas ni Subastas (esos se suman por mostrador)
+      // Las devoluciones ENR2 siempre restan
+      const esMayor = clientesMayoristas.has(cuenta)
+      const esSub   = clientesSubastas.has(cuenta)
       total += esDevol ? -val : val
       if (!esDevol) porAsesor[asesor] = (porAsesor[asesor] || 0) + val
     })
     return { total, porAsesor }
-  }, [creditoRaw, anio, mes])
+  }, [creditoRaw, clientesMayoristas, clientesSubastas, anio, mes])
 
   // ── Totales por canal ────────────────────────────────────────────────────
   const canales = useMemo((): ResumenCanal[] => {
