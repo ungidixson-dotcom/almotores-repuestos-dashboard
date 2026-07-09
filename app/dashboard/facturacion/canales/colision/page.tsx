@@ -31,7 +31,8 @@ const fmtCOP = (v: number) => {
 
 const parseCOP = (s: string | undefined): number => {
   if (!s) return 0
-  const n = parseFloat(s.replace(/[$,\s"]/g, ''))
+  const str = s.replace(/[$\s"]/g, '').trim()
+  const n = parseFloat(str.replace(/,/g, ''))
   return isNaN(n) ? 0 : n
 }
 
