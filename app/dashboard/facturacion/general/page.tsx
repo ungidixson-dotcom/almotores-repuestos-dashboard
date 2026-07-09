@@ -240,7 +240,9 @@ export default function FacGeneralPage(){
     return sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.costo,0):(m[sede]?.costo||0)
   }
 
-  const canalesData=useMemo(()=>CANALES_CONFIG.map(c=>{
+  const canalesData=useMemo(()=>CANALES_CONFIG
+    .filter(c => sede==='Todas' || c.canal!=='Colisión')
+    .map(c=>{
     const neto=getNetoCanal(c.canal),costo=getCostoCanal(c.canal)
     const ppto=sede==='Todas'?getPpto(c.canal,'Todas'):getPpto(c.canal,sede)
     const util=neto-costo,pctUtil=neto?(util/neto)*100:0
