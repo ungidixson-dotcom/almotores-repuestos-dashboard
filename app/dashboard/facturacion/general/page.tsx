@@ -14,143 +14,100 @@ const FESTIVOS: Record<string,boolean> = {}
 
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQgv_V93SUlbyd5gXHKs0znKRVwwTgUSF4WpkmJurZ8N4RxaRj1cTAgCqG0klE4i8BBoiUpbjOMnsxt/pub'
 const GID = {
-  presupuesto:  '1013471670',
-  prefijos:     '83279873',
-  tipoClientes: '1039901350',
-  taller:       '1968437267',
-  mostrador:    '143806698',
-  credito:      '1646038872',
+  presupuesto:   '1013471670',
+  prefijos:      '83279873',
+  tipoClientes:  '1039901350',
+  taller:        '1968437267',
+  mostrador:     '143806698',
+  credito:       '1646038872',
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-const fmtCOP  = (v: number) => {
-  if (v >= 1e9) return `$${(v/1e9).toFixed(1)}B`
-  if (v >= 1e6) return `$${(v/1e6).toFixed(1)}M`
-  if (v >= 1e3) return `$${(v/1e3).toFixed(0)}K`
+const fmtCOP = (v: number) => {
+  if (v >= 1e9)  return `$${(v/1e9).toFixed(1)}B`
+  if (v >= 1e6)  return `$${(v/1e6).toFixed(1)}M`
+  if (v >= 1e3)  return `$${(v/1e3).toFixed(0)}K`
   return `$${v.toFixed(0)}`
 }
-const fmtPct  = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
-const parseCOP = (s: string) => {
+
+const parseCOP = (s: string | undefined | null): number => {
   if (!s) return 0
-  const n = parseFloat(s.replace(/[$,\s]/g,''))
+  const n = parseFloat(String(s).replace(/[$,\s]/g,''))
   return isNaN(n) ? 0 : n
 }
 
-function parseFecha(s: string): Date | null {
+const normCuenta = (v: unknown): string => {
+  try { return String(parseInt(String(parseFloat(String(v))), 10)).trim() }
+  catch { return String(v ?? '').trim() }
+}
+
+function parseFecha(s: string | undefined | null): Date | null {
   if (!s) return null
-  const str = s.trim()
-  // Formato YYYY-MM-DD
+  const str = String(s).trim()
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    const d = new Date(str)
-    return isNaN(d.getTime()) ? null : d
+    const d = new Date(str); return isNaN(d.getTime()) ? null : d
   }
-  // Formato DD/MM/YY o DD/MM/YYYY
   if (str.includes('/')) {
-    const parts = str.split('/')
-    if (parts.length === 3) {
-      const [d, m, y] = parts
-      const anio = parseInt(y) < 100 ? 2000 + parseInt(y) : parseInt(y)
-      return new Date(anio, parseInt(m) - 1, parseInt(d))
-    }
+    const [d,m,y] = str.split('/')
+    const anio = parseInt(y) < 100 ? 2000 + parseInt(y) : parseInt(y)
+    return new Date(anio, parseInt(m)-1, parseInt(d))
   }
-  const dt = new Date(str)
-  return isNaN(dt.getTime()) ? null : dt
+  const dt = new Date(str); return isNaN(dt.getTime()) ? null : dt
 }
 
 function esDiaHabil(d: Date): boolean {
-  const dow = d.getDay() // 0=dom, 6=sab
-  if (dow === 0) return false // domingo no
-  const key = d.toISOString().slice(0,10)
-  if (FESTIVOS[key]) return false
-  return true
+  if (d.getDay() === 0) return false
+  return !FESTIVOS[d.toISOString().slice(0,10)]
 }
 
 function diasHabilesEnMes(anio: number, mes: number): number {
-  const d = new Date(anio, mes - 1, 1)
-  let c = 0
-  while (d.getMonth() === mes - 1) {
-    if (esDiaHabil(d)) c++
-    d.setDate(d.getDate() + 1)
-  }
+  const d = new Date(anio, mes-1, 1); let c = 0
+  while (d.getMonth() === mes-1) { if (esDiaHabil(d)) c++; d.setDate(d.getDate()+1) }
   return c
 }
 
 function diasHabilesHasta(anio: number, mes: number, dia: number): number {
-  const d = new Date(anio, mes - 1, 1)
-  let c = 0
-  while (d.getDate() <= dia && d.getMonth() === mes - 1) {
-    if (esDiaHabil(d)) c++
-    d.setDate(d.getDate() + 1)
+  const d = new Date(anio, mes-1, 1); let c = 0
+  while (d.getDate() <= dia && d.getMonth() === mes-1) {
+    if (esDiaHabil(d)) c++; d.setDate(d.getDate()+1)
   }
   return c
 }
 
 async function fetchCSV(gid: string): Promise<string[][]> {
   const url = `${BASE_URL}?gid=${gid}&single=true&output=csv`
-  const r = await fetch(url, { cache: 'no-store' })
+  const r   = await fetch(url, { cache: 'no-store' })
   const txt = await r.text()
   return txt.split('\n').map(row => {
-    // Parser CSV simple con soporte de comillas
-    const cells: string[] = []
-    let cur = '', inQ = false
+    const cells: string[] = []; let cur = '', inQ = false
     for (let i = 0; i < row.length; i++) {
       if (row[i] === '"') { inQ = !inQ; continue }
       if (row[i] === ',' && !inQ) { cells.push(cur.trim()); cur = ''; continue }
       cur += row[i]
     }
-    cells.push(cur.trim())
-    return cells
+    cells.push(cur.trim()); return cells
   })
-}
-
-// ── Tipos ────────────────────────────────────────────────────────────────────
-interface Canal {
-  nombre: string
-  color: string
-  icon: string
-  presupuesto: number
-  facturado: number
-}
-
-interface ResumenCanal {
-  canal: string
-  color: string
-  icon: string
-  presupuesto: number
-  facturado: number
-  pct: number
-  porDia: number
-  necesarioPorDia: number
-  pronostico: number
-  alerta: 'ok' | 'warning' | 'danger'
-}
-
-// ── Colores por canal ────────────────────────────────────────────────────────
-const CANAL_META: Record<string, { color: string; icon: string }> = {
-  'Taller':     { color: '#4FD1C5', icon: '🔧' },
-  'Mostrador':  { color: '#63B3ED', icon: '🛒' },
-  'Accesorios': { color: '#F6AD55', icon: '🎁' },
-  'Mayoristas': { color: '#B794F4', icon: '📦' },
-  'Subastas':   { color: '#FC8181', icon: '🔨' },
-  'Colisión':   { color: '#68D391', icon: '🚗' },
 }
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-// ── Panel ────────────────────────────────────────────────────────────────────
-function Panel({ children, className='' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>
-      {children}
-    </div>
-  )
+const CANAL_META: Record<string,{color:string;icon:string}> = {
+  'Taller':     { color:'#4FD1C5', icon:'🔧' },
+  'Mostrador':  { color:'#63B3ED', icon:'🛒' },
+  'Accesorios': { color:'#F6AD55', icon:'🎁' },
+  'Mayoristas': { color:'#B794F4', icon:'📦' },
+  'Subastas':   { color:'#FC8181', icon:'🔨' },
+  'Colisión':   { color:'#68D391', icon:'🚗' },
 }
 
-// ── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, accent='text-brand-teal', alert=false }:
-  { label: string; value: string; sub?: string; accent?: string; alert?: boolean }) {
+// ── Componentes UI ───────────────────────────────────────────────────────────
+function Panel({ children, className='' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>{children}</div>
+}
+
+function KpiCard({ label, value, sub, accent='text-brand-teal' }: { label:string; value:string; sub?:string; accent?:string }) {
   return (
-    <Panel className={alert ? 'border-red-500/50' : ''}>
+    <Panel>
       <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">{label}</p>
       <p className={`text-2xl font-bold font-title ${accent}`}>{value}</p>
       {sub && <p className="text-xs text-brand-subtle mt-1">{sub}</p>}
@@ -158,268 +115,243 @@ function KpiCard({ label, value, sub, accent='text-brand-teal', alert=false }:
   )
 }
 
-// ── Barra de progreso ────────────────────────────────────────────────────────
-function ProgressBar({ pct, color }: { pct: number; color: string }) {
-  const w = Math.min(100, Math.max(0, pct))
+function ProgressBar({ pct, color }: { pct:number; color:string }) {
   return (
     <div className="w-full h-2 bg-brand-border rounded-full overflow-hidden">
-      <div className="h-full rounded-full transition-all duration-700"
-           style={{ width: `${w}%`, background: color }} />
+      <div className="h-full rounded-full transition-all duration-700" style={{ width:`${Math.min(100,Math.max(0,pct))}%`, background:color }} />
     </div>
   )
 }
 
-// ── Chip de alerta ───────────────────────────────────────────────────────────
-function AlertChip({ tipo }: { tipo: 'ok'|'warning'|'danger' }) {
-  if (tipo === 'ok')      return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ En meta</span>
-  if (tipo === 'warning') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Alerta</span>
+function AlertChip({ tipo }: { tipo:'ok'|'warning'|'danger' }) {
+  if (tipo==='ok')      return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ En meta</span>
+  if (tipo==='warning') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Alerta</span>
   return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Riesgo</span>
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
+// ── Página principal ─────────────────────────────────────────────────────────
 export default function FacGeneralPage() {
   const hoy = new Date()
-  const [anio,   setAnio]   = useState(hoy.getFullYear())
-  const [mes,    setMes]    = useState(hoy.getMonth() + 1)
+  const [anio, setAnio]   = useState(hoy.getFullYear())
+  const [mes,  setMes]    = useState(hoy.getMonth()+1)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
-  const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
+  const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
 
-  // Datos crudos
-  const [presupuestoRaw, setPresupuestoRaw] = useState<string[][]>([])
-  const [tallerRaw,      setTallerRaw]      = useState<string[][]>([])
-  const [mostradorRaw,   setMostradorRaw]   = useState<string[][]>([])
-  const [creditoRaw,     setCreditoRaw]     = useState<string[][]>([])
-  const [prefijosRaw,    setPrefijosRaw]    = useState<string[][]>([])
+  const [presupuestoRaw,  setPresupuestoRaw]  = useState<string[][]>([])
+  const [tallerRaw,       setTallerRaw]       = useState<string[][]>([])
+  const [mostradorRaw,    setMostradorRaw]    = useState<string[][]>([])
+  const [creditoRaw,      setCreditoRaw]      = useState<string[][]>([])
+  const [prefijosRaw,     setPrefijosRaw]     = useState<string[][]>([])
   const [tipoClientesRaw, setTipoClientesRaw] = useState<string[][]>([])
 
   const cargar = useCallback(async () => {
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
-      const [pres, tal, most, cred, pref, tipoC] = await Promise.all([
-        fetchCSV(GID.presupuesto),
-        fetchCSV(GID.taller),
-        fetchCSV(GID.mostrador),
-        fetchCSV(GID.credito),
-        fetchCSV(GID.prefijos),
-        fetchCSV(GID.tipoClientes),
+      const [pres,tal,most,cred,pref,tipoC] = await Promise.all([
+        fetchCSV(GID.presupuesto), fetchCSV(GID.taller), fetchCSV(GID.mostrador),
+        fetchCSV(GID.credito),     fetchCSV(GID.prefijos), fetchCSV(GID.tipoClientes),
       ])
-      setPresupuestoRaw(pres)
-      setTallerRaw(tal)
-      setMostradorRaw(most)
-      setCreditoRaw(cred)
-      setPrefijosRaw(pref)
-      setTipoClientesRaw(tipoC)
+      setPresupuestoRaw(pres); setTallerRaw(tal);  setMostradorRaw(most)
+      setCreditoRaw(cred);     setPrefijosRaw(pref); setTipoClientesRaw(tipoC)
       setUltimaAct(new Date())
-    } catch(e) {
-      setError('Error cargando datos del Sheet. Verifica que esté publicado.')
-    }
+    } catch { setError('Error cargando datos del Sheet.') }
     setLoading(false)
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+  useEffect(() => { const id = setInterval(cargar, 6*60*60*1000); return () => clearInterval(id) }, [cargar])
 
-  // Auto-refresh cada 6 horas
-  useEffect(() => {
-    const id = setInterval(cargar, 6 * 60 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [cargar])
+  // ── Días hábiles ──────────────────────────────────────────────────────────
+  const totalDH = useMemo(() => diasHabilesEnMes(anio, mes), [anio, mes])
+  const dhTransc = useMemo(() => {
+    const esActual = anio===hoy.getFullYear() && mes===hoy.getMonth()+1
+    return esActual ? diasHabilesHasta(anio, mes, hoy.getDate()) : totalDH
+  }, [anio, mes, totalDH])
+  const dhRest  = totalDH - dhTransc
+  const pctDias = totalDH ? (dhTransc/totalDH)*100 : 0
 
-  // ── Días hábiles ────────────────────────────────────────────────────────
-  const totalDiasHabiles    = useMemo(() => diasHabilesEnMes(anio, mes), [anio, mes])
-  const diasHabilesTranscurridos = useMemo(() => {
-    const esElMesActual = anio === hoy.getFullYear() && mes === hoy.getMonth() + 1
-    if (!esElMesActual) return totalDiasHabiles
-    return diasHabilesHasta(anio, mes, hoy.getDate())
-  }, [anio, mes, totalDiasHabiles])
-  const diasRestantes = totalDiasHabiles - diasHabilesTranscurridos
-  const pctDias = totalDiasHabiles ? (diasHabilesTranscurridos / totalDiasHabiles) * 100 : 0
+  // ── Mapas de referencia ───────────────────────────────────────────────────
+  const prefMap = useMemo(() => {
+    const m: Record<string,string> = {}
+    // Col 0=Prefijo, Col 10=Canales
+    prefijosRaw.slice(1).forEach(r => { if(r[0] && r[10]) m[r[0].trim()] = r[10].trim() })
+    return m
+  }, [prefijosRaw])
 
-  // ── Parsear presupuesto ─────────────────────────────────────────────────
+  const cuentasMayoristas = useMemo(() => {
+    const s = new Set<string>()
+    // Col 0=Cuenta Quiter, Col 2=T.Cliente
+    tipoClientesRaw.slice(1).forEach(r => {
+      if (r[2]?.toLowerCase().includes('mayorist')) s.add(normCuenta(r[0]))
+    })
+    return s
+  }, [tipoClientesRaw])
+
+  const cuentasSubastas = useMemo(() => {
+    const s = new Set<string>()
+    tipoClientesRaw.slice(1).forEach(r => {
+      if (r[2]?.toLowerCase().includes('subast')) s.add(normCuenta(r[0]))
+    })
+    return s
+  }, [tipoClientesRaw])
+
+  // ── Presupuesto ───────────────────────────────────────────────────────────
   const presupuesto = useMemo(() => {
-    // Fila 1 = headers, col 0=Sede, col1=Cod, col2=sede2, col3=Cod.new, col4=Canales, col5=Canales2, col6=Dep
-    // col 7..18 = Ene..Dic
-    const result: Record<string, number> = {}
-    const mesIdx = mes - 1 + 7 // col 7 = Enero
-    presupuestoRaw.slice(1).forEach(row => {
-      const canal = row[4] // columna Canales
-      const val = parseCOP(row[mesIdx])
-      if (canal && val > 0) {
-        result[canal] = (result[canal] || 0) + val
-      }
+    // Col 4=Canales, col 7+mes-1=valor mensual (col7=Enero)
+    const result: Record<string,number> = {}
+    const mesIdx = mes - 1 + 7
+    presupuestoRaw.slice(1).forEach(r => {
+      const canal = r[4]?.trim(); const val = parseCOP(r[mesIdx])
+      if (canal && val > 0) result[canal] = (result[canal]||0) + val
     })
     return result
   }, [presupuestoRaw, mes])
 
-  // ── Parsear prefijos para clasificar canal ───────────────────────────────
-  const prefijosMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    prefijosRaw.slice(1).forEach(row => {
-      const prefijo = row[0]?.trim()
-      const canal   = row[1]?.trim() || row[2]?.trim()
-      if (prefijo && canal) map[prefijo.toUpperCase()] = canal
+  // ── TALLER ────────────────────────────────────────────────────────────────
+  // Col: Taller(0), F.cierre(6), Neto(14), Costo(15)
+  const facTaller = useMemo((): {Taller:number;Colisión:number;AccTaller:number;CostoTaller:number;CostoColision:number} => {
+    let taller=0, colision=0, accTaller=0, costoTaller=0, costoColision=0
+    tallerRaw.slice(1).forEach(r => {
+      if (!r[0] || !r[14]) return
+      const fec = parseFecha(r[6]); if (!fec) return
+      if (fec.getFullYear()!==anio || fec.getMonth()+1!==mes) return
+      const val   = parseCOP(r[14])
+      const costo = parseCOP(r[15])
+      const t     = r[0].toString().trim().toUpperCase()
+      if      (t==='16')                          { colision+=val;  costoColision+=costo }
+      else if (['11A','12A','13A'].includes(t))   accTaller+=val
+      else                                        { taller+=val; costoTaller+=costo }
     })
-    return map
-  }, [prefijosRaw])
-
-  // ── Clientes Mayoristas y Subastas (col A=Cuenta Quiter, col C=T.Cliente) ──
-  const clientesMayoristas = useMemo(() => {
-    const set = new Set<string>()
-    tipoClientesRaw.slice(1).forEach(row => {
-      const cuenta = row[0]?.toString().trim()
-      const tipo   = (row[2] || row[1])?.toString().trim().toLowerCase()
-      if (cuenta && tipo?.includes('mayorist')) set.add(cuenta)
-    })
-    return set
-  }, [tipoClientesRaw])
-
-  const clientesSubastas = useMemo(() => {
-    const set = new Set<string>()
-    tipoClientesRaw.slice(1).forEach(row => {
-      const cuenta = row[0]?.toString().trim()
-      const tipo   = (row[2] || row[1])?.toString().trim().toLowerCase()
-      if (cuenta && tipo?.includes('subast')) set.add(cuenta)
-    })
-    return set
-  }, [tipoClientesRaw])
-
-  // ── Mapa de prefijos → canal (de hoja Prefijo de facturación) ────────────
-  const prefijoCanalMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    prefijosRaw.slice(1).forEach(row => {
-      const pref  = row[0]?.toString().trim().toUpperCase()
-      const canal = row[10]?.toString().trim() // col K = Canales
-      if (pref && canal) map[pref] = canal
-    })
-    return map
-  }, [prefijosRaw])
-
-  // ── Parsear taller ───────────────────────────────────────────────────────
-  const facturadoTaller = useMemo((): { Taller: number; Colisión: number; AccesoriosTaller: number; CostoTaller: number; CostoColision: number } => {
-    // A=0 Taller, G=6 Fecha, O=14 Neto, P=15 Costo
-    // 16=Colisión | 11A,12A,13A=Accesorios | resto=Taller
-    if (tallerRaw.length < 2) return { Taller: 0, Colisión: 0, AccesoriosTaller: 0, CostoTaller: 0, CostoColision: 0 }
-    let taller = 0, colision = 0, accesoriosTaller = 0, costoTaller = 0, costoColision = 0
-    tallerRaw.slice(1).forEach(row => {
-      if (!row[0] || !row[14]) return
-      const fec = parseFecha(row[6])
-      if (!fec) return
-      if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
-      const val     = parseCOP(row[14])
-      const costo   = parseCOP(row[15])
-      const tallNum = row[0]?.toString().trim().toUpperCase()
-      if (tallNum === '16')                           { colision += val; costoColision += costo }
-      else if (['11A','12A','13A'].includes(tallNum)) accesoriosTaller += val
-      else                                            { taller += val; costoTaller += costo }
-    })
-    return { Taller: taller, Colisión: colision, AccesoriosTaller: accesoriosTaller, CostoTaller: costoTaller, CostoColision: costoColision }
+    return { Taller:taller, Colisión:colision, AccTaller:accTaller, CostoTaller:costoTaller, CostoColision:costoColision }
   }, [tallerRaw, anio, mes])
 
-  // ── Parsear mostrador ────────────────────────────────────────────────────
-  const facturadoMostrador = useMemo((): { Mostrador: number; Accesorios: number; Mayoristas: number; Subastas: number; porAsesor: Record<string, number> } => {
-    // A=0 Almacen, B=1 Refer, C=2 Vendedor, E=4 Cuenta, G=6 Fecha, I=8 Prefijo, P=15 Neto
-    if (mostradorRaw.length < 2) return { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0, porAsesor: {} }
-    const porAsesor: Record<string, number> = {}
-    const mostrador  = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
+  // ── MOSTRADOR ─────────────────────────────────────────────────────────────
+  // Col: Cuenta(4), Fecha(6), Prefijo(7), Neto(14), Costo(15), Vendedor2(3)
+  const facMostrador = useMemo((): {Mostrador:number;Accesorios:number;Mayoristas:number;Subastas:number;porAsesor:Record<string,number>} => {
+    const r: Record<'Mostrador'|'Accesorios'|'Mayoristas'|'Subastas'|'Devolucion',number> =
+      { Mostrador:0, Accesorios:0, Mayoristas:0, Subastas:0, Devolucion:0 }
+    const porAsesor: Record<string,number> = {}
+
     mostradorRaw.slice(1).forEach(row => {
       if (!row[14]) return
-      const fec = parseFecha(row[6])
-      if (!fec) return
-      if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
-      const pref   = row[8]?.trim().toUpperCase() || ''
+      const fec = parseFecha(row[6]); if (!fec) return
+      if (fec.getFullYear()!==anio || fec.getMonth()+1!==mes) return
       const val    = parseCOP(row[14])
-      const cuenta = row[4]?.trim() || ''
-      const asesor = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
-      // Clasificar: primero por cuenta (Mayoristas/Subastas), luego por prefijo
-      let canal: 'Mostrador'|'Accesorios'|'Mayoristas'|'Subastas' = 'Mostrador'
-      if (clientesMayoristas.has(cuenta))    canal = 'Mayoristas'
-      else if (clientesSubastas.has(cuenta)) canal = 'Subastas'
-      else {
-        // Usar mapa de prefijos
-        const canalPref = prefijoCanalMap[pref]
-        if (canalPref?.toLowerCase().includes('accesorio')) canal = 'Accesorios'
-        else if (canalPref?.toLowerCase().includes('mostrador')) canal = 'Mostrador'
-        // Si no está en el mapa, queda Mostrador por defecto
-      }
-      mostrador[canal] += val
-      if (canal === 'Mostrador' || canal === 'Accesorios') {
-        porAsesor[asesor] = (porAsesor[asesor] || 0) + val
-      }
-    })
-    return { ...mostrador, porAsesor }
-  }, [mostradorRaw, clientesMayoristas, clientesSubastas, prefijoCanalMap, anio, mes])
+      const cuenta = normCuenta(row[4])
+      const pref   = (row[7]||'').trim()
+      const asesor = (row[3]||row[2]||'Sin asesor').trim()
+      const canalPref = prefMap[pref] || ''
 
-  // ── Parsear ventas a crédito ─────────────────────────────────────────────
-  const facturadoCredito = useMemo((): { total: number; porAsesor: Record<string, number> } => {
-    // A=0 Almacen, B=1 Refer(vacio=linea secundaria), C=2 Vendedor, E=4 Cuenta,
-    // G=6 Fecha, I=8 Prefijo, Q=16 Neto
-    // Solo primera linea (B=Refer no vacio). ENR2 = devoluciones (restan).
-    if (creditoRaw.length < 2) return { total: 0, porAsesor: {} }
-    let total = 0
-    const porAsesor: Record<string, number> = {}
+      let canal: 'Mostrador'|'Accesorios'|'Mayoristas'|'Subastas'|'Devolucion' = 'Mostrador'
+      if      (cuentasMayoristas.has(cuenta))         canal = 'Mayoristas'
+      else if (cuentasSubastas.has(cuenta))           canal = 'Subastas'
+      else if (canalPref.includes('Subasta'))         canal = 'Subastas'
+      else if (canalPref.includes('Accesorio'))       canal = 'Accesorios'
+      else if (pref.startsWith('ENR'))                canal = 'Devolucion' // ya viene negativo
+
+      r[canal] += val
+      if (canal==='Mostrador' || canal==='Accesorios') porAsesor[asesor]=(porAsesor[asesor]||0)+val
+    })
+
+    return {
+      Mostrador:  r.Mostrador + r.Devolucion, // Devolucion ya es negativa
+      Accesorios: r.Accesorios,
+      Mayoristas: r.Mayoristas,
+      Subastas:   r.Subastas,
+      porAsesor,
+    }
+  }, [mostradorRaw, cuentasMayoristas, cuentasSubastas, prefMap, anio, mes])
+
+  // ── CRÉDITO ───────────────────────────────────────────────────────────────
+  // Lógica: ffill cols A-K → clasificar cada línea → ENR2 de subastas resta
+  // Col: Cuenta(4), Fecha(6), Prefijo(8), Neto(16), Costo(17), Vendedor2(3)
+  const facCredito = useMemo((): {Mostrador:number;Subastas:number;Mayoristas:number;porAsesor:Record<string,number>} => {
+    const result = { Mostrador:0, Subastas:0, Mayoristas:0 }
+    const porAsesor: Record<string,number> = {}
+
+    // Estado del ffill
+    let curAlmacen='', curRefer='', curVendedor='', curVendedor2='', curCuenta='',
+        curCliente='', curFecha='', curFecha3='', curPrefijo='', curNum='', curAlbaran=''
+
     creditoRaw.slice(1).forEach(row => {
-      if (!row[1]?.trim()) return // línea secundaria
-      const fec = parseFecha(row[6])
-      if (!fec) return
-      if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
-      const pref    = row[8]?.trim().toUpperCase() || ''
-      const cuenta  = row[4]?.toString().trim() || ''
-      const val     = parseCOP(row[16])
-      const esDevol = pref === 'ENR2'
-      const asesor  = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
-      // Solo sumar al total general si NO es Mayoristas ni Subastas (esos se suman por mostrador)
-      // Las devoluciones ENR2 siempre restan
-      const esMayor = clientesMayoristas.has(cuenta)
-      const esSub   = clientesSubastas.has(cuenta)
-      total += esDevol ? -val : val
-      if (!esDevol) porAsesor[asesor] = (porAsesor[asesor] || 0) + val
-    })
-    return { total, porAsesor }
-  }, [creditoRaw, clientesMayoristas, clientesSubastas, anio, mes])
+      // ffill: si col A no está vacía, es primera línea → actualizar estado
+      if (row[0]?.trim()) {
+        curAlmacen=row[0]; curRefer=row[1]; curVendedor=row[2]; curVendedor2=row[3]
+        curCuenta=row[4];  curCliente=row[5]; curFecha=row[6]; curFecha3=row[7]
+        curPrefijo=row[8]; curNum=row[9]; curAlbaran=row[10]
+      }
 
-  // ── Totales por canal ────────────────────────────────────────────────────
-  const canales = useMemo((): ResumenCanal[] => {
-    const datos: Record<string, number> = {
-      'Taller':     facturadoTaller.Taller,
-      'Colisión':   facturadoTaller.Colisión,
-      'Mostrador':  (facturadoMostrador?.Mostrador ?? 0) + (facturadoCredito?.total ?? 0),
-      // Accesorios = Accesorios Taller (11A,12A,13A) + Accesorios Mostrador
-      'Accesorios': (facturadoTaller?.AccesoriosTaller ?? 0) + (facturadoMostrador?.Accesorios ?? 0),
-      'Mayoristas': facturadoMostrador?.Mayoristas ?? 0,
-      'Subastas':   facturadoMostrador?.Subastas ?? 0,
+      if (!curFecha || !row[16]) return
+      const fec = parseFecha(curFecha); if (!fec) return
+      if (fec.getFullYear()!==anio || fec.getMonth()+1!==mes) return
+
+      const val    = parseCOP(row[16])
+      const cuenta = normCuenta(curCuenta)
+      const pref   = curPrefijo.trim()
+      const asesor = (curVendedor2||curVendedor||'Sin asesor').trim()
+      const esENR2 = pref === 'ENR2'
+
+      if (cuentasSubastas.has(cuenta)) {
+        // ENR2 de subastas = devolucion → resta (val ya es positivo en el Sheet)
+        result.Subastas += esENR2 ? -val : val
+      } else if (cuentasMayoristas.has(cuenta)) {
+        result.Mayoristas += val
+      } else {
+        // ENR2 sin cuenta registrada = devolucion mostrador
+        result.Mostrador += esENR2 ? -val : val
+        porAsesor[asesor] = (porAsesor[asesor]||0) + (esENR2 ? -val : val)
+      }
+    })
+    return { ...result, porAsesor }
+  }, [creditoRaw, cuentasSubastas, cuentasMayoristas, anio, mes])
+
+  // ── Totales por canal ──────────────────────────────────────────────────────
+  const canales = useMemo(() => {
+    const datos: Record<string,number> = {
+      'Taller':     facTaller.Taller,
+      'Colisión':   facTaller.Colisión,
+      'Accesorios': facTaller.AccTaller + facMostrador.Accesorios,
+      'Mostrador':  facMostrador.Mostrador + facCredito.Mostrador,
+      'Mayoristas': facMostrador.Mayoristas + facCredito.Mayoristas,
+      'Subastas':   facMostrador.Subastas + facCredito.Subastas,
     }
 
     return Object.entries(datos).map(([nombre, facturado]) => {
-      const ppto = presupuesto[nombre] || presupuesto[nombre === 'Colisión' ? 'Colision' : nombre] || 0
-      const pct  = ppto ? (facturado / ppto) * 100 : 0
-      const porDia = diasHabilesTranscurridos ? facturado / diasHabilesTranscurridos : 0
+      const ppto = presupuesto[nombre] || 0
+      const pct  = ppto ? (facturado/ppto)*100 : 0
+      const porDia = dhTransc ? facturado/dhTransc : 0
       const restante = ppto - facturado
-      const necesarioPorDia = diasRestantes > 0 ? restante / diasRestantes : restante
-      const pronostico = facturado + porDia * diasRestantes
-      const pctPron = ppto ? (pronostico / ppto) * 100 : 0
-
-      let alerta: 'ok'|'warning'|'danger' = 'ok'
-      if (pctPron < 85) alerta = 'danger'
-      else if (pctPron < 95) alerta = 'warning'
-
-      const meta = CANAL_META[nombre] || { color: '#A0AEC0', icon: '📊' }
-      return { canal: nombre, ...meta, presupuesto: ppto, facturado, pct, porDia, necesarioPorDia, pronostico, alerta }
+      const necesarioPorDia = dhRest > 0 ? restante/dhRest : restante
+      const pronostico = facturado + porDia*dhRest
+      const pctPron = ppto ? (pronostico/ppto)*100 : 0
+      const alerta: 'ok'|'warning'|'danger' = pctPron>=95 ? 'ok' : pctPron>=85 ? 'warning' : 'danger'
+      const meta = CANAL_META[nombre]||{color:'#A0AEC0',icon:'📊'}
+      return { canal:nombre, ...meta, presupuesto:ppto, facturado, pct, porDia, necesarioPorDia, pronostico, alerta }
     })
-  }, [facturadoTaller, facturadoMostrador, facturadoCredito, presupuesto, diasHabilesTranscurridos, diasRestantes])
+  }, [facTaller, facMostrador, facCredito, presupuesto, dhTransc, dhRest])
 
-  const totalFacturado  = canales.reduce((s,c) => s + c.facturado, 0)
-  const totalPresupuesto = canales.reduce((s,c) => s + c.presupuesto, 0)
-  const totalPct        = totalPresupuesto ? (totalFacturado / totalPresupuesto) * 100 : 0
-  const porDiaTotal     = diasHabilesTranscurridos ? totalFacturado / diasHabilesTranscurridos : 0
-  const pronosticoTotal = totalFacturado + porDiaTotal * diasRestantes
-  const pronosticoPct   = totalPresupuesto ? (pronosticoTotal / totalPresupuesto) * 100 : 0
-  const necesarioDia    = diasRestantes > 0 ? (totalPresupuesto - totalFacturado) / diasRestantes : 0
+  const totalFacturado   = canales.reduce((s,c)=>s+c.facturado,0)
+  const totalPresupuesto = canales.reduce((s,c)=>s+c.presupuesto,0)
+  const totalPct         = totalPresupuesto ? (totalFacturado/totalPresupuesto)*100 : 0
+  const porDiaTotal      = dhTransc ? totalFacturado/dhTransc : 0
+  const necesarioDia     = dhRest>0 ? (totalPresupuesto-totalFacturado)/dhRest : 0
+  const pronosticoTotal  = totalFacturado + porDiaTotal*dhRest
+  const pronosticoPct    = totalPresupuesto ? (pronosticoTotal/totalPresupuesto)*100 : 0
+  const alertaGeneral: 'ok'|'warning'|'danger' = pronosticoPct>=95?'ok':pronosticoPct>=85?'warning':'danger'
 
-  const alertaGeneral: 'ok'|'warning'|'danger' =
-    pronosticoPct < 85 ? 'danger' : pronosticoPct < 95 ? 'warning' : 'ok'
-
-  const coloresAlerta = { ok: '#68D391', warning: '#F6AD55', danger: '#FC8181' }
+  // ── Asesores ───────────────────────────────────────────────────────────────
+  const porAsesor = useMemo(() => {
+    const mAsesor = facMostrador.porAsesor || {}
+    const cAsesor = facCredito.porAsesor   || {}
+    const asesores = Array.from(new Set([...Object.keys(mAsesor),...Object.keys(cAsesor)]))
+    return asesores.map(a => ({
+      nombre: a,
+      mostrador: mAsesor[a]||0,
+      credito:   cAsesor[a]||0,
+      total:    (mAsesor[a]||0)+(cAsesor[a]||0),
+    })).filter(a=>a.total!==0).sort((a,b)=>b.total-a.total)
+  }, [facMostrador, facCredito])
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -433,50 +365,38 @@ export default function FacGeneralPage() {
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold font-title text-brand-text">Facturación General</h1>
-          <p className="text-sm text-brand-subtle mt-0.5">Seguimiento diario vs presupuesto · días hábiles lunes–sábado</p>
+          <p className="text-sm text-brand-subtle mt-0.5">Seguimiento diario vs presupuesto · días hábiles lunes–sábado sin festivos</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Selector año */}
-          <select value={anio} onChange={e => setAnio(Number(e.target.value))}
+          <select value={anio} onChange={e=>setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
-            {[2024,2025,2026].map(a => <option key={a} value={a}>{a}</option>)}
+            {[2024,2025,2026].map(a=><option key={a} value={a}>{a}</option>)}
           </select>
-          {/* Selector mes */}
-          <select value={mes} onChange={e => setMes(Number(e.target.value))}
+          <select value={mes} onChange={e=>setMes(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
-            {MESES.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
+            {MESES.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
           </select>
           <button onClick={cargar}
             className="bg-brand-teal/20 hover:bg-brand-teal/30 border border-brand-teal/40 text-brand-teal rounded-lg px-4 py-2 text-sm font-mono transition-colors">
             ↻ Actualizar
           </button>
-          {ultimaAct && (
-            <span className="text-xs text-brand-subtle font-mono">
-              Actualizado: {ultimaAct.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}
-            </span>
-          )}
+          {ultimaAct && <span className="text-xs text-brand-subtle font-mono">Act: {ultimaAct.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</span>}
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">
-          {error}
-        </div>
-      )}
+      {error && <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">{error}</div>}
 
-      {/* ── Días hábiles ────────────────────────────────────────────────── */}
+      {/* Días hábiles */}
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
           <div>
-            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">
-              Días hábiles — {MESES[mes-1]} {anio}
-            </p>
+            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">Días hábiles — {MESES[mes-1]} {anio}</p>
             <p className="text-lg font-bold font-title text-brand-text mt-0.5">
-              {diasHabilesTranscurridos} de {totalDiasHabiles} transcurridos · {diasRestantes} restantes
+              {dhTransc} de {totalDH} transcurridos · {dhRest} restantes
             </p>
           </div>
           <div className="text-right">
@@ -487,113 +407,90 @@ export default function FacGeneralPage() {
         <ProgressBar pct={pctDias} color="#4FD1C5" />
       </Panel>
 
-      {/* ── KPIs generales ──────────────────────────────────────────────── */}
+      {/* KPIs generales */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Facturado" value={fmtCOP(totalFacturado)}
-          sub={`de ${fmtCOP(totalPresupuesto)} presupuestado`} accent="text-brand-teal"/>
-        <KpiCard label="% Avance" value={`${totalPct.toFixed(1)}%`}
-          sub={`meta: ${pctDias.toFixed(0)}% del mes`}
-          accent={totalPct >= pctDias ? 'text-green-400' : 'text-red-400'}/>
-        <KpiCard label="Facturación / día" value={fmtCOP(porDiaTotal)}
-          sub={`necesario: ${fmtCOP(necesarioDia)}/día`}
-          accent={porDiaTotal >= necesarioDia ? 'text-green-400' : 'text-yellow-400'}/>
-        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronosticoTotal)}
-          sub={`${pronosticoPct.toFixed(1)}% del presupuesto`}
-          accent={pronosticoPct >= 95 ? 'text-green-400' : pronosticoPct >= 85 ? 'text-yellow-400' : 'text-red-400'}
-          alert={alertaGeneral === 'danger'}/>
+        <KpiCard label="Facturado" value={fmtCOP(totalFacturado)} sub={`de ${fmtCOP(totalPresupuesto)} presupuestado`} accent="text-brand-teal"/>
+        <KpiCard label="% Avance" value={`${totalPct.toFixed(1)}%`} sub={`meta: ${pctDias.toFixed(0)}% del mes`}
+          accent={totalPct>=pctDias?'text-green-400':'text-red-400'}/>
+        <KpiCard label="Facturación / día" value={fmtCOP(porDiaTotal)} sub={`necesario: ${fmtCOP(necesarioDia)}/día`}
+          accent={porDiaTotal>=necesarioDia?'text-green-400':'text-yellow-400'}/>
+        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronosticoTotal)} sub={`${pronosticoPct.toFixed(1)}% del presupuesto`}
+          accent={pronosticoPct>=95?'text-green-400':pronosticoPct>=85?'text-yellow-400':'text-red-400'}/>
       </div>
 
-      {/* ── Barra general ───────────────────────────────────────────────── */}
+      {/* Barra general */}
       <Panel>
         <div className="flex justify-between items-center mb-2">
-          <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">
-            Avance general vs presupuesto
-          </p>
-          <AlertChip tipo={alertaGeneral} />
+          <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">Avance general vs presupuesto</p>
+          <AlertChip tipo={alertaGeneral}/>
         </div>
         <div className="relative">
-          <ProgressBar pct={totalPct} color={coloresAlerta[alertaGeneral]} />
-          {/* Marca de días hábiles */}
-          <div className="absolute top-0 h-full flex items-center pointer-events-none"
-               style={{ left: `${pctDias}%` }}>
-            <div className="w-0.5 h-4 bg-white/50 -mt-1" />
+          <ProgressBar pct={totalPct} color={alertaGeneral==='ok'?'#68D391':alertaGeneral==='warning'?'#F6AD55':'#FC8181'}/>
+          <div className="absolute top-0 h-full flex items-center pointer-events-none" style={{left:`${pctDias}%`}}>
+            <div className="w-0.5 h-4 bg-white/50 -mt-1"/>
           </div>
         </div>
         <div className="flex justify-between mt-1">
           <span className="text-xs text-brand-subtle font-mono">{totalPct.toFixed(1)}% facturado</span>
-          <span className="text-xs text-brand-subtle font-mono">{pctDias.toFixed(0)}% días</span>
+          <span className="text-xs text-brand-subtle font-mono">{pctDias.toFixed(0)}% días hábiles</span>
         </div>
       </Panel>
 
-      {/* ── Tabla por canal ─────────────────────────────────────────────── */}
+      {/* Tabla por canal */}
       <Panel>
-        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-          Detalle por canal
-        </h2>
+        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Detalle por canal</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
-                {['Canal','Presupuesto','Facturado','% Avance','$/Día actual','$/Día necesario','Pronóstico','Estado'].map(h => (
+                {['Canal','Presupuesto','Facturado','% Avance','$/Día actual','$/Día necesario','Pronóstico','Estado'].map(h=>(
                   <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {canales.map(c => (
+              {canales.map(c=>(
                 <tr key={c.canal} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center gap-2">
-                      <span>{c.icon}</span>
-                      <span className="font-medium text-brand-text">{c.canal}</span>
-                    </div>
-                  </td>
+                  <td className="py-3 pr-4"><div className="flex items-center gap-2"><span>{c.icon}</span><span className="font-medium text-brand-text">{c.canal}</span></div></td>
                   <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.presupuesto)}</td>
-                  <td className="py-3 pr-4 font-mono text-xs font-semibold" style={{ color: c.color }}>{fmtCOP(c.facturado)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs font-semibold" style={{color:c.color}}>{fmtCOP(c.facturado)}</td>
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2 min-w-[120px]">
                       <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width:`${Math.min(100,c.pct)}%`, background: c.color }} />
+                        <div className="h-full rounded-full" style={{width:`${Math.min(100,c.pct)}%`,background:c.color}}/>
                       </div>
                       <span className="font-mono text-xs text-brand-subtle">{c.pct.toFixed(1)}%</span>
                     </div>
                   </td>
                   <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.porDia)}</td>
                   <td className="py-3 pr-4 font-mono text-xs">
-                    <span className={c.porDia >= c.necesarioPorDia ? 'text-green-400' : 'text-red-400'}>
-                      {fmtCOP(c.necesarioPorDia)}
-                    </span>
+                    <span className={c.porDia>=c.necesarioPorDia?'text-green-400':'text-red-400'}>{fmtCOP(c.necesarioPorDia)}</span>
                   </td>
                   <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.pronostico)}</td>
-                  <td className="py-3 pr-4"><AlertChip tipo={c.alerta} /></td>
+                  <td className="py-3 pr-4"><AlertChip tipo={c.alerta}/></td>
                 </tr>
               ))}
-              {/* Total */}
               <tr className="border-t-2 border-brand-border font-bold">
                 <td className="py-3 pr-4 text-brand-text font-mono text-xs uppercase">Total</td>
                 <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(totalPresupuesto)}</td>
                 <td className="py-3 pr-4 font-mono text-xs text-brand-teal">{fmtCOP(totalFacturado)}</td>
                 <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{totalPct.toFixed(1)}%</td>
                 <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(porDiaTotal)}</td>
-                <td className="py-3 pr-4 font-mono text-xs">
-                  <span className={porDiaTotal >= necesarioDia ? 'text-green-400' : 'text-red-400'}>
-                    {fmtCOP(necesarioDia)}
-                  </span>
-                </td>
+                <td className="py-3 pr-4 font-mono text-xs"><span className={porDiaTotal>=necesarioDia?'text-green-400':'text-red-400'}>{fmtCOP(necesarioDia)}</span></td>
                 <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(pronosticoTotal)}</td>
-                <td className="py-3 pr-4"><AlertChip tipo={alertaGeneral} /></td>
+                <td className="py-3 pr-4"><AlertChip tipo={alertaGeneral}/></td>
               </tr>
             </tbody>
           </table>
         </div>
       </Panel>
 
-      {/* ── Cards por canal con barra ────────────────────────────────────── */}
+      {/* Cards por canal */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {canales.map(c => {
-          const pctPron = c.presupuesto ? (c.pronostico / c.presupuesto) * 100 : 0
+        {canales.map(c=>{
+          const pctPron = c.presupuesto?(c.pronostico/c.presupuesto)*100:0
           return (
-            <Panel key={c.canal} className={c.alerta === 'danger' ? 'border-red-500/40' : c.alerta === 'warning' ? 'border-yellow-500/30' : ''}>
+            <Panel key={c.canal} className={c.alerta==='danger'?'border-red-500/40':c.alerta==='warning'?'border-yellow-500/30':''}>
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{c.icon}</span>
@@ -602,23 +499,17 @@ export default function FacGeneralPage() {
                     <p className="text-xs text-brand-subtle font-mono">{fmtCOP(c.facturado)} / {fmtCOP(c.presupuesto)}</p>
                   </div>
                 </div>
-                <AlertChip tipo={c.alerta} />
+                <AlertChip tipo={c.alerta}/>
               </div>
-              <ProgressBar pct={c.pct} color={c.color} />
+              <ProgressBar pct={c.pct} color={c.color}/>
               <div className="flex justify-between mt-2 text-xs font-mono text-brand-subtle">
                 <span>{c.pct.toFixed(1)}% avance</span>
                 <span>Pron: {pctPron.toFixed(0)}%</span>
               </div>
               <div className="mt-3 pt-3 border-t border-brand-border/40 grid grid-cols-2 gap-2 text-xs font-mono">
-                <div>
-                  <p className="text-brand-subtle">Actual/día</p>
-                  <p className="text-brand-text font-semibold">{fmtCOP(c.porDia)}</p>
-                </div>
-                <div>
-                  <p className="text-brand-subtle">Necesario/día</p>
-                  <p className={c.porDia >= c.necesarioPorDia ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
-                    {fmtCOP(c.necesarioPorDia)}
-                  </p>
+                <div><p className="text-brand-subtle">Actual/día</p><p className="text-brand-text font-semibold">{fmtCOP(c.porDia)}</p></div>
+                <div><p className="text-brand-subtle">Necesario/día</p>
+                  <p className={c.porDia>=c.necesarioPorDia?'text-green-400 font-semibold':'text-red-400 font-semibold'}>{fmtCOP(c.necesarioPorDia)}</p>
                 </div>
               </div>
             </Panel>
@@ -626,7 +517,7 @@ export default function FacGeneralPage() {
         })}
       </div>
 
-      {/* ── Facturación por asesor ──────────────────────────────────────── */}
+      {/* Tabla por asesor */}
       <Panel>
         <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
           Facturación por asesor — Mostrador, Crédito y Accesorios
@@ -635,51 +526,33 @@ export default function FacGeneralPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
-                {['Asesor','Mostrador','Crédito','Total'].map(h => (
+                {['Asesor','Mostrador','Crédito','Total'].map(h=>(
                   <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(() => {
-                const mostradorAsesor = facturadoMostrador.porAsesor || {}
-                const creditoAsesor   = facturadoCredito.porAsesor   || {}
-                const asesores = Array.from(new Set([...Object.keys(mostradorAsesor), ...Object.keys(creditoAsesor)]))
-                  .map(a => ({
-                    nombre: a,
-                    mostrador: mostradorAsesor[a] || 0,
-                    credito:   creditoAsesor[a]   || 0,
-                    total:    (mostradorAsesor[a] || 0) + (creditoAsesor[a] || 0),
-                  }))
-                  .sort((a,b) => b.total - a.total)
-                const totalMost = asesores.reduce((s,a) => s + a.mostrador, 0)
-                const totalCred = asesores.reduce((s,a) => s + a.credito, 0)
-                return (
-                  <>
-                    {asesores.map(a => (
-                      <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                        <td className="py-3 pr-6 text-brand-text font-medium">{a.nombre}</td>
-                        <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.mostrador)}</td>
-                        <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.credito)}</td>
-                        <td className="py-3 pr-6 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.total)}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t-2 border-brand-border font-bold">
-                      <td className="py-3 pr-6 font-mono text-xs uppercase text-brand-text">Total</td>
-                      <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(totalMost)}</td>
-                      <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(totalCred)}</td>
-                      <td className="py-3 pr-6 font-mono text-xs text-brand-teal">{fmtCOP(totalMost+totalCred)}</td>
-                    </tr>
-                  </>
-                )
-              })()}
+              {porAsesor.map(a=>(
+                <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                  <td className="py-3 pr-6 text-brand-text font-medium">{a.nombre}</td>
+                  <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.mostrador)}</td>
+                  <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.credito)}</td>
+                  <td className="py-3 pr-6 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.total)}</td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-brand-border font-bold">
+                <td className="py-3 pr-6 font-mono text-xs uppercase text-brand-text">Total</td>
+                <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(porAsesor.reduce((s,a)=>s+a.mostrador,0))}</td>
+                <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(porAsesor.reduce((s,a)=>s+a.credito,0))}</td>
+                <td className="py-3 pr-6 font-mono text-xs text-brand-teal">{fmtCOP(porAsesor.reduce((s,a)=>s+a.total,0))}</td>
+              </tr>
             </tbody>
           </table>
         </div>
       </Panel>
 
       <p className="text-xs text-brand-subtle font-mono text-center pb-4">
-        Datos desde Google Sheets · Actualización automática cada 6 horas · Días hábiles: lunes–sábado sin festivos Colombia
+        Datos desde Google Sheets · Actualización automática cada 6 horas · Días hábiles lunes–sábado sin festivos Colombia
       </p>
     </div>
   )
