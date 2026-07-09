@@ -38,14 +38,22 @@ const parseCOP = (s: string) => {
 
 function parseFecha(s: string): Date | null {
   if (!s) return null
-  // Formato DD/MM/YY o DD/MM/YYYY
-  const parts = s.trim().split('/')
-  if (parts.length === 3) {
-    const [d, m, y] = parts
-    const anio = parseInt(y) < 100 ? 2000 + parseInt(y) : parseInt(y)
-    return new Date(anio, parseInt(m) - 1, parseInt(d))
+  const str = s.trim()
+  // Formato YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    const d = new Date(str)
+    return isNaN(d.getTime()) ? null : d
   }
-  const dt = new Date(s)
+  // Formato DD/MM/YY o DD/MM/YYYY
+  if (str.includes('/')) {
+    const parts = str.split('/')
+    if (parts.length === 3) {
+      const [d, m, y] = parts
+      const anio = parseInt(y) < 100 ? 2000 + parseInt(y) : parseInt(y)
+      return new Date(anio, parseInt(m) - 1, parseInt(d))
+    }
+  }
+  const dt = new Date(str)
   return isNaN(dt.getTime()) ? null : dt
 }
 
@@ -277,25 +285,24 @@ export default function FacGeneralPage() {
   }, [tipoClientesRaw])
 
   // ── Parsear taller ───────────────────────────────────────────────────────
-  const facturadoTaller = useMemo((): { Taller: number; Colisión: number; AccesoriosTaller: number } => {
-    // A=0 Taller, G=6 Fecha(DD/MM/YY), P=15 Neto
-    // 16 = Colisión
-    // 11,11ex,12,13,13ex = Taller (Norte, Pasoancho, Calle 9)
-    // 11A,12A,13A = Accesorios Taller
-    if (tallerRaw.length < 2) return { Taller: 0, Colisión: 0, AccesoriosTaller: 0 }
-    let taller = 0, colision = 0, accesoriosTaller = 0
+  const facturadoTaller = useMemo((): { Taller: number; Colisión: number; AccesoriosTaller: number; CostoTaller: number; CostoColision: number } => {
+    // A=0 Taller, G=6 Fecha, O=14 Neto, P=15 Costo
+    // 16=Colisión | 11A,12A,13A=Accesorios | resto=Taller
+    if (tallerRaw.length < 2) return { Taller: 0, Colisión: 0, AccesoriosTaller: 0, CostoTaller: 0, CostoColision: 0 }
+    let taller = 0, colision = 0, accesoriosTaller = 0, costoTaller = 0, costoColision = 0
     tallerRaw.slice(1).forEach(row => {
-      if (!row[0] || !row[15]) return
+      if (!row[0] || !row[14]) return
       const fec = parseFecha(row[6])
       if (!fec) return
       if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
-      const val     = parseCOP(row[15])
+      const val     = parseCOP(row[14])
+      const costo   = parseCOP(row[15])
       const tallNum = row[0]?.toString().trim().toUpperCase()
-      if (tallNum === '16')                                    colision += val
-      else if (['11A','12A','13A'].includes(tallNum))          accesoriosTaller += val
-      else                                                     taller += val
+      if (tallNum === '16')                           { colision += val; costoColision += costo }
+      else if (['11A','12A','13A'].includes(tallNum)) accesoriosTaller += val
+      else                                            { taller += val; costoTaller += costo }
     })
-    return { Taller: taller, Colisión: colision, AccesoriosTaller: accesoriosTaller }
+    return { Taller: taller, Colisión: colision, AccesoriosTaller: accesoriosTaller, CostoTaller: costoTaller, CostoColision: costoColision }
   }, [tallerRaw, anio, mes])
 
   // ── Parsear mostrador ────────────────────────────────────────────────────
@@ -305,12 +312,12 @@ export default function FacGeneralPage() {
     const porAsesor: Record<string, number> = {}
     const mostrador  = { Mostrador: 0, Accesorios: 0, Mayoristas: 0, Subastas: 0 }
     mostradorRaw.slice(1).forEach(row => {
-      if (!row[15]) return
+      if (!row[14]) return
       const fec = parseFecha(row[6])
       if (!fec) return
       if (fec.getFullYear() !== anio || fec.getMonth() + 1 !== mes) return
       const pref   = row[8]?.trim().toUpperCase() || ''
-      const val    = parseCOP(row[15])
+      const val    = parseCOP(row[14])
       const cuenta = row[4]?.trim() || ''
       const asesor = row[3]?.trim() || row[2]?.trim() || 'Sin asesor'
       let canal: 'Mostrador'|'Accesorios'|'Mayoristas'|'Subastas' = 'Mostrador'
