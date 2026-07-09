@@ -230,18 +230,41 @@ export default function FacGeneralPage(){
       Colisión:{neto:0,costo:0}, Accesorios_Norte:{neto:0,costo:0},
       Accesorios_Pasoancho:{neto:0,costo:0}, 'Accesorios_Sede 39':{neto:0,costo:0},
     }
+    // asesores accesorios taller: [sede][asesor] = {neto,costo}
+    const asesoresAcc:Record<string,Record<string,{neto:number;costo:number}>> = {
+      Norte:{}, Pasoancho:{}, 'Sede 39':{}, Todas:{}
+    }
     tallerRaw.slice(1).forEach(row=>{
       const t=row[0]?.toString().trim().toUpperCase(); if(!t||!row[14]) return
       const fec=parseFecha(row[6]); if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes) return
       const neto=parseCOP(row[14]), costo=parseCOP(row[15])
+      const asesor=row[3]?.trim()||row[2]?.trim()||'Sin asesor'
       if(t==='16')  { r.Colisión.neto+=neto; r.Colisión.costo+=costo }
-      else if(t==='11A') { r.Accesorios_Norte.neto+=neto; r.Accesorios_Norte.costo+=costo }
-      else if(t==='12A') { r.Accesorios_Pasoancho.neto+=neto; r.Accesorios_Pasoancho.costo+=costo }
-      else if(t==='13A') { r['Accesorios_Sede 39'].neto+=neto; r['Accesorios_Sede 39'].costo+=costo }
+      else if(t==='11A') {
+        r.Accesorios_Norte.neto+=neto; r.Accesorios_Norte.costo+=costo
+        for(const sd of ['Norte','Todas']){
+          if(!asesoresAcc[sd][asesor]) asesoresAcc[sd][asesor]={neto:0,costo:0}
+          asesoresAcc[sd][asesor].neto+=neto; asesoresAcc[sd][asesor].costo+=costo
+        }
+      }
+      else if(t==='12A') {
+        r.Accesorios_Pasoancho.neto+=neto; r.Accesorios_Pasoancho.costo+=costo
+        for(const sd of ['Pasoancho','Todas']){
+          if(!asesoresAcc[sd][asesor]) asesoresAcc[sd][asesor]={neto:0,costo:0}
+          asesoresAcc[sd][asesor].neto+=neto; asesoresAcc[sd][asesor].costo+=costo
+        }
+      }
+      else if(t==='13A') {
+        r['Accesorios_Sede 39'].neto+=neto; r['Accesorios_Sede 39'].costo+=costo
+        for(const sd of ['Sede 39','Todas']){
+          if(!asesoresAcc[sd][asesor]) asesoresAcc[sd][asesor]={neto:0,costo:0}
+          asesoresAcc[sd][asesor].neto+=neto; asesoresAcc[sd][asesor].costo+=costo
+        }
+      }
       else if(t==='11')  { r.Norte.neto+=neto; r.Norte.costo+=costo }
       else if(t==='12')  { r.Pasoancho.neto+=neto; r.Pasoancho.costo+=costo }
       else if(t==='13')  { r['Sede 39'].neto+=neto; r['Sede 39'].costo+=costo }
-    }); return r
+    }); return {r, asesoresAcc}
   },[tallerRaw,anio,mes])
 
   // ── Mostrador (todos los canales) ─────────────────────────────────────────
@@ -303,15 +326,15 @@ export default function FacGeneralPage(){
   // ── Helpers neto/costo por canal y sede ───────────────────────────────────
   const getNetoCanal = (canal:string):number => {
     if(canal==='Taller'){
-      if(sede==='Todas') return dataTaller.Norte.neto+dataTaller.Pasoancho.neto+dataTaller['Sede 39'].neto
-      return dataTaller[sede]?.neto||0
+      if(sede==='Todas') return dataTaller.r.Norte.neto+dataTaller.r.Pasoancho.neto+dataTaller.r['Sede 39'].neto
+      return dataTaller.r[sede]?.neto||0
     }
-    if(canal==='Colisión') return sede==='Todas'?dataTaller.Colisión.neto:0
+    if(canal==='Colisión') return sede==='Todas'?dataTaller.r.Colisión.neto:0
     if(canal==='Accesorios'){
       const keys = sede==='Todas'
         ? ['Accesorios_Norte','Accesorios_Pasoancho','Accesorios_Sede 39']
         : [`Accesorios_${sede}`]
-      const talAcc = keys.reduce((s,k)=>s+(dataTaller[k]?.neto||0),0)
+      const talAcc = keys.reduce((s,k)=>s+(dataTaller.r[k]?.neto||0),0)
       const m = dataMostrador.canales['Accesorios']||{}
       const mostAcc = sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.neto,0):(m[sede]?.neto||0)
       return talAcc+mostAcc
@@ -322,15 +345,15 @@ export default function FacGeneralPage(){
 
   const getCostoCanal = (canal:string):number => {
     if(canal==='Taller'){
-      if(sede==='Todas') return dataTaller.Norte.costo+dataTaller.Pasoancho.costo+dataTaller['Sede 39'].costo
-      return dataTaller[sede]?.costo||0
+      if(sede==='Todas') return dataTaller.r.Norte.costo+dataTaller.r.Pasoancho.costo+dataTaller.r['Sede 39'].costo
+      return dataTaller.r[sede]?.costo||0
     }
-    if(canal==='Colisión') return sede==='Todas'?dataTaller.Colisión.costo:0
+    if(canal==='Colisión') return sede==='Todas'?dataTaller.r.Colisión.costo:0
     if(canal==='Accesorios'){
       const keys = sede==='Todas'
         ? ['Accesorios_Norte','Accesorios_Pasoancho','Accesorios_Sede 39']
         : [`Accesorios_${sede}`]
-      const talAcc = keys.reduce((s,k)=>s+(dataTaller[k]?.costo||0),0)
+      const talAcc = keys.reduce((s,k)=>s+(dataTaller.r[k]?.costo||0),0)
       const m = dataMostrador.canales['Accesorios']||{}
       const mostAcc = sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.costo,0):(m[sede]?.costo||0)
       return talAcc+mostAcc
@@ -371,12 +394,27 @@ export default function FacGeneralPage(){
   const estadoGeneral:('ok'|'alerta'|'riesgo')=pctPronTotal>=95?'ok':pctPronTotal>=85?'alerta':'riesgo'
   const colorGeneral = estadoGeneral==='ok'?'#68D391':estadoGeneral==='alerta'?'#F6AD55':'#FC8181'
 
-  // Asesores filtrados por sede
+  // Asesores filtrados por sede — combina mostrador + accesorios taller
   const asesoresData = useMemo(()=>{
     const sd = sede==='Todas'?'Todas':sede
-    const m = dataMostrador.asesores[sd]||{}
-    return Object.entries(m).map(([n,d])=>({nombre:n,...d})).sort((a,b)=>b.neto-a.neto)
-  },[dataMostrador,sede])
+    const mMost = dataMostrador.asesores[sd]||{}
+    const mTal  = dataTaller.asesoresAcc[sd]||{}
+    // Unir ambos mapas
+    const combined:Record<string,{neto:number;costo:number;canales:Record<string,number>}> = {}
+    // Mostrador
+    Object.entries(mMost).forEach(([n,d])=>{
+      if(!combined[n]) combined[n]={neto:0,costo:0,canales:{}}
+      combined[n].neto+=d.neto; combined[n].costo+=d.costo
+      Object.entries(d.canales).forEach(([c,v])=>{ combined[n].canales[c]=(combined[n].canales[c]||0)+v })
+    })
+    // Accesorios taller
+    Object.entries(mTal).forEach(([n,d])=>{
+      if(!combined[n]) combined[n]={neto:0,costo:0,canales:{}}
+      combined[n].neto+=d.neto; combined[n].costo+=d.costo
+      combined[n].canales['Accesorios']=(combined[n].canales['Accesorios']||0)+d.neto
+    })
+    return Object.entries(combined).map(([n,d])=>({nombre:n,...d})).sort((a,b)=>b.neto-a.neto)
+  },[dataMostrador,dataTaller,sede])
 
   // Datos para gráficas
   const graficoCanales = canalesData.map(c=>({
