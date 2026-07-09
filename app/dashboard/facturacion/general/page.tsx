@@ -1,14 +1,11 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, LineChart, Line, CartesianGrid } from 'recharts'
 
 const BASE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQgv_V93SUlbyd5gXHKs0znKRVwwTgUSF4WpkmJurZ8N4RxaRj1cTAgCqG0klE4i8BBoiUpbjOMnsxt/pub'
 const GID = {
-  taller:       '1968437267',
-  mostrador:    '143806698',
-  credito:      '1646038872',
-  presupuesto:  '1013471630',
-  prefijos:     '83279873',
-  tipoClientes: '1039901350',
+  taller:'1968437267', mostrador:'143806698', credito:'1646038872',
+  presupuesto:'1013471630', prefijos:'83279873', tipoClientes:'1039901350',
 }
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio',
@@ -24,42 +21,67 @@ const FESTIVOS = new Set([
   '2026-10-12','2026-11-02','2026-11-16','2026-12-08','2026-12-25',
 ])
 
-const fmtCOP = (v: number, d=1) => {
-  const abs=Math.abs(v), s=v<0?'-':''
-  if(abs>=1e9) return `${s}$${(abs/1e9).toFixed(d)}B`
-  if(abs>=1e6) return `${s}$${(abs/1e6).toFixed(d)}M`
-  if(abs>=1e3) return `${s}$${(abs/1e3).toFixed(0)}K`
-  return `${s}$${abs.toFixed(0)}`
+// ── Formato números completos sin abreviar ────────────────────────────────────
+const fmtCOP = (v: number): string => {
+  const abs = Math.abs(v), sign = v < 0 ? '-' : ''
+  return `${sign}$${abs.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 const fmtPct = (v: number) => `${v.toFixed(1)}%`
 
 const parseCOP = (s: string|undefined): number => {
-  if(!s) return 0
-  let str=s.toString().replace(/"/g,'').trim()
-  if(str.startsWith('(')&&str.endsWith(')')) str='-'+str.slice(1,-1)
-  str=str.replace(/[$\s]/g,'').replace(/,/g,'')
-  const n=parseFloat(str); return isNaN(n)?0:n
+  if (!s) return 0
+  let str = s.toString().replace(/"/g,'').trim()
+  if (str.startsWith('(') && str.endsWith(')')) str = '-' + str.slice(1,-1)
+  str = str.replace(/[$\s]/g,'').replace(/,/g,'')
+  const n = parseFloat(str); return isNaN(n) ? 0 : n
 }
 
 const parseFecha = (s: string|undefined): Date|null => {
-  if(!s) return null
-  const str=s.trim().replace(/"/g,'')
-  if(/^\d{4}-\d{2}-\d{2}/.test(str)){const[y,m,d]=str.slice(0,10).split('-').map(Number);return new Date(y,m-1,d)}
-  if(str.includes('/')){const[d,m,y]=str.split('/');const a=parseInt(y)<100?2000+parseInt(y):parseInt(y);return new Date(a,parseInt(m)-1,parseInt(d))}
+  if (!s) return null
+  const str = s.trim().replace(/"/g,'')
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    const [y,m,d] = str.slice(0,10).split('-').map(Number)
+    return new Date(y,m-1,d)
+  }
+  if (str.includes('/')) {
+    const [d,m,y] = str.split('/')
+    const a = parseInt(y)<100 ? 2000+parseInt(y) : parseInt(y)
+    return new Date(a,parseInt(m)-1,parseInt(d))
+  }
   return null
 }
 
-const normCuenta=(v:unknown):string=>{try{return String(parseInt(String(parseFloat(String(v))),10)).trim()}catch{return String(v??'').trim()}}
-const esDiaHabil=(d:Date)=>d.getDay()!==0&&!FESTIVOS.has(d.toISOString().slice(0,10))
-const diasHabilesEnMes=(a:number,m:number)=>{const d=new Date(a,m-1,1);let c=0;while(d.getMonth()===m-1){if(esDiaHabil(d))c++;d.setDate(d.getDate()+1)}return c}
-const diasHabilesHasta=(a:number,m:number,dia:number)=>{const d=new Date(a,m-1,1);let c=0;while(d.getDate()<=dia&&d.getMonth()===m-1){if(esDiaHabil(d))c++;d.setDate(d.getDate()+1)}return c}
+const normCuenta = (v: unknown): string => {
+  try { return String(parseInt(String(parseFloat(String(v))),10)).trim() }
+  catch { return String(v??'').trim() }
+}
 
-const fetchCSV=async(gid:string):Promise<string[][]>=>{
-  const r=await fetch(`${BASE_URL}?gid=${gid}&single=true&output=csv`,{cache:'no-store'})
-  const txt=await r.text()
-  return txt.split('\n').map(row=>{
-    const cells:string[]=[]; let cur='',inQ=false
-    for(const ch of row){if(ch==='"'){inQ=!inQ;continue}if(ch===','&&!inQ){cells.push(cur.trim());cur='';continue}cur+=ch}
+const esDiaHabil = (d: Date) => d.getDay()!==0 && !FESTIVOS.has(d.toISOString().slice(0,10))
+
+const diasHabilesEnMes = (a: number, m: number) => {
+  const d = new Date(a,m-1,1); let c = 0
+  while (d.getMonth()===m-1) { if (esDiaHabil(d)) c++; d.setDate(d.getDate()+1) }
+  return c
+}
+
+const diasHabilesHasta = (a: number, m: number, dia: number) => {
+  const d = new Date(a,m-1,1); let c = 0
+  while (d.getDate()<=dia && d.getMonth()===m-1) {
+    if (esDiaHabil(d)) c++; d.setDate(d.getDate()+1)
+  }
+  return c
+}
+
+const fetchCSV = async (gid: string): Promise<string[][]> => {
+  const r = await fetch(`${BASE_URL}?gid=${gid}&single=true&output=csv`,{cache:'no-store'})
+  const txt = await r.text()
+  return txt.split('\n').map(row => {
+    const cells: string[] = []; let cur='', inQ=false
+    for (const ch of row) {
+      if (ch==='"') { inQ=!inQ; continue }
+      if (ch===',' && !inQ) { cells.push(cur.trim()); cur=''; continue }
+      cur += ch
+    }
     cells.push(cur.trim()); return cells
   })
 }
@@ -67,19 +89,33 @@ const fetchCSV=async(gid:string):Promise<string[][]>=>{
 function Panel({children,className=''}:{children:React.ReactNode;className?:string}){
   return <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>{children}</div>
 }
+
 function KpiCard({label,value,sub,sub2,accent='text-brand-teal',alert=false}:{label:string;value:string;sub?:string;sub2?:string;accent?:string;alert?:boolean}){
-  return(<Panel className={alert?'border-red-500/40':''}><p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">{label}</p><p className={`text-2xl font-bold font-title ${accent}`}>{value}</p>{sub&&<p className="text-xs text-brand-subtle mt-1">{sub}</p>}{sub2&&<p className="text-xs text-brand-subtle mt-0.5">{sub2}</p>}</Panel>)
+  return(
+    <Panel className={alert?'border-red-500/40':''}>
+      <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">{label}</p>
+      <p className={`text-xl font-bold font-title ${accent}`}>{value}</p>
+      {sub&&<p className="text-xs text-brand-subtle mt-1">{sub}</p>}
+      {sub2&&<p className="text-xs text-brand-subtle mt-0.5">{sub2}</p>}
+    </Panel>
+  )
 }
+
 function ProgressBar({pct,color,h='h-2'}:{pct:number;color:string;h?:string}){
-  return(<div className={`w-full ${h} bg-brand-border rounded-full overflow-hidden`}><div className="h-full rounded-full transition-all duration-700" style={{width:`${Math.min(100,Math.max(0,pct))}%`,background:color}}/></div>)
+  return(
+    <div className={`w-full ${h} bg-brand-border rounded-full overflow-hidden`}>
+      <div className="h-full rounded-full transition-all duration-700" style={{width:`${Math.min(100,Math.max(0,pct))}%`,background:color}}/>
+    </div>
+  )
 }
+
 function Badge({tipo}:{tipo:'ok'|'alerta'|'riesgo'}){
   if(tipo==='ok') return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ En meta</span>
   if(tipo==='alerta') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Alerta</span>
   return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Riesgo</span>
 }
 
-const CANALES_CONFIG=[
+const CANALES_CONFIG = [
   {canal:'Taller',    icon:'🔧',color:'#4FD1C5'},
   {canal:'Colisión',  icon:'🚗',color:'#68D391'},
   {canal:'Accesorios',icon:'🎁',color:'#F6AD55'},
@@ -88,189 +124,272 @@ const CANALES_CONFIG=[
   {canal:'Subastas',  icon:'🔨',color:'#FC8181'},
 ]
 
-export default function FacGeneralPage(){
-  const hoy=new Date()
-  const[anio,setAnio]=useState(hoy.getFullYear())
-  const[mes,setMes]=useState(hoy.getMonth()+1)
-  const[sede,setSede]=useState('Todas')
-  const[loading,setLoading]=useState(true)
-  const[error,setError]=useState('')
-  const[ultimaAct,setUltimaAct]=useState<Date|null>(null)
-  const[tallerRaw,setTallerRaw]=useState<string[][]>([])
-  const[mostradorRaw,setMostradorRaw]=useState<string[][]>([])
-  const[creditoRaw,setCreditoRaw]=useState<string[][]>([])
-  const[pptoRaw,setPptoRaw]=useState<string[][]>([])
-  const[prefijosRaw,setPrefijosRaw]=useState<string[][]>([])
-  const[tipoCliRaw,setTipoCliRaw]=useState<string[][]>([])
+// Tooltip personalizado para gráficas
+const CustomTooltip = ({active,payload,label}:any) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-brand-surface border border-brand-border rounded-lg p-3 shadow-lg">
+      <p className="text-xs font-mono text-brand-subtle mb-2">{label}</p>
+      {payload.map((p:any,i:number) => (
+        <p key={i} className="text-xs font-mono" style={{color:p.color}}>
+          {p.name}: {fmtCOP(p.value)}
+        </p>
+      ))}
+    </div>
+  )
+}
 
-  const cargar=useCallback(async()=>{
-    setLoading(true);setError('')
-    try{
-      const[tal,most,cred,ppto,pref,tipoC]=await Promise.all([
-        fetchCSV(GID.taller),fetchCSV(GID.mostrador),fetchCSV(GID.credito),
-        fetchCSV(GID.presupuesto),fetchCSV(GID.prefijos),fetchCSV(GID.tipoClientes),
+export default function FacGeneralPage(){
+  const hoy = new Date()
+  const [anio,setAnio] = useState(hoy.getFullYear())
+  const [mes,setMes]   = useState(hoy.getMonth()+1)
+  const [sede,setSede] = useState('Todas')
+  const [loading,setLoading]           = useState(true)
+  const [error,setError]               = useState('')
+  const [ultimaAct,setUltimaAct]       = useState<Date|null>(null)
+  const [tallerRaw,setTallerRaw]       = useState<string[][]>([])
+  const [mostradorRaw,setMostradorRaw] = useState<string[][]>([])
+  const [creditoRaw,setCreditoRaw]     = useState<string[][]>([])
+  const [pptoRaw,setPptoRaw]           = useState<string[][]>([])
+  const [prefijosRaw,setPrefijosRaw]   = useState<string[][]>([])
+  const [tipoCliRaw,setTipoCliRaw]     = useState<string[][]>([])
+
+  const cargar = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const [tal,most,cred,ppto,pref,tipoC] = await Promise.all([
+        fetchCSV(GID.taller), fetchCSV(GID.mostrador), fetchCSV(GID.credito),
+        fetchCSV(GID.presupuesto), fetchCSV(GID.prefijos), fetchCSV(GID.tipoClientes),
       ])
-      setTallerRaw(tal);setMostradorRaw(most);setCreditoRaw(cred)
-      setPptoRaw(ppto);setPrefijosRaw(pref);setTipoCliRaw(tipoC)
+      setTallerRaw(tal); setMostradorRaw(most); setCreditoRaw(cred)
+      setPptoRaw(ppto); setPrefijosRaw(pref); setTipoCliRaw(tipoC)
       setUltimaAct(new Date())
-    }catch{setError('Error cargando datos del Sheet.')}
+    } catch { setError('Error cargando datos del Sheet.') }
     setLoading(false)
   },[])
 
   useEffect(()=>{cargar()},[cargar])
   useEffect(()=>{const id=setInterval(cargar,6*60*60*1000);return()=>clearInterval(id)},[cargar])
 
-  const totalDH=useMemo(()=>diasHabilesEnMes(anio,mes),[anio,mes])
-  const dhTransc=useMemo(()=>(anio===hoy.getFullYear()&&mes===hoy.getMonth()+1)?diasHabilesHasta(anio,mes,hoy.getDate()):totalDH,[anio,mes,totalDH])
-  const dhRest=totalDH-dhTransc
-  const pctDias=totalDH?(dhTransc/totalDH)*100:0
+  const totalDH  = useMemo(()=>diasHabilesEnMes(anio,mes),[anio,mes])
+  const dhTransc = useMemo(()=>(anio===hoy.getFullYear()&&mes===hoy.getMonth()+1)?diasHabilesHasta(anio,mes,hoy.getDate()):totalDH,[anio,mes,totalDH])
+  const dhRest   = totalDH - dhTransc
+  const pctDias  = totalDH ? (dhTransc/totalDH)*100 : 0
 
-  const prefMap=useMemo(()=>{
-    const m:Record<string,{canal:string;sede:string}>={};
+  const prefMap = useMemo(()=>{
+    const m:Record<string,{canal:string;sede:string}> = {}
     prefijosRaw.slice(1).forEach(r=>{
-      const p=r[0]?.trim(),canal=r[10]?.trim(),s=r[1]?.trim();if(!p||!canal)return
-      const sede=s==='Norte'?'Norte':s==='Pasoancho'?'Pasoancho':s==='Sede 39'?'Sede 39':
+      const p=r[0]?.trim(), canal=r[10]?.trim(), s=r[1]?.trim()
+      if(!p||!canal) return
+      const sede = s==='Norte'?'Norte':s==='Pasoancho'?'Pasoancho':s==='Sede 39'?'Sede 39':
         canal.includes('Norte')?'Norte':canal.includes('Pasoancho')?'Pasoancho':canal.includes('39')?'Sede 39':'Sin sede'
-      m[p]={canal,sede}
-    });return m
+      m[p] = {canal,sede}
+    }); return m
   },[prefijosRaw])
 
-  const cuentasMayoristas=useMemo(()=>{const s=new Set<string>();tipoCliRaw.slice(1).forEach(r=>{if(r[2]?.toLowerCase().includes('mayorist'))s.add(normCuenta(r[0]))});return s},[tipoCliRaw])
-  const cuentasSubastas=useMemo(()=>{const s=new Set<string>();tipoCliRaw.slice(1).forEach(r=>{if(r[2]?.toLowerCase().includes('subast'))s.add(normCuenta(r[0]))});return s},[tipoCliRaw])
+  const cuentasMayoristas = useMemo(()=>{
+    const s=new Set<string>()
+    tipoCliRaw.slice(1).forEach(r=>{if(r[2]?.toLowerCase().includes('mayorist'))s.add(normCuenta(r[0]))})
+    return s
+  },[tipoCliRaw])
 
-  const presupuestos=useMemo(()=>{
-    const mesIdx=mes-1+7
-    const m:Record<string,Record<string,number>>={}
+  const cuentasSubastas = useMemo(()=>{
+    const s=new Set<string>()
+    tipoCliRaw.slice(1).forEach(r=>{if(r[2]?.toLowerCase().includes('subast'))s.add(normCuenta(r[0]))})
+    return s
+  },[tipoCliRaw])
+
+  // ── Presupuesto: col 0=Sede, col 4=Canal, col 7+mes-1=valor ─────────────
+  const presupuestos = useMemo(()=>{
+    const mesIdx = mes - 1 + 7
+    // m[canal][sede] = valor
+    const m:Record<string,Record<string,number>> = {}
     pptoRaw.slice(1).forEach(r=>{
-      const s=r[0]?.trim()||'',canal=r[4]?.trim()||'',val=parseCOP(r[mesIdx])
-      if(!canal||!val)return
-      if(!m[canal])m[canal]={Norte:0,Pasoancho:0,'Sede 39':0,Total:0}
-      const sd=s==='Norte'?'Norte':s==='Pasoancho'?'Pasoancho':s==='Sede 39'?'Sede 39':'Total'
-      if(sd!=='Total')m[canal][sd]+=val
-      m[canal]['Total']+=val
-    });return m
+      const s = r[0]?.trim()||'', canal = r[4]?.trim()||''
+      const val = parseCOP(r[mesIdx])
+      if (!canal || !val) return
+      if (!m[canal]) m[canal] = {Norte:0,Pasoancho:0,'Sede 39':0,Colisión:0,Total:0}
+      if (s==='Norte')      { m[canal]['Norte']    += val; m[canal]['Total'] += val }
+      else if (s==='Pasoancho') { m[canal]['Pasoancho'] += val; m[canal]['Total'] += val }
+      else if (s==='Sede 39')   { m[canal]['Sede 39']   += val; m[canal]['Total'] += val }
+      else if (s==='Colisión')  { m[canal]['Colisión']  += val; m[canal]['Total'] += val }
+    }); return m
   },[pptoRaw,mes])
 
-  const getPpto=(canal:string,sd:string)=>{
-    const c=presupuestos[canal];if(!c)return 0
-    return sd==='Todas'?c['Total']:(c[sd]||0)
+  const getPpto = (canal:string, sd:string):number => {
+    const c = presupuestos[canal]; if(!c) return 0
+    if (sd==='Todas') return c['Total']||0
+    if (canal==='Colisión') return c['Colisión']||0
+    return c[sd]||0
   }
 
-  const dataTaller=useMemo(()=>{
-    const r:Record<string,{neto:number;costo:number}>={Norte:{neto:0,costo:0},Pasoancho:{neto:0,costo:0},'Sede 39':{neto:0,costo:0},Colisión:{neto:0,costo:0},Accesorios:{neto:0,costo:0}}
+  // ── Taller ────────────────────────────────────────────────────────────────
+  const dataTaller = useMemo(()=>{
+    const r:Record<string,{neto:number;costo:number}> = {
+      Norte:{neto:0,costo:0}, Pasoancho:{neto:0,costo:0}, 'Sede 39':{neto:0,costo:0},
+      Colisión:{neto:0,costo:0}, Accesorios_Norte:{neto:0,costo:0},
+      Accesorios_Pasoancho:{neto:0,costo:0}, 'Accesorios_Sede 39':{neto:0,costo:0},
+    }
     tallerRaw.slice(1).forEach(row=>{
-      const t=row[0]?.toString().trim().toUpperCase();if(!t||!row[14])return
-      const fec=parseFecha(row[6]);if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes)return
-      const neto=parseCOP(row[14]),costo=parseCOP(row[15])
-      if(t==='16'){r.Colisión.neto+=neto;r.Colisión.costo+=costo}
-      else if(['11A','12A','13A'].includes(t)){r.Accesorios.neto+=neto;r.Accesorios.costo+=costo}
-      else if(t==='11'){r.Norte.neto+=neto;r.Norte.costo+=costo}
-      else if(t==='12'){r.Pasoancho.neto+=neto;r.Pasoancho.costo+=costo}
-      else if(t==='13'){r['Sede 39'].neto+=neto;r['Sede 39'].costo+=costo}
-    });return r
+      const t=row[0]?.toString().trim().toUpperCase(); if(!t||!row[14]) return
+      const fec=parseFecha(row[6]); if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes) return
+      const neto=parseCOP(row[14]), costo=parseCOP(row[15])
+      if(t==='16')  { r.Colisión.neto+=neto; r.Colisión.costo+=costo }
+      else if(t==='11A') { r.Accesorios_Norte.neto+=neto; r.Accesorios_Norte.costo+=costo }
+      else if(t==='12A') { r.Accesorios_Pasoancho.neto+=neto; r.Accesorios_Pasoancho.costo+=costo }
+      else if(t==='13A') { r['Accesorios_Sede 39'].neto+=neto; r['Accesorios_Sede 39'].costo+=costo }
+      else if(t==='11')  { r.Norte.neto+=neto; r.Norte.costo+=costo }
+      else if(t==='12')  { r.Pasoancho.neto+=neto; r.Pasoancho.costo+=costo }
+      else if(t==='13')  { r['Sede 39'].neto+=neto; r['Sede 39'].costo+=costo }
+    }); return r
   },[tallerRaw,anio,mes])
 
-  const dataMostrador=useMemo(()=>{
-    type CV={neto:number;costo:number}
-    const canales:Record<string,Record<string,CV>>={};
-    const asesores:Record<string,{neto:number;costo:number;canales:Record<string,number>}>={};
-    const init=(c:string,s:string)=>{if(!canales[c])canales[c]={};if(!canales[c][s])canales[c][s]={neto:0,costo:0}}
+  // ── Mostrador (todos los canales) ─────────────────────────────────────────
+  const dataMostrador = useMemo(()=>{
+    type CV = {neto:number;costo:number}
+    const canales:Record<string,Record<string,CV>> = {}
+    // asesores[sede][nombre] = {neto,costo,canales}
+    const asesores:Record<string,Record<string,{neto:number;costo:number;canales:Record<string,number>}>> = {
+      Norte:{}, Pasoancho:{}, 'Sede 39':{}, Todas:{}
+    }
+    const init=(c:string,s:string)=>{
+      if(!canales[c])canales[c]={}
+      if(!canales[c][s])canales[c][s]={neto:0,costo:0}
+    }
+    const addAsesor=(sd:string,asesor:string,canal:string,neto:number,costo:number)=>{
+      // Agregar a la sede específica y a Todas
+      for(const key of [sd,'Todas']){
+        if(!asesores[key]) asesores[key]={}
+        if(!asesores[key][asesor]) asesores[key][asesor]={neto:0,costo:0,canales:{}}
+        asesores[key][asesor].neto+=neto
+        asesores[key][asesor].costo+=costo
+        asesores[key][asesor].canales[canal]=(asesores[key][asesor].canales[canal]||0)+neto
+      }
+    }
 
     mostradorRaw.slice(1).forEach(r=>{
-      if(!r[14])return
-      const fec=parseFecha(r[6]);if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes)return
-      const cuenta=normCuenta(r[4]),pref=r[7]?.trim()||''
-      const neto=parseCOP(r[14]),costo=parseCOP(r[15])
+      if(!r[14]) return
+      const fec=parseFecha(r[6]); if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes) return
+      const cuenta=normCuenta(r[4]), pref=r[7]?.trim()||''
+      const neto=parseCOP(r[14]), costo=parseCOP(r[15])
       const asesor=r[3]?.trim()||r[2]?.trim()||'Sin asesor'
-      const pi=prefMap[pref],s=pi?.sede||'Sin sede'
+      const pi=prefMap[pref], s=pi?.sede||'Sin sede'
       let canal='Mostrador'
-      if(cuentasMayoristas.has(cuenta))canal='Mayoristas'
-      else if(cuentasSubastas.has(cuenta))canal='Subastas'
-      else if(pi?.canal?.includes('Accesorio'))canal='Accesorios'
-      else if(pi?.canal?.includes('Subasta'))canal='Subastas'
-      init(canal,s);canales[canal][s].neto+=neto;canales[canal][s].costo+=costo
-      if(['Mostrador','Accesorios'].includes(canal)){
-        if(!asesores[asesor])asesores[asesor]={neto:0,costo:0,canales:{}}
-        asesores[asesor].neto+=neto;asesores[asesor].costo+=costo
-        asesores[asesor].canales[canal]=(asesores[asesor].canales[canal]||0)+neto
-      }
+      if(cuentasMayoristas.has(cuenta)) canal='Mayoristas'
+      else if(cuentasSubastas.has(cuenta)) canal='Subastas'
+      else if(pi?.canal?.includes('Accesorio')) canal='Accesorios'
+      else if(pi?.canal?.includes('Subasta')) canal='Subastas'
+      init(canal,s); canales[canal][s].neto+=neto; canales[canal][s].costo+=costo
+      if(['Mostrador','Accesorios'].includes(canal)) addAsesor(s,asesor,canal,neto,costo)
     })
 
     let curCuenta='',curFecha='',curPrefijo='',curAsesor='',curRefer=''
     creditoRaw.slice(1).forEach(r=>{
       if(r[0]?.trim()){curRefer=r[1];curCuenta=r[4];curFecha=r[6];curPrefijo=r[8];curAsesor=r[3]?.trim()||r[2]?.trim()||'Sin asesor'}
-      if(!curFecha||!r[16])return
-      const fec=parseFecha(curFecha);if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes)return
-      const cuenta=normCuenta(curCuenta),neto=parseCOP(r[16]),costo=parseCOP(r[17])
-      const pi=prefMap[curPrefijo],s=pi?.sede||'Norte'
+      if(!curFecha||!r[16]) return
+      const fec=parseFecha(curFecha); if(!fec||fec.getFullYear()!==anio||fec.getMonth()+1!==mes) return
+      const cuenta=normCuenta(curCuenta), neto=parseCOP(r[16]), costo=parseCOP(r[17])
+      const pi=prefMap[curPrefijo], s=pi?.sede||'Norte'
       let canal='Mostrador'
-      if(cuentasSubastas.has(cuenta))canal='Subastas'
-      else if(cuentasMayoristas.has(cuenta))canal='Mayoristas'
+      if(cuentasSubastas.has(cuenta)) canal='Subastas'
+      else if(cuentasMayoristas.has(cuenta)) canal='Mayoristas'
       const netoF=(canal==='Subastas'&&curPrefijo==='ENR2')?-neto:neto
-      init(canal,s);canales[canal][s].neto+=netoF;canales[canal][s].costo+=costo
-      if(canal==='Mostrador'){
-        if(!asesores[curAsesor])asesores[curAsesor]={neto:0,costo:0,canales:{}}
-        asesores[curAsesor].neto+=netoF;asesores[curAsesor].costo+=costo
-        asesores[curAsesor].canales['Mostrador']=(asesores[curAsesor].canales['Mostrador']||0)+netoF
-      }
+      init(canal,s); canales[canal][s].neto+=netoF; canales[canal][s].costo+=costo
+      if(canal==='Mostrador') addAsesor(s,curAsesor,'Mostrador',netoF,costo)
     })
-    return{canales,asesores}
+    return {canales,asesores}
   },[mostradorRaw,creditoRaw,cuentasMayoristas,cuentasSubastas,prefMap,anio,mes])
 
-  const getNetoCanal=(canal:string)=>{
-    if(canal==='Taller'){if(sede==='Todas')return dataTaller.Norte.neto+dataTaller.Pasoancho.neto+dataTaller['Sede 39'].neto;return dataTaller[sede]?.neto||0}
-    if(canal==='Colisión')return dataTaller.Colisión.neto
-    if(canal==='Accesorios'){
-      const talAcc=sede==='Todas'?dataTaller.Accesorios.neto:0
-      const m=dataMostrador.canales['Accesorios']||{}
-      return talAcc+(sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.neto,0):(m[sede]?.neto||0))
+  // ── Helpers neto/costo por canal y sede ───────────────────────────────────
+  const getNetoCanal = (canal:string):number => {
+    if(canal==='Taller'){
+      if(sede==='Todas') return dataTaller.Norte.neto+dataTaller.Pasoancho.neto+dataTaller['Sede 39'].neto
+      return dataTaller[sede]?.neto||0
     }
-    const m=dataMostrador.canales[canal]||{}
+    if(canal==='Colisión') return sede==='Todas'?dataTaller.Colisión.neto:0
+    if(canal==='Accesorios'){
+      const keys = sede==='Todas'
+        ? ['Accesorios_Norte','Accesorios_Pasoancho','Accesorios_Sede 39']
+        : [`Accesorios_${sede}`]
+      const talAcc = keys.reduce((s,k)=>s+(dataTaller[k]?.neto||0),0)
+      const m = dataMostrador.canales['Accesorios']||{}
+      const mostAcc = sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.neto,0):(m[sede]?.neto||0)
+      return talAcc+mostAcc
+    }
+    const m = dataMostrador.canales[canal]||{}
     return sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.neto,0):(m[sede]?.neto||0)
   }
-  const getCostoCanal=(canal:string)=>{
-    if(canal==='Taller'){if(sede==='Todas')return dataTaller.Norte.costo+dataTaller.Pasoancho.costo+dataTaller['Sede 39'].costo;return dataTaller[sede]?.costo||0}
-    if(canal==='Colisión')return dataTaller.Colisión.costo
-    if(canal==='Accesorios'){
-      const talAcc=sede==='Todas'?dataTaller.Accesorios.costo:0
-      const m=dataMostrador.canales['Accesorios']||{}
-      return talAcc+(sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.costo,0):(m[sede]?.costo||0))
+
+  const getCostoCanal = (canal:string):number => {
+    if(canal==='Taller'){
+      if(sede==='Todas') return dataTaller.Norte.costo+dataTaller.Pasoancho.costo+dataTaller['Sede 39'].costo
+      return dataTaller[sede]?.costo||0
     }
-    const m=dataMostrador.canales[canal]||{}
+    if(canal==='Colisión') return sede==='Todas'?dataTaller.Colisión.costo:0
+    if(canal==='Accesorios'){
+      const keys = sede==='Todas'
+        ? ['Accesorios_Norte','Accesorios_Pasoancho','Accesorios_Sede 39']
+        : [`Accesorios_${sede}`]
+      const talAcc = keys.reduce((s,k)=>s+(dataTaller[k]?.costo||0),0)
+      const m = dataMostrador.canales['Accesorios']||{}
+      const mostAcc = sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.costo,0):(m[sede]?.costo||0)
+      return talAcc+mostAcc
+    }
+    const m = dataMostrador.canales[canal]||{}
     return sede==='Todas'?Object.values(m).reduce((s,v)=>s+v.costo,0):(m[sede]?.costo||0)
   }
 
-  const canalesData=useMemo(()=>CANALES_CONFIG
+  const canalesData = useMemo(()=>CANALES_CONFIG
     .filter(c => sede==='Todas' || c.canal!=='Colisión')
     .map(c=>{
-    const neto=getNetoCanal(c.canal),costo=getCostoCanal(c.canal)
-    const ppto=sede==='Todas'?getPpto(c.canal,'Todas'):getPpto(c.canal,sede)
-    const util=neto-costo,pctUtil=neto?(util/neto)*100:0
-    const pct=ppto?(neto/ppto)*100:0
-    const porDia=dhTransc?neto/dhTransc:0
-    const neces=dhRest>0?(ppto-neto)/dhRest:0
-    const pron=neto+porDia*dhRest
-    const pctPron=ppto?(pron/ppto)*100:0
-    const estado:('ok'|'alerta'|'riesgo')=pctPron>=95?'ok':pctPron>=85?'alerta':'riesgo'
-    return{...c,neto,costo,util,pctUtil,ppto,pct,porDia,neces,pron,pctPron,estado}
-  }),[dataTaller,dataMostrador,presupuestos,sede,dhTransc,dhRest])
+      const neto=getNetoCanal(c.canal), costo=getCostoCanal(c.canal)
+      const ppto=getPpto(c.canal, sede)
+      const util=neto-costo, pctUtil=neto?(util/neto)*100:0
+      const pct=ppto?(neto/ppto)*100:0
+      const porDia=dhTransc?neto/dhTransc:0
+      const restante=ppto-neto
+      // Necesario/día: 0 si ya se cumplió el presupuesto
+      const neces=dhRest>0&&restante>0?restante/dhRest:0
+      const pron=neto+porDia*dhRest
+      const pctPron=ppto?(pron/ppto)*100:0
+      const estado:('ok'|'alerta'|'riesgo')=pctPron>=95?'ok':pctPron>=85?'alerta':'riesgo'
+      return{...c,neto,costo,util,pctUtil,ppto,pct,porDia,neces,pron,pctPron,estado}
+    })
+  ,[dataTaller,dataMostrador,presupuestos,sede,dhTransc,dhRest])
 
-  const totalNeto=canalesData.reduce((s,c)=>s+c.neto,0)
-  const totalCosto=canalesData.reduce((s,c)=>s+c.costo,0)
-  const totalUtil=totalNeto-totalCosto
-  const totalPpto=canalesData.reduce((s,c)=>s+c.ppto,0)
-  const totalPct=totalPpto?(totalNeto/totalPpto)*100:0
-  const totalPctUtil=totalNeto?(totalUtil/totalNeto)*100:0
-  const porDiaTotal=dhTransc?totalNeto/dhTransc:0
-  const necesTotal=dhRest>0?(totalPpto-totalNeto)/dhRest:0
-  const pronTotal=totalNeto+porDiaTotal*dhRest
-  const pctPronTotal=totalPpto?(pronTotal/totalPpto)*100:0
+  const totalNeto    = canalesData.reduce((s,c)=>s+c.neto,0)
+  const totalCosto   = canalesData.reduce((s,c)=>s+c.costo,0)
+  const totalUtil    = totalNeto-totalCosto
+  const totalPpto    = canalesData.reduce((s,c)=>s+c.ppto,0)
+  const totalPct     = totalPpto?(totalNeto/totalPpto)*100:0
+  const totalPctUtil = totalNeto?(totalUtil/totalNeto)*100:0
+  const porDiaTotal  = dhTransc?totalNeto/dhTransc:0
+  const restanteTotal = totalPpto-totalNeto
+  const necesTotal   = dhRest>0&&restanteTotal>0?restanteTotal/dhRest:0
+  const pronTotal    = totalNeto+porDiaTotal*dhRest
+  const pctPronTotal = totalPpto?(pronTotal/totalPpto)*100:0
   const estadoGeneral:('ok'|'alerta'|'riesgo')=pctPronTotal>=95?'ok':pctPronTotal>=85?'alerta':'riesgo'
-  const colorGeneral=estadoGeneral==='ok'?'#68D391':estadoGeneral==='alerta'?'#F6AD55':'#FC8181'
+  const colorGeneral = estadoGeneral==='ok'?'#68D391':estadoGeneral==='alerta'?'#F6AD55':'#FC8181'
 
-  const asesoresData=useMemo(()=>Object.entries(dataMostrador.asesores).map(([n,d])=>({nombre:n,...d})).sort((a,b)=>b.neto-a.neto),[dataMostrador])
+  // Asesores filtrados por sede
+  const asesoresData = useMemo(()=>{
+    const sd = sede==='Todas'?'Todas':sede
+    const m = dataMostrador.asesores[sd]||{}
+    return Object.entries(m).map(([n,d])=>({nombre:n,...d})).sort((a,b)=>b.neto-a.neto)
+  },[dataMostrador,sede])
 
-  if(loading)return(
+  // Datos para gráficas
+  const graficoCanales = canalesData.map(c=>({
+    name: c.canal, Facturado: c.neto, Presupuesto: c.ppto, Utilidad: c.util
+  }))
+
+  const graficoComparativo = canalesData.map(c=>({
+    name: c.canal,
+    '% Avance': parseFloat(c.pct.toFixed(1)),
+    '% Pronóstico': parseFloat(c.pctPron.toFixed(1)),
+  }))
+
+  if(loading) return(
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
         <div className="w-10 h-10 border-2 border-brand-teal border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
@@ -280,7 +399,7 @@ export default function FacGeneralPage(){
   )
 
   return(
-    <div className="p-6 max-w-[1400px] mx-auto space-y-6">
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
 
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -319,8 +438,12 @@ export default function FacGeneralPage(){
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
           <div>
-            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">Días hábiles — {MESES[mes-1]} {anio} {sede!=='Todas'?`· ${sede}`:''}</p>
-            <p className="text-lg font-bold font-title text-brand-text mt-0.5">{dhTransc} de {totalDH} transcurridos · {dhRest} restantes</p>
+            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">
+              Días hábiles — {MESES[mes-1]} {anio} {sede!=='Todas'?`· ${sede}`:''}
+            </p>
+            <p className="text-lg font-bold font-title text-brand-text mt-0.5">
+              {dhTransc} de {totalDH} transcurridos · {dhRest} restantes
+            </p>
           </div>
           <div className="text-right">
             <p className="text-2xl font-bold font-title text-brand-teal">{pctDias.toFixed(0)}%</p>
@@ -332,10 +455,18 @@ export default function FacGeneralPage(){
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Facturado total" value={fmtCOP(totalNeto)} sub={`de ${fmtCOP(totalPpto)} presupuestado`} sub2={`${fmtPct(totalPct)} de avance`} accent="text-brand-teal"/>
-        <KpiCard label="Utilidad" value={fmtCOP(totalUtil)} sub={`Margen: ${fmtPct(totalPctUtil)}`} sub2={`Costo: ${fmtCOP(totalCosto)}`} accent="text-green-400"/>
-        <KpiCard label="Facturación / día" value={fmtCOP(porDiaTotal)} sub={`Necesario: ${fmtCOP(necesTotal)}/día`} sub2={porDiaTotal>=necesTotal?'✓ Por encima del ritmo':'✗ Por debajo del ritmo'} accent={porDiaTotal>=necesTotal?'text-green-400':'text-yellow-400'}/>
-        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronTotal)} sub={`${fmtPct(pctPronTotal)} del presupuesto`} accent={pctPronTotal>=95?'text-green-400':pctPronTotal>=85?'text-yellow-400':'text-red-400'} alert={estadoGeneral==='riesgo'}/>
+        <KpiCard label="Facturado total" value={fmtCOP(totalNeto)}
+          sub={`de ${fmtCOP(totalPpto)}`} sub2={`${fmtPct(totalPct)} de avance`} accent="text-brand-teal"/>
+        <KpiCard label="Utilidad" value={fmtCOP(totalUtil)}
+          sub={`Margen: ${fmtPct(totalPctUtil)}`} sub2={`Costo: ${fmtCOP(totalCosto)}`} accent="text-green-400"/>
+        <KpiCard label="Facturación / día" value={fmtCOP(porDiaTotal)}
+          sub={necesTotal>0?`Necesario: ${fmtCOP(necesTotal)}/día`:'✓ Presupuesto alcanzado'}
+          sub2={porDiaTotal>=necesTotal&&necesTotal>0?'✓ Por encima del ritmo':necesTotal===0?'':' ✗ Por debajo del ritmo'}
+          accent={porDiaTotal>=necesTotal?'text-green-400':'text-yellow-400'}/>
+        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronTotal)}
+          sub={`${fmtPct(pctPronTotal)} del presupuesto`}
+          accent={pctPronTotal>=95?'text-green-400':pctPronTotal>=85?'text-yellow-400':'text-red-400'}
+          alert={estadoGeneral==='riesgo'}/>
       </div>
 
       {/* Barra general */}
@@ -359,130 +490,203 @@ export default function FacGeneralPage(){
 
       {/* Tabla por canal */}
       <Panel>
-        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Detalle por canal {sede!=='Todas'?`· ${sede}`:''}</h2>
+        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+          Detalle por canal {sede!=='Todas'?`· ${sede}`:'· Todas las sedes'}
+        </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
                 {['Canal','Presupuesto','Neto','Costo','Utilidad','% Util','% Avance','$/Día','Necesario/día','Pronóstico','Estado'].map(h=>(
-                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-3 whitespace-nowrap">{h}</th>
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {canalesData.map(c=>(
                 <tr key={c.canal} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                  <td className="py-3 pr-3"><div className="flex items-center gap-2"><span>{c.icon}</span><span className="font-medium text-brand-text">{c.canal}</span></div></td>
-                  <td className="py-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(c.ppto)}</td>
-                  <td className="py-3 pr-3 font-mono text-xs font-semibold" style={{color:c.color}}>{fmtCOP(c.neto)}</td>
-                  <td className="py-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(c.costo)}</td>
-                  <td className="py-3 pr-3 font-mono text-xs text-green-400">{fmtCOP(c.util)}</td>
-                  <td className="py-3 pr-3 font-mono text-xs text-brand-subtle">{fmtPct(c.pctUtil)}</td>
-                  <td className="py-3 pr-3">
-                    <div className="flex items-center gap-2 min-w-[100px]">
-                      <div className="w-12 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                  <td className="py-3 pr-4"><div className="flex items-center gap-2"><span>{c.icon}</span><span className="font-medium text-brand-text">{c.canal}</span></div></td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.ppto)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs font-semibold" style={{color:c.color}}>{fmtCOP(c.neto)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.costo)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(c.util)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(c.pctUtil)}</td>
+                  <td className="py-3 pr-4">
+                    <div className="flex items-center gap-2 min-w-[110px]">
+                      <div className="w-14 h-1.5 bg-brand-border rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{width:`${Math.min(100,c.pct)}%`,background:c.color}}/>
                       </div>
                       <span className="font-mono text-xs text-brand-subtle">{fmtPct(c.pct)}</span>
                     </div>
                   </td>
-                  <td className="py-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(c.porDia)}</td>
-                  <td className="py-3 pr-3 font-mono text-xs"><span className={c.porDia>=c.neces?'text-green-400':'text-red-400'}>{fmtCOP(c.neces)}</span></td>
-                  <td className="py-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(c.pron)}</td>
-                  <td className="py-3 pr-3"><Badge tipo={c.estado}/></td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.porDia)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs">
+                    <span className={c.neces===0?'text-green-400':'text-brand-subtle'}>
+                      {c.neces===0?'✓ Cumplido':fmtCOP(c.neces)}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.pron)}</td>
+                  <td className="py-3 pr-4"><Badge tipo={c.estado}/></td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-brand-border font-bold">
-                <td className="pt-3 pr-3 font-mono text-xs uppercase text-brand-text">Total</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(totalPpto)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-teal">{fmtCOP(totalNeto)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(totalCosto)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-green-400">{fmtCOP(totalUtil)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-subtle">{fmtPct(totalPctUtil)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-subtle">{fmtPct(totalPct)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(porDiaTotal)}</td>
-                <td className="pt-3 pr-3 font-mono text-xs"><span className={porDiaTotal>=necesTotal?'text-green-400':'text-red-400'}>{fmtCOP(necesTotal)}</span></td>
-                <td className="pt-3 pr-3 font-mono text-xs text-brand-subtle">{fmtCOP(pronTotal)}</td>
-                <td className="pt-3 pr-3"><Badge tipo={estadoGeneral}/></td>
+                <td className="pt-3 pr-4 font-mono text-xs uppercase text-brand-text">Total</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(totalPpto)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-teal">{fmtCOP(totalNeto)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(totalCosto)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(totalUtil)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(totalPctUtil)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(totalPct)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(porDiaTotal)}</td>
+                <td className="pt-3 pr-4 font-mono text-xs">
+                  <span className={necesTotal===0?'text-green-400':'text-brand-subtle'}>
+                    {necesTotal===0?'✓ Cumplido':fmtCOP(necesTotal)}
+                  </span>
+                </td>
+                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(pronTotal)}</td>
+                <td className="pt-3 pr-4"><Badge tipo={estadoGeneral}/></td>
               </tr>
             </tfoot>
           </table>
         </div>
       </Panel>
 
-      {/* Cards por canal */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {canalesData.map(c=>(
-          <Panel key={c.canal} className={c.estado==='riesgo'?'border-red-500/30':c.estado==='alerta'?'border-yellow-500/20':''}>
-            <div className="flex justify-between items-start mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{c.icon}</span>
-                <div>
-                  <p className="font-semibold text-brand-text">{c.canal}</p>
-                  <p className="text-xs text-brand-subtle font-mono">{fmtCOP(c.neto)} / {fmtCOP(c.ppto)}</p>
+      {/* Gráficas */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {/* Facturado vs Presupuesto por canal */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+            Facturado vs Presupuesto por canal
+          </h2>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={graficoCanales} margin={{top:5,right:10,left:10,bottom:5}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+              <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}
+                tickFormatter={v=>fmtCOP(v)} width={110}/>
+              <Tooltip content={<CustomTooltip/>}/>
+              <Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
+              <Bar dataKey="Presupuesto" fill="#2D3748" radius={[4,4,0,0]} name="Presupuesto"/>
+              <Bar dataKey="Facturado"   fill="#4FD1C5" radius={[4,4,0,0]} name="Facturado"/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        {/* % Avance vs Pronóstico */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+            % Avance vs % Pronóstico por canal
+          </h2>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={graficoComparativo} margin={{top:5,right:10,left:10,bottom:5}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+              <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}
+                tickFormatter={v=>`${v}%`} domain={[0,100]}/>
+              <Tooltip content={<CustomTooltip/>}/>
+              <Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
+              {/* Línea del 100% */}
+              <Bar dataKey="% Avance"     fill="#4FD1C5" radius={[4,4,0,0]} name="% Avance"/>
+              <Bar dataKey="% Pronóstico" fill="#F6AD55" radius={[4,4,0,0]} name="% Pronóstico"/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        {/* Utilidad por canal */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+            Utilidad por canal
+          </h2>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={graficoCanales} margin={{top:5,right:10,left:10,bottom:5}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+              <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}
+                tickFormatter={v=>fmtCOP(v)} width={110}/>
+              <Tooltip content={<CustomTooltip/>}/>
+              <Bar dataKey="Utilidad" radius={[4,4,0,0]} name="Utilidad">
+                {graficoCanales.map((entry,i)=>(
+                  <rect key={i} fill={CANALES_CONFIG.find(c=>c.canal===entry.name)?.color||'#4FD1C5'}/>
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        {/* Cards por canal */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+            Resumen por canal
+          </h2>
+          <div className="grid grid-cols-2 gap-3">
+            {canalesData.map(c=>(
+              <div key={c.canal} className={`rounded-lg border p-3 ${c.estado==='riesgo'?'border-red-500/30':c.estado==='alerta'?'border-yellow-500/20':'border-brand-border'}`}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-brand-text">{c.icon} {c.canal}</span>
+                  <Badge tipo={c.estado}/>
+                </div>
+                <ProgressBar pct={c.pct} color={c.color}/>
+                <div className="flex justify-between mt-1 text-xs font-mono text-brand-subtle">
+                  <span>{fmtPct(c.pct)}</span>
+                  <span>Pron: {fmtPct(c.pctPron)}</span>
                 </div>
               </div>
-              <Badge tipo={c.estado}/>
-            </div>
-            <ProgressBar pct={c.pct} color={c.color}/>
-            <div className="flex justify-between mt-2 text-xs font-mono text-brand-subtle">
-              <span>{fmtPct(c.pct)} avance</span>
-              <span>Pron: {fmtPct(c.pctPron)}</span>
-            </div>
-            <div className="mt-3 pt-3 border-t border-brand-border/40 grid grid-cols-3 gap-2 text-xs font-mono">
-              <div><p className="text-brand-subtle">Utilidad</p><p className="text-green-400 font-semibold">{fmtCOP(c.util)}</p><p className="text-brand-subtle">{fmtPct(c.pctUtil)}</p></div>
-              <div><p className="text-brand-subtle">$/día actual</p><p className="text-brand-text font-semibold">{fmtCOP(c.porDia)}</p></div>
-              <div><p className="text-brand-subtle">$/día neces.</p><p className={c.porDia>=c.neces?'text-green-400 font-semibold':'text-red-400 font-semibold'}>{fmtCOP(c.neces)}</p></div>
-            </div>
-          </Panel>
-        ))}
+            ))}
+          </div>
+        </Panel>
       </div>
 
-      {/* Asesores */}
+      {/* Asesores filtrados por sede */}
       <Panel>
-        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Facturación por asesor — Mostrador y Accesorios</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-brand-border">
-                {['Asesor','Mostrador','Accesorios','Neto Total','Costo','Utilidad','% Utilidad'].map(h=>(
-                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {asesoresData.map(a=>{
-                const util=a.neto-a.costo,pctU=a.neto?(util/a.neto)*100:0
-                return(
-                  <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                    <td className="py-3 pr-4 font-medium text-brand-text">{a.nombre}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.canales['Mostrador']||0)}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.canales['Accesorios']||0)}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.neto)}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.costo)}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(util)}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(pctU)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-brand-border font-bold">
-                <td className="pt-3 pr-4 font-mono text-xs uppercase text-brand-text">Total</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(asesoresData.reduce((s,a)=>s+(a.canales['Mostrador']||0),0))}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(asesoresData.reduce((s,a)=>s+(a.canales['Accesorios']||0),0))}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-teal">{fmtCOP(asesoresData.reduce((s,a)=>s+a.neto,0))}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(asesoresData.reduce((s,a)=>s+a.costo,0))}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(asesoresData.reduce((s,a)=>s+(a.neto-a.costo),0))}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">
-                  {(()=>{const n=asesoresData.reduce((s,a)=>s+a.neto,0),u=asesoresData.reduce((s,a)=>s+(a.neto-a.costo),0);return fmtPct(n?u/n*100:0)})()}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+          Facturación por asesor — Mostrador y Accesorios {sede!=='Todas'?`· ${sede}`:''}
+        </h2>
+        {asesoresData.length===0?(
+          <p className="text-brand-subtle font-mono text-sm text-center py-4">Sin datos para la sede seleccionada.</p>
+        ):(
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-brand-border">
+                  {['Asesor','Mostrador','Accesorios','Neto Total','Costo','Utilidad','% Utilidad'].map(h=>(
+                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {asesoresData.map(a=>{
+                  const util=a.neto-a.costo, pctU=a.neto?(util/a.neto)*100:0
+                  return(
+                    <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                      <td className="py-3 pr-4 font-medium text-brand-text">{a.nombre}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.canales['Mostrador']||0)}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.canales['Accesorios']||0)}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.neto)}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(a.costo)}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(util)}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(pctU)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-brand-border font-bold">
+                  <td className="pt-3 pr-4 font-mono text-xs uppercase text-brand-text">Total</td>
+                  <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(asesoresData.reduce((s,a)=>s+(a.canales['Mostrador']||0),0))}</td>
+                  <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(asesoresData.reduce((s,a)=>s+(a.canales['Accesorios']||0),0))}</td>
+                  <td className="pt-3 pr-4 font-mono text-xs text-brand-teal">{fmtCOP(asesoresData.reduce((s,a)=>s+a.neto,0))}</td>
+                  <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(asesoresData.reduce((s,a)=>s+a.costo,0))}</td>
+                  <td className="pt-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(asesoresData.reduce((s,a)=>s+(a.neto-a.costo),0))}</td>
+                  <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">
+                    {(()=>{const n=asesoresData.reduce((s,a)=>s+a.neto,0),u=asesoresData.reduce((s,a)=>s+(a.neto-a.costo),0);return fmtPct(n?u/n*100:0)})()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </Panel>
 
       <p className="text-xs text-brand-subtle font-mono text-center pb-4">
