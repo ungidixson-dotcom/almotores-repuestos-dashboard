@@ -432,13 +432,12 @@ export default function SubastasAccesoriosPage() {
       {error && <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">{error}</div>}
 
       {/* Accesos rápidos a otros canales */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label:'🔧 Taller',    href:'/dashboard/facturacion/canales/taller',    neto: null },
           { label:'🚗 Colisión',  href:'/dashboard/facturacion/canales/colision',  neto: null },
           { label:'🛒 Mostrador', href:'/dashboard/facturacion/canales/mostrador', neto: null },
           { label:'🔨 Subastas',  href:'#', onClick: ()=>{}, neto: totalSub, activo: true },
-          { label:'🎁 Accesorios', href:'/dashboard/facturacion/canales/accesorio', neto: null },
         ].map((item, i) => (
           item.href === '#'
             ? <button key={i} onClick={item.onClick}
