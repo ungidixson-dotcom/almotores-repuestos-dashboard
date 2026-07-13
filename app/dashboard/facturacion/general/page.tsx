@@ -1,14 +1,15 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  Legend, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Legend, CartesianGrid,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 interface FilaVista {
   canal:       string
+  sede:        string
   mes:         string
   anio:        number
   neto:        number
@@ -21,24 +22,24 @@ interface FilaVista {
 }
 
 interface CanalData {
-  canal:    string
-  icon:     string
-  color:    string
-  neto:     number
-  costo:    number
-  util:     number
-  pctUtil:  number
-  ppto:     number
-  pct:      number
-  porDia:   number
-  neces:    number
-  pron:     number
-  pctPron:  number
-  estado:   'ok' | 'alerta' | 'riesgo'
+  canal:   string
+  icon:    string
+  color:   string
+  neto:    number
+  costo:   number
+  util:    number
+  pctUtil: number
+  ppto:    number
+  pct:     number
+  porDia:  number
+  neces:   number
+  pron:    number
+  pctPron: number
+  estado:  'ok' | 'alerta' | 'riesgo'
 }
 
 // ── Constantes ───────────────────────────────────────────────────────────────
-const MESES = [
+const MESES_KEY = [
   'enero','febrero','marzo','abril','mayo','junio',
   'julio','agosto','septiembre','octubre','noviembre','diciembre',
 ]
@@ -90,13 +91,28 @@ const diasHabilesHasta = (a: number, m: number, dia: number) => {
   return c
 }
 
-// ── Componentes UI ───────────────────────────────────────────────────────────
+// ── Componentes base ─────────────────────────────────────────────────────────
 function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>
       {children}
     </div>
   )
+}
+
+function ProgressBar({ pct, color, h = 'h-2' }: { pct: number; color: string; h?: string }) {
+  return (
+    <div className={`w-full ${h} bg-brand-border rounded-full overflow-hidden`}>
+      <div className="h-full rounded-full transition-all duration-700"
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: color }} />
+    </div>
+  )
+}
+
+function Badge({ tipo }: { tipo: 'ok' | 'alerta' | 'riesgo' }) {
+  if (tipo === 'ok')     return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ En meta</span>
+  if (tipo === 'alerta') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Alerta</span>
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Riesgo</span>
 }
 
 function KpiCard({ label, value, sub, sub2, accent = 'text-brand-teal', alert = false }: {
@@ -112,23 +128,6 @@ function KpiCard({ label, value, sub, sub2, accent = 'text-brand-teal', alert = 
   )
 }
 
-function ProgressBar({ pct, color, h = 'h-2' }: { pct: number; color: string; h?: string }) {
-  return (
-    <div className={`w-full ${h} bg-brand-border rounded-full overflow-hidden`}>
-      <div
-        className="h-full rounded-full transition-all duration-700"
-        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: color }}
-      />
-    </div>
-  )
-}
-
-function Badge({ tipo }: { tipo: 'ok' | 'alerta' | 'riesgo' }) {
-  if (tipo === 'ok')     return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ En meta</span>
-  if (tipo === 'alerta') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Alerta</span>
-  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Riesgo</span>
-}
-
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
   return (
@@ -136,9 +135,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
       <p className="text-xs font-mono text-brand-subtle mb-2">{label}</p>
       {payload.map((p: any, i: number) => (
         <p key={i} className="text-xs font-mono" style={{ color: p.color }}>
-          {p.name}: {typeof p.value === 'number' && p.name.includes('%')
-            ? fmtPct(p.value)
-            : fmtCOP(p.value)}
+          {p.name}: {p.name.includes('%') ? fmtPct(p.value) : fmtCOP(p.value)}
         </p>
       ))}
     </div>
@@ -147,7 +144,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 // ── Página principal ─────────────────────────────────────────────────────────
 export default function FacGeneralPage() {
-  const hoy = new Date()
+  const hoy  = new Date()
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mes,  setMes]  = useState(hoy.getMonth() + 1)
   const [sede, setSede] = useState('Todas')
@@ -163,9 +160,8 @@ export default function FacGeneralPage() {
     try {
       const { data, error: err } = await supabase
         .from('v_facturacion_general')
-        .select('canal, mes, anio, neto, costo, beneficio, presupuesto, pct_avance, pct_margen, lineas')
+        .select('canal, sede, mes, anio, neto, costo, beneficio, presupuesto, pct_avance, pct_margen, lineas')
         .eq('anio', anio)
-
       if (err) throw err
       setFilas((data ?? []) as FilaVista[])
       setUltimaAct(new Date())
@@ -187,24 +183,28 @@ export default function FacGeneralPage() {
   const dhRest  = totalDH - dhTransc
   const pctDias = totalDH ? (dhTransc / totalDH) * 100 : 0
 
-  // ── Filtrar filas por mes seleccionado ────────────────────────────────────
-  const filasMes = useMemo(() =>
-    filas.filter(f => f.mes === MESES[mes - 1]),
-    [filas, mes]
-  )
+  // ── Filtrar por mes y sede ────────────────────────────────────────────────
+  const filasFiltradas = useMemo(() => {
+    const mesClave = MESES_KEY[mes - 1]
+    return filas.filter(f => {
+      if (f.mes !== mesClave) return false
+      if (sede === 'Todas') return true
+      // Colisión no tiene sede Norte/Pasoancho/Sede 39 — siempre se excluye al filtrar
+      if (f.canal === 'Colisión') return false
+      return f.sede === sede
+    })
+  }, [filas, mes, sede])
 
-  // ── Construir datos por canal ─────────────────────────────────────────────
-  // La vista actual no tiene filtro por sede — agrega todas las sedes
-  // El filtro de sede se aplicará cuando se agregue esa columna a la vista
+  // ── Datos por canal ───────────────────────────────────────────────────────
   const canalesData = useMemo((): CanalData[] => {
     return CANALES_CONFIG
       .filter(c => sede === 'Todas' || c.canal !== 'Colisión')
       .map(c => {
-        const fila = filasMes.find(f => f.canal === c.canal)
-
-        const neto  = Number(fila?.neto  ?? 0)
-        const costo = Number(fila?.costo ?? 0)
-        const ppto  = Number(fila?.presupuesto ?? 0)
+        // Sumar todas las filas que corresponden a este canal (puede haber varias sedes)
+        const filasCanal = filasFiltradas.filter(f => f.canal === c.canal)
+        const neto  = filasCanal.reduce((s, f) => s + Number(f.neto), 0)
+        const costo = filasCanal.reduce((s, f) => s + Number(f.costo), 0)
+        const ppto  = filasCanal.reduce((s, f) => s + Number(f.presupuesto), 0)
         const util  = neto - costo
 
         const pctUtil = neto ? (util / neto) * 100 : 0
@@ -219,9 +219,9 @@ export default function FacGeneralPage() {
 
         return { ...c, neto, costo, util, pctUtil, ppto, pct, porDia, neces, pron, pctPron, estado }
       })
-  }, [filasMes, dhTransc, dhRest, sede])
+  }, [filasFiltradas, dhTransc, dhRest, sede])
 
-  // ── Totales generales ─────────────────────────────────────────────────────
+  // ── Totales ───────────────────────────────────────────────────────────────
   const totalNeto    = canalesData.reduce((s, c) => s + c.neto, 0)
   const totalCosto   = canalesData.reduce((s, c) => s + c.costo, 0)
   const totalUtil    = totalNeto - totalCosto
@@ -238,7 +238,7 @@ export default function FacGeneralPage() {
   const colorGeneral =
     estadoGeneral === 'ok' ? '#68D391' : estadoGeneral === 'alerta' ? '#F6AD55' : '#FC8181'
 
-  // ── Datos para gráficas ───────────────────────────────────────────────────
+  // ── Datos gráficas ────────────────────────────────────────────────────────
   const graficoCanales = canalesData.map(c => ({
     name: c.canal, Facturado: c.neto, Presupuesto: c.ppto, Utilidad: c.util,
   }))
@@ -248,7 +248,6 @@ export default function FacGeneralPage() {
     '% Pronóstico': parseFloat(c.pctPron.toFixed(1)),
   }))
 
-  // ── Render ────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
@@ -261,7 +260,7 @@ export default function FacGeneralPage() {
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-6">
 
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold font-title text-brand-text">Facturación General</h1>
@@ -270,31 +269,25 @@ export default function FacGeneralPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Filtro sede */}
           <div className="flex rounded-lg border border-brand-border overflow-hidden">
             {SEDES_LIST.map(s => (
               <button key={s} onClick={() => setSede(s)}
                 className={`px-3 py-2 text-xs font-mono transition-colors ${
                   sede === s ? 'bg-brand-teal text-black' : 'text-brand-subtle hover:text-brand-text'
-                }`}>
-                {s}
-              </button>
+                }`}>{s}</button>
             ))}
           </div>
-          {/* Año */}
           <select value={anio} onChange={e => setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
             {[2024, 2025, 2026].map(a => <option key={a} value={a}>{a}</option>)}
           </select>
-          {/* Mes */}
           <select value={mes} onChange={e => setMes(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
             {MESES_LABEL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </select>
-          {/* Actualizar */}
-          <button onClick={cargar}
-            className="bg-brand-teal/20 hover:bg-brand-teal/30 border border-brand-teal/40 text-brand-teal rounded-lg px-4 py-2 text-sm font-mono transition-colors">
-            ↻ Actualizar
+          <button onClick={cargar} disabled={loading}
+            className="bg-brand-teal/20 hover:bg-brand-teal/30 border border-brand-teal/40 text-brand-teal rounded-lg px-4 py-2 text-sm font-mono transition-colors disabled:opacity-50">
+            {loading ? '...' : '↻ Actualizar'}
           </button>
           {ultimaAct && (
             <span className="text-xs text-brand-subtle font-mono">
@@ -304,14 +297,56 @@ export default function FacGeneralPage() {
         </div>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">
           {error}
         </div>
       )}
 
-      {/* Días hábiles */}
+      {/* ── PANEL PRINCIPAL: % Avance vs Presupuesto (prioridad visual máxima) ── */}
+      <Panel className="border-brand-teal/30">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">
+              Avance vs presupuesto — {MESES_LABEL[mes - 1]} {anio}
+              {sede !== 'Todas' ? ` · ${sede}` : ''}
+            </p>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-4xl font-bold font-title" style={{ color: colorGeneral }}>
+                {fmtPct(totalPct)}
+              </span>
+              <span className="text-sm text-brand-subtle font-mono">
+                {fmtCOP(totalNeto)} de {fmtCOP(totalPpto)}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs font-mono text-brand-subtle">Pronóstico cierre</p>
+              <p className="text-xl font-bold font-title"
+                style={{ color: pctPronTotal >= 95 ? '#68D391' : pctPronTotal >= 85 ? '#F6AD55' : '#FC8181' }}>
+                {fmtPct(pctPronTotal)}
+              </p>
+            </div>
+            <Badge tipo={estadoGeneral} />
+          </div>
+        </div>
+        {/* Barra avance con marcador de días hábiles */}
+        <div className="relative mb-2">
+          <ProgressBar pct={totalPct} color={colorGeneral} h="h-4" />
+          <div className="absolute top-0 h-full flex items-center pointer-events-none"
+            style={{ left: `${Math.min(100, pctDias)}%` }}>
+            <div className="w-0.5 h-6 bg-white/50 -mt-1" />
+          </div>
+        </div>
+        <div className="flex justify-between text-xs font-mono text-brand-subtle">
+          <span>{fmtPct(totalPct)} facturado</span>
+          <span className="opacity-50">↑ {fmtPct(pctDias)} días hábiles</span>
+          <span>{fmtCOP(totalPpto)} presupuesto</span>
+        </div>
+      </Panel>
+
+      {/* ── Días hábiles ── */}
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
           <div>
@@ -330,64 +365,25 @@ export default function FacGeneralPage() {
         <ProgressBar pct={pctDias} color="#4FD1C5" />
       </Panel>
 
-      {/* KPIs */}
+      {/* ── KPIs ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard
-          label="Facturado total"
-          value={fmtCOP(totalNeto)}
-          sub={`de ${fmtCOP(totalPpto)}`}
-          sub2={`${fmtPct(totalPct)} de avance`}
-          accent="text-brand-teal"
-        />
-        <KpiCard
-          label="Utilidad"
-          value={fmtCOP(totalUtil)}
-          sub={`Margen: ${fmtPct(totalPctUtil)}`}
-          sub2={`Costo: ${fmtCOP(totalCosto)}`}
-          accent="text-green-400"
-        />
-        <KpiCard
-          label="Facturación / día"
-          value={fmtCOP(porDiaTotal)}
+        <KpiCard label="Facturado total" value={fmtCOP(totalNeto)}
+          sub={`de ${fmtCOP(totalPpto)}`} sub2={`${fmtPct(totalPct)} de avance`}
+          accent="text-brand-teal" />
+        <KpiCard label="Utilidad" value={fmtCOP(totalUtil)}
+          sub={`Margen: ${fmtPct(totalPctUtil)}`} sub2={`Costo: ${fmtCOP(totalCosto)}`}
+          accent="text-green-400" />
+        <KpiCard label="Facturación / día" value={fmtCOP(porDiaTotal)}
           sub={necesTotal > 0 ? `Necesario: ${fmtCOP(necesTotal)}/día` : '✓ Presupuesto alcanzado'}
-          sub2={porDiaTotal >= necesTotal && necesTotal > 0
-            ? '✓ Por encima del ritmo'
-            : necesTotal === 0 ? '' : '✗ Por debajo del ritmo'}
-          accent={porDiaTotal >= necesTotal ? 'text-green-400' : 'text-yellow-400'}
-        />
-        <KpiCard
-          label="Pronóstico cierre"
-          value={fmtCOP(pronTotal)}
+          sub2={porDiaTotal >= necesTotal && necesTotal > 0 ? '✓ Por encima del ritmo' : necesTotal === 0 ? '' : '✗ Por debajo del ritmo'}
+          accent={porDiaTotal >= necesTotal ? 'text-green-400' : 'text-yellow-400'} />
+        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronTotal)}
           sub={`${fmtPct(pctPronTotal)} del presupuesto`}
           accent={pctPronTotal >= 95 ? 'text-green-400' : pctPronTotal >= 85 ? 'text-yellow-400' : 'text-red-400'}
-          alert={estadoGeneral === 'riesgo'}
-        />
+          alert={estadoGeneral === 'riesgo'} />
       </div>
 
-      {/* Barra general */}
-      <Panel>
-        <div className="flex justify-between items-center mb-2">
-          <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">
-            Avance general vs presupuesto
-          </p>
-          <Badge tipo={estadoGeneral} />
-        </div>
-        <div className="relative mb-1">
-          <ProgressBar pct={totalPct} color={colorGeneral} h="h-3" />
-          <div
-            className="absolute top-0 h-full flex items-center pointer-events-none"
-            style={{ left: `${pctDias}%` }}>
-            <div className="w-0.5 h-5 bg-white/60 -mt-1" />
-          </div>
-        </div>
-        <div className="flex justify-between text-xs font-mono text-brand-subtle">
-          <span>{fmtPct(totalPct)} facturado · {fmtCOP(totalNeto)}</span>
-          <span className="opacity-40">{fmtPct(pctDias)} días hábiles</span>
-          <span>{fmtCOP(totalPpto)} presupuesto</span>
-        </div>
-      </Panel>
-
-      {/* Tabla por canal */}
+      {/* ── Tabla por canal ── */}
       <Panel>
         <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
           Detalle por canal · {sede !== 'Todas' ? sede : 'Todas las sedes'}
@@ -457,10 +453,8 @@ export default function FacGeneralPage() {
         </div>
       </Panel>
 
-      {/* Gráficas */}
+      {/* ── Gráficas ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        {/* Facturado vs Presupuesto */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
             Facturado vs Presupuesto por canal
@@ -473,13 +467,12 @@ export default function FacGeneralPage() {
                 tickFormatter={v => fmtCOP(v)} width={110} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#718096' }} />
-              <Bar dataKey="Presupuesto" fill="#2D3748" radius={[4, 4, 0, 0]} name="Presupuesto" />
-              <Bar dataKey="Facturado"   fill="#4FD1C5" radius={[4, 4, 0, 0]} name="Facturado" />
+              <Bar dataKey="Presupuesto" fill="#2D3748" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Facturado"   fill="#4FD1C5" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Panel>
 
-        {/* % Avance vs Pronóstico */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
             % Avance vs % Pronóstico por canal
@@ -492,13 +485,12 @@ export default function FacGeneralPage() {
                 tickFormatter={v => `${v}%`} domain={[0, 100]} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#718096' }} />
-              <Bar dataKey="% Avance"     fill="#4FD1C5" radius={[4, 4, 0, 0]} name="% Avance" />
-              <Bar dataKey="% Pronóstico" fill="#F6AD55" radius={[4, 4, 0, 0]} name="% Pronóstico" />
+              <Bar dataKey="% Avance"     fill="#4FD1C5" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="% Pronóstico" fill="#F6AD55" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Panel>
 
-        {/* Utilidad por canal */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
             Utilidad por canal
@@ -510,7 +502,7 @@ export default function FacGeneralPage() {
               <YAxis tick={{ fill: '#718096', fontSize: 10 }} axisLine={false} tickLine={false}
                 tickFormatter={v => fmtCOP(v)} width={110} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="Utilidad" radius={[4, 4, 0, 0]} name="Utilidad">
+              <Bar dataKey="Utilidad" radius={[4, 4, 0, 0]}>
                 {graficoCanales.map((entry, i) => {
                   const cfg = CANALES_CONFIG.find(c => c.canal === entry.name)
                   return <rect key={i} fill={cfg?.color ?? '#4FD1C5'} />
@@ -520,7 +512,6 @@ export default function FacGeneralPage() {
           </ResponsiveContainer>
         </Panel>
 
-        {/* Cards resumen por canal */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
             Resumen por canal
@@ -546,12 +537,10 @@ export default function FacGeneralPage() {
         </Panel>
       </div>
 
-      {/* Nota de datos */}
       <p className="text-xs text-brand-subtle font-mono text-center pb-4">
         Datos desde Supabase · Sincronización automática diaria desde Google Sheets ·
         Días hábiles lunes–sábado sin festivos Colombia
       </p>
-
     </div>
   )
 }
