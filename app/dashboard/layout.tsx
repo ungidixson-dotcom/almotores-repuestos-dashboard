@@ -16,7 +16,7 @@ const CANALES: NavItem[] = [
   { label: 'Taller',     href: '/dashboard/facturacion/canales/taller' },
   { label: 'Mostrador',  href: '/dashboard/facturacion/canales/mostrador' },
   { label: 'Mayoristas', href: '/dashboard/facturacion/canales/mayoristas' },
-  { label: 'Subasta',    href: '/dashboard/facturacion/canales/subasta' },
+  { label: 'Subastas',   href: '/dashboard/facturacion/canales/subastas' },
   { label: 'Colisión',   href: '/dashboard/facturacion/canales/colision' },
 ]
 
