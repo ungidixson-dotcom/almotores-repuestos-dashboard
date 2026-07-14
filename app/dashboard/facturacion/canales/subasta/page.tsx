@@ -221,6 +221,18 @@ export default function TorreControlSubastasPage() {
     })).sort((a:any,b:any)=>b.total-a.total)
   },[datosAsesor, filtroMes, filtroAseg, kpi.total, asesores])
 
+  // ── Participación aseguradoras por mes ───────────────────────────────────
+  const participacionMensual = useMemo(()=>{
+    return MESES_ORD.map((m,i)=>{
+      const entry:any = {name: MESES_LABEL[i]}
+      datosAseg.filter(d=>d.anio===anio&&d.mes_subasta===m).forEach(d=>{
+        const nombre = d.aseguradora||'Sin aseg.'
+        entry[nombre] = (entry[nombre]||0) + Number(d.total||0)
+      })
+      return entry
+    }).filter(e=>Object.keys(e).length > 1)
+  },[datosAseg, anio])
+
   // ── Pie data ──────────────────────────────────────────────────────────────
   const pieData = [
     {name:'Auth. Completa',value:datosMes.filter(mesFiltro).reduce((s,d)=>s+Number(d.auth_completa||0),0),color:'#68D391'},
@@ -382,6 +394,71 @@ export default function TorreControlSubastasPage() {
                 </BarChart>
               </ResponsiveContainer>
             </Panel>
+
+            {/* Participación aseguradoras por mes */}
+            <Panel className="xl:col-span-2">
+              <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+                Participación de aseguradoras por mes — {anio}
+              </h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={participacionMensual}
+                  margin={{top:5,right:10,left:10,bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+                  <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                  <Tooltip content={<TT/>}/>
+                  <Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
+                  {aseguradoras.map((a,i)=>(
+                    <Bar key={a.nombre_corto} dataKey={a.nombre_corto} stackId="a"
+                      fill={COLORES[i%12]} radius={i===aseguradoras.length-1?[4,4,0,0]:[0,0,0,0]}/>
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </Panel>
+
+            {/* Efectividad por asesor en Evolución */}
+            <Panel className="xl:col-span-2">
+              <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-5">
+                Efectividad por asesor — {filtroMes!=='todos'?filtroMes:`año completo ${anio}`}
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {porAsesor.map((a:any,i:number)=>{
+                  const maxSub = Math.max(...porAsesor.map((x:any)=>x.total))
+                  const maxVal = Math.max(...porAsesor.map((x:any)=>x.valSub))
+                  return(
+                    <div key={a.id} className="space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{background:COLORES[i%12]}}/>
+                          <span className="text-sm font-semibold text-brand-text">{a.nombre}</span>
+                        </div>
+                        <div className="flex gap-3 text-xs font-mono">
+                          <span className="text-green-400">{fmtPct(a.tasaAuth)} auth</span>
+                          <span className="text-brand-teal">{fmtPct(a.convTotal)} conv</span>
+                        </div>
+                      </div>
+                      {[
+                        {label:'Volumen',  value:a.total,   max:maxSub, color:COLORES[i%12],  fmt:(v:number)=>v.toLocaleString()},
+                        {label:'% Auth.',  value:a.tasaAuth*100, max:100,  color:'#68D391', fmt:(v:number)=>`${v.toFixed(1)}%`},
+                        {label:'% Conv.',  value:a.convTotal*100,max:100,  color:'#4FD1C5', fmt:(v:number)=>`${v.toFixed(1)}%`},
+                        {label:'Val.Sub.', value:a.valSub,  max:maxVal, color:'#B794F4',   fmt:fmtCOP},
+                        {label:'Fact.',    value:a.facturadas,max:Math.max(...porAsesor.map((x:any)=>x.facturadas)),color:'#F6AD55',fmt:(v:number)=>v.toLocaleString()},
+                      ].map(row=>(
+                        <div key={row.label} className="flex items-center gap-3">
+                          <span className="text-xs font-mono text-brand-subtle w-16 text-right">{row.label}</span>
+                          <div className="flex-1 h-2.5 bg-brand-border rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700"
+                              style={{width:`${row.max>0?Math.min(100,(row.value/row.max)*100):0}%`,background:row.color}}/>
+                          </div>
+                          <span className="text-xs font-mono w-16 text-right" style={{color:row.color}}>{row.fmt(row.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+            </Panel>
           </div>
         </div>
       )}
@@ -500,6 +577,81 @@ export default function TorreControlSubastasPage() {
                 <Bar dataKey="facturadas" name="Facturadas" fill="#4FD1C5" radius={[4,4,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
+          </Panel>
+
+          {/* Efectividad por asesor */}
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-5">Efectividad por asesor — {filtroMes!=='todos'?filtroMes:'año completo'}</h2>
+            <div className="space-y-5">
+              {porAsesor.map((a:any, i:number)=>{
+                const maxSub = Math.max(...porAsesor.map((x:any)=>x.total))
+                const maxVal = Math.max(...porAsesor.map((x:any)=>x.valSub))
+                return(
+                  <div key={a.id} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{background:COLORES[i%12]}}/>
+                        <span className="text-sm font-semibold text-brand-text">{a.nombre}</span>
+                      </div>
+                      <div className="flex gap-4 text-xs font-mono">
+                        <span className="text-brand-subtle">{a.total.toLocaleString()} sub.</span>
+                        <span className="text-green-400">{fmtPct(a.tasaAuth)} auth.</span>
+                        <span className="text-brand-teal">{fmtPct(a.convTotal)} conv.</span>
+                      </div>
+                    </div>
+                    {/* Volumen */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono text-brand-subtle w-20 text-right">Volumen</span>
+                      <div className="flex-1 h-3 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{width:`${maxSub>0?(a.total/maxSub)*100:0}%`,background:COLORES[i%12]}}/>
+                      </div>
+                      <span className="text-xs font-mono text-brand-subtle w-16 text-right">{a.total.toLocaleString()}</span>
+                    </div>
+                    {/* Tasa auth */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono text-brand-subtle w-20 text-right">% Auth.</span>
+                      <div className="flex-1 h-3 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{width:`${Math.min(100,a.tasaAuth*100)}%`,background:'#68D391'}}/>
+                      </div>
+                      <span className="text-xs font-mono text-green-400 w-16 text-right">{fmtPct(a.tasaAuth)}</span>
+                    </div>
+                    {/* Conversión */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono text-brand-subtle w-20 text-right">% Conv.</span>
+                      <div className="flex-1 h-3 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{width:`${Math.min(100,a.convTotal*100*3)}%`,background:'#4FD1C5'}}/>
+                      </div>
+                      <span className="text-xs font-mono text-brand-teal w-16 text-right">{fmtPct(a.convTotal)}</span>
+                    </div>
+                    {/* Valor subastado */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono text-brand-subtle w-20 text-right">Val. Sub.</span>
+                      <div className="flex-1 h-3 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{width:`${maxVal>0?(a.valSub/maxVal)*100:0}%`,background:'#B794F4'}}/>
+                      </div>
+                      <span className="text-xs font-mono text-purple-400 w-16 text-right">{fmtCOP(a.valSub)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex gap-4 mt-4 pt-4 border-t border-brand-border">
+              {[
+                {color:COLORES[0],label:'Volumen de subastas'},
+                {color:'#68D391',label:'Tasa de autorización'},
+                {color:'#4FD1C5',label:'Conversión (×3 escala)'},
+                {color:'#B794F4',label:'Valor subastado'},
+              ].map(l=>(
+                <div key={l.label} className="flex items-center gap-1.5">
+                  <div className="w-3 h-1.5 rounded-full" style={{background:l.color}}/>
+                  <span className="text-xs font-mono text-brand-subtle">{l.label}</span>
+                </div>
+              ))}
+            </div>
           </Panel>
         </div>
       )}
