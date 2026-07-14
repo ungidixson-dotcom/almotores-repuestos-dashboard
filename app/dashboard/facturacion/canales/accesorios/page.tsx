@@ -1,243 +1,550 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
-import Link from 'next/link'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
-import { Package, TrendingUp, ShoppingBag, Building2, Percent } from 'lucide-react'
-import { KpiCard, Panel, fmtCOP, fmtM } from '@/components/dashboard-ui'
 
-type FilaAccesorio = {
-  fecha_cierre: string | null
-  sede: string | null
-  denominacion: string | null
-  cantidad: number | null
-  neto: number | null
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+interface FacturaAcc {
+  referencia:      number
+  prefijo_num:     string
+  nombre_cliente:  string
+  nombre_vendedor: string
+  cuenta:          number
+  fecha:           string
+  prefijo:         string
+  taller:          string
+  sede:            string
+  fuente:          string
+  canal:           string
+  mes:             string
+  anio:            number
+  neto:            number
+  costo:           number
+  beneficio:       number
+  lineas:          number
 }
 
-const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+interface ResumenVista {
+  canal: string; sede: string; mes: string; anio: number
+  neto: number; costo: number; beneficio: number; presupuesto: number
+}
 
-export default function FacturacionAccesoriosPage() {
-  const [filas, setFilas] = useState<FilaAccesorio[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filtroSede, setFiltroSede] = useState('todas')
-  const [filtroMes, setFiltroMes] = useState('todos')
+// ── Constantes ────────────────────────────────────────────────────────────────
+const MESES_KEY = ['enero','febrero','marzo','abril','mayo','junio',
+  'julio','agosto','septiembre','octubre','noviembre','diciembre']
+const MESES_LABEL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const SEDES   = ['Todas', 'Norte', 'Pasoancho', 'Sede 39']
+const FUENTES = ['Todas', 'Taller', 'Mostrador']
 
-  useEffect(() => {
-    async function fetchData() {
-      let all: FilaAccesorio[] = []
-      let from = 0
-      const pageSize = 1000
-      while (true) {
-        const { data, error } = await supabase
-          .from('facturas_accesorios')
-          .select('fecha_cierre,sede,denominacion,cantidad,neto')
-          .range(from, from + pageSize - 1)
-        if (error || !data || data.length === 0) break
-        all = all.concat(data as FilaAccesorio[])
-        if (data.length < pageSize) break
-        from += pageSize
-      }
-      setFilas(all)
-      setLoading(false)
-    }
-    fetchData()
-  }, [])
+const FESTIVOS = new Set([
+  '2025-01-01','2025-01-06','2025-03-24','2025-04-17','2025-04-18','2025-05-01',
+  '2025-06-02','2025-06-23','2025-06-30','2025-07-20','2025-08-07','2025-08-18',
+  '2025-10-13','2025-11-03','2025-11-17','2025-12-08','2025-12-25',
+  '2026-01-01','2026-01-05','2026-03-23','2026-04-02','2026-04-03','2026-05-01',
+  '2026-05-18','2026-06-08','2026-06-29','2026-07-20','2026-08-07','2026-08-17',
+  '2026-10-12','2026-11-02','2026-11-16','2026-12-08','2026-12-25',
+])
 
-  const sedes = useMemo(() => {
-    const s = filas.map(f => f.sede).filter((s): s is string => !!s)
-    return ['todas', ...Array.from(new Set(s)).sort()]
-  }, [filas])
+const fmtCOP = (v: number) => {
+  const abs = Math.abs(v), sign = v < 0 ? '-' : ''
+  return `${sign}$${abs.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+const fmtPct = (v: number) => `${v.toFixed(1)}%`
 
-  const mesesDisponibles = useMemo(() => {
-    const map: Record<string, { label: string; orden: number }> = {}
-    filas.forEach(f => {
-      if (!f.fecha_cierre) return
-      const d = new Date(f.fecha_cierre)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (!map[key]) map[key] = { label: `${MESES[d.getMonth()]} ${d.getFullYear()}`, orden: d.getFullYear() * 12 + d.getMonth() }
-    })
-    return Object.entries(map)
-      .sort((a, b) => b[1].orden - a[1].orden)
-      .map(([key, v]) => ({ key, label: v.label }))
-  }, [filas])
+const esDiaHabil = (d: Date) => d.getDay() !== 0 && !FESTIVOS.has(d.toISOString().slice(0,10))
+const diasHabilesEnMes = (a: number, m: number) => {
+  const d = new Date(a, m-1, 1); let c = 0
+  while (d.getMonth()===m-1) { if(esDiaHabil(d)) c++; d.setDate(d.getDate()+1) }
+  return c
+}
+const diasHabilesHasta = (a: number, m: number, dia: number) => {
+  const d = new Date(a, m-1, 1); let c = 0
+  while (d.getDate()<=dia && d.getMonth()===m-1) { if(esDiaHabil(d)) c++; d.setDate(d.getDate()+1) }
+  return c
+}
 
-  const ff = useMemo(
-    () => filas.filter(f => {
-      if (filtroSede !== 'todas' && f.sede !== filtroSede) return false
-      if (filtroMes !== 'todos' && f.fecha_cierre) {
-        const d = new Date(f.fecha_cierre)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        if (key !== filtroMes) return false
-      }
+function Panel({ children, className='' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>{children}</div>
+}
+function KpiCard({ label, value, sub, sub2, accent='text-brand-teal' }: {
+  label: string; value: string; sub?: string; sub2?: string; accent?: string
+}) {
+  return (
+    <Panel>
+      <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">{label}</p>
+      <p className={`text-xl font-bold font-title ${accent}`}>{value}</p>
+      {sub  && <p className="text-xs text-brand-subtle mt-1">{sub}</p>}
+      {sub2 && <p className="text-xs text-brand-subtle mt-0.5">{sub2}</p>}
+    </Panel>
+  )
+}
+function ProgressBar({ pct, color, h='h-2' }: { pct: number; color: string; h?: string }) {
+  return (
+    <div className={`w-full ${h} bg-brand-border rounded-full overflow-hidden`}>
+      <div className="h-full rounded-full transition-all duration-700"
+        style={{ width:`${Math.min(100,Math.max(0,pct))}%`, background:color }}/>
+    </div>
+  )
+}
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active||!payload?.length) return null
+  return (
+    <div className="bg-brand-surface border border-brand-border rounded-lg p-3 shadow-lg">
+      <p className="text-xs font-mono text-brand-subtle mb-2">{label}</p>
+      {payload.map((p: any, i: number) => (
+        <p key={i} className="text-xs font-mono" style={{color:p.color}}>
+          {p.name}: {fmtCOP(p.value)}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+const COLORES_SEDE: Record<string,string> = { 'Norte':'#4FD1C5','Pasoancho':'#68D391','Sede 39':'#F6AD55' }
+
+export default function AccesoriosPage() {
+  const hoy = new Date()
+  const [anio, setAnio]     = useState(hoy.getFullYear())
+  const [mes,  setMes]      = useState(hoy.getMonth()+1)
+  const [sede, setSede]     = useState('Todas')
+  const [fuente, setFuente] = useState('Todas')
+  const [buscar, setBuscar] = useState('')
+
+  const [facturas,  setFacturas]  = useState<FacturaAcc[]>([])
+  const [resumen,   setResumen]   = useState<ResumenVista[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState('')
+  const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
+
+  const cargar = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const [{ data: dataFact }, { data: dataRes }] = await Promise.all([
+        supabase
+          .from('v_accesorios_facturas')
+          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, taller, sede, fuente, canal, mes, anio, neto, costo, beneficio, lineas')
+          .eq('anio', anio)
+          .eq('mes', MESES_KEY[mes-1])
+          .limit(5000),
+        supabase
+          .from('v_facturacion_general')
+          .select('canal, sede, mes, anio, neto, costo, beneficio, presupuesto')
+          .eq('canal', 'Accesorios')
+          .eq('anio', anio),
+      ])
+      setFacturas((dataFact ?? []) as FacturaAcc[])
+      setResumen((dataRes ?? []) as ResumenVista[])
+      setUltimaAct(new Date())
+    } catch(e: any) { setError(`Error: ${e?.message}`) }
+    setLoading(false)
+  }, [anio, mes])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  // Días hábiles
+  const totalDH  = useMemo(() => diasHabilesEnMes(anio, mes), [anio, mes])
+  const dhTransc = useMemo(() => (
+    anio===hoy.getFullYear()&&mes===hoy.getMonth()+1
+      ? diasHabilesHasta(anio,mes,hoy.getDate()) : totalDH
+  ), [anio, mes, totalDH])
+  const dhRest  = totalDH - dhTransc
+  const pctDias = totalDH ? (dhTransc/totalDH)*100 : 0
+
+  // Presupuesto
+  const mesClave = MESES_KEY[mes-1]
+  const filasMes = resumen.filter(r => r.mes===mesClave && (sede==='Todas'||r.sede===sede))
+  const totalPpto = filasMes.reduce((s,r)=>s+Number(r.presupuesto),0)
+
+  // Filtrado
+  const factFiltradas = useMemo(() => {
+    return facturas.filter(f => {
+      if (sede !== 'Todas' && f.sede !== sede) return false
+      if (fuente !== 'Todas' && f.fuente !== fuente) return false
       return true
-    }),
-    [filas, filtroSede, filtroMes]
+    })
+  }, [facturas, sede, fuente])
+
+  // Totales
+  const totalNeto  = factFiltradas.reduce((s,f)=>s+Number(f.neto),0)
+  const totalCosto = factFiltradas.reduce((s,f)=>s+Number(f.costo),0)
+  const totalUtil  = totalNeto - totalCosto
+  const pctAvance  = totalPpto ? (totalNeto/totalPpto)*100 : 0
+  const pctUtil    = totalNeto ? (totalUtil/totalNeto)*100 : 0
+  const porDia     = dhTransc ? totalNeto/dhTransc : 0
+  const restante   = totalPpto - totalNeto
+  const necesario  = dhRest>0&&restante>0 ? restante/dhRest : 0
+  const pronostico = totalNeto + porDia*dhRest
+  const pctPronos  = totalPpto ? (pronostico/totalPpto)*100 : 0
+  const colorAvance = pctPronos>=95?'#68D391':pctPronos>=85?'#F6AD55':'#FC8181'
+
+  // Por sede
+  const porSede = useMemo(() => ['Norte','Pasoancho','Sede 39'].map(s => {
+    const fs = facturas.filter(f => f.sede===s && (fuente==='Todas'||f.fuente===fuente))
+    const neto  = fs.reduce((sum,f)=>sum+Number(f.neto),0)
+    const costo = fs.reduce((sum,f)=>sum+Number(f.costo),0)
+    const ppto  = resumen.filter(r=>r.mes===mesClave&&r.sede===s).reduce((sum,r)=>sum+Number(r.presupuesto),0)
+    return { sede:s, neto, costo, util:neto-costo, ppto, pct:ppto?(neto/ppto)*100:0, facturas:fs.length }
+  }), [facturas, fuente, resumen, mesClave])
+
+  // Por fuente
+  const porFuente = useMemo(() => ['Taller','Mostrador'].map(f => {
+    const fs = factFiltradas.filter(x=>x.fuente===f)
+    const neto  = fs.reduce((s,x)=>s+Number(x.neto),0)
+    const costo = fs.reduce((s,x)=>s+Number(x.costo),0)
+    return { fuente:f, neto, costo, util:neto-costo, facturas:fs.length }
+  }), [factFiltradas])
+
+  // Por asesor
+  const porAsesor = useMemo(() => {
+    const mapa: Record<string,{neto:number;costo:number;facturas:number}> = {}
+    factFiltradas.forEach(f => {
+      const key = f.nombre_vendedor||'Sin asesor'
+      if (!mapa[key]) mapa[key]={neto:0,costo:0,facturas:0}
+      mapa[key].neto+=Number(f.neto); mapa[key].costo+=Number(f.costo); mapa[key].facturas+=1
+    })
+    return Object.entries(mapa).map(([nombre,d])=>({nombre,...d,util:d.neto-d.costo})).sort((a,b)=>b.neto-a.neto)
+  }, [factFiltradas])
+
+  // Evolución mensual
+  const evolucion = useMemo(() => MESES_KEY.map((m,i) => {
+    const fs = resumen.filter(r=>r.mes===m&&(sede==='Todas'||r.sede===sede))
+    return { name:MESES_LABEL[i].slice(0,3), Facturado:fs.reduce((s,r)=>s+Number(r.neto),0), Presupuesto:fs.reduce((s,r)=>s+Number(r.presupuesto),0) }
+  }).filter(r=>r.Facturado>0||r.Presupuesto>0), [resumen, sede])
+
+  // Búsqueda tabla
+  const factBuscar = useMemo(() => {
+    if (!buscar.trim()) return factFiltradas
+    const b = buscar.toLowerCase()
+    return factFiltradas.filter(f =>
+      (f.nombre_cliente||'').toLowerCase().includes(b) ||
+      String(f.referencia).includes(b) ||
+      (f.nombre_vendedor||'').toLowerCase().includes(b)
+    )
+  }, [factFiltradas, buscar])
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-10 h-10 border-2 border-brand-teal border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
+        <p className="text-brand-subtle text-sm font-mono">Cargando datos...</p>
+      </div>
+    </div>
   )
 
-  const kpis = useMemo(() => {
-    const ventas = ff.filter(f => (f.cantidad || 0) > 0)
-    const totalNeto = ventas.reduce((a, f) => a + (f.neto || 0), 0)
-    const numVentas = ventas.length
-    const ticketProm = numVentas ? totalNeto / numVentas : 0
-    const articulosUnicos = new Set(ventas.map(f => f.denominacion)).size
-    return { totalNeto, numVentas, ticketProm, articulosUnicos }
-  }, [ff])
-
-  const porMes = useMemo(() => {
-    const map: Record<string, { total: number; orden: number; label: string }> = {}
-    ff.filter(f => (f.cantidad || 0) > 0 && f.fecha_cierre).forEach(f => {
-      const d = new Date(f.fecha_cierre!)
-      const orden = d.getFullYear() * 12 + d.getMonth()
-      const key = `${d.getFullYear()}-${d.getMonth()}`
-      const label = `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`
-      if (!map[key]) map[key] = { total: 0, orden, label }
-      map[key].total += f.neto || 0
-    })
-    return Object.values(map)
-      .sort((a, b) => a.orden - b.orden)
-      .map(({ label, total }) => ({ mes: label, total }))
-  }, [ff])
-
-  const porArticulo = useMemo(() => {
-    const map: Record<string, number> = {}
-    ff.filter(f => (f.cantidad || 0) > 0).forEach(f => {
-      const key = f.denominacion || 'Sin descripción'
-      map[key] = (map[key] || 0) + (f.neto || 0)
-    })
-    return Object.entries(map)
-      .map(([articulo, total]) => ({ articulo, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 8)
-  }, [ff])
-
-  const porSede = useMemo(() => {
-    const map: Record<string, number> = {}
-    ff.filter(f => (f.cantidad || 0) > 0).forEach(f => {
-      const key = f.sede || 'Sin sede'
-      map[key] = (map[key] || 0) + (f.neto || 0)
-    })
-    return Object.entries(map).map(([sede, total]) => ({ sede, total })).sort((a, b) => b.total - a.total)
-  }, [ff])
-
-  if (loading) {
-    return (
-      <div className="p-6">
-        <p className="text-brand-subtle font-mono text-sm">Cargando datos de Accesorios…</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-title text-2xl font-bold text-brand-text">Facturación · Accesorios</h1>
-          <p className="text-brand-subtle text-sm mt-1">Datos sincronizados desde Google Sheet — 2023 a 2026</p>
+          <h1 className="text-2xl font-bold font-title text-brand-text">🎁 Accesorios</h1>
+          <p className="text-sm text-brand-subtle mt-0.5">
+            Taller + Mostrador · {sede!=='Todas'?sede:'todas las sedes'} · {MESES_LABEL[mes-1]} {anio}
+          </p>
         </div>
-        <Link
-          href="/dashboard/facturacion/canales/accesorios/comisiones"
-          className="shrink-0 flex items-center gap-2 text-xs font-mono text-brand-gold hover:text-brand-text border border-brand-gold/40 hover:border-brand-gold rounded-lg px-3 py-2 transition-colors"
-        >
-          <Percent size={13} /> Ver Ventas vs Comisiones →
-        </Link>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-6 p-4 bg-brand-surface border border-brand-border rounded-xl">
-        <span className="font-mono text-xs text-brand-muted self-center mr-2 uppercase tracking-wider">Filtrar por</span>
-        <label className="flex items-center gap-2">
-          <span className="text-xs text-brand-subtle">Sede</span>
-          <select
-            value={filtroSede}
-            onChange={e => setFiltroSede(e.target.value)}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal"
-          >
-            {sedes.map(s => <option key={s} value={s}>{s === 'todas' ? 'Todas' : s}</option>)}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex rounded-lg border border-brand-border overflow-hidden">
+            {SEDES.map(s=>(
+              <button key={s} onClick={()=>setSede(s)}
+                className={`px-3 py-2 text-xs font-mono transition-colors ${sede===s?'bg-brand-teal text-black':'text-brand-subtle hover:text-brand-text'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-lg border border-brand-border overflow-hidden">
+            {FUENTES.map(f=>(
+              <button key={f} onClick={()=>setFuente(f)}
+                className={`px-3 py-2 text-xs font-mono transition-colors ${fuente===f?'bg-brand-teal text-black':'text-brand-subtle hover:text-brand-text'}`}>
+                {f}
+              </button>
+            ))}
+          </div>
+          <select value={anio} onChange={e=>setAnio(Number(e.target.value))}
+            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
+            {[2024,2025,2026].map(a=><option key={a} value={a}>{a}</option>)}
           </select>
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-xs text-brand-subtle">Mes de facturación</span>
-          <select
-            value={filtroMes}
-            onChange={e => setFiltroMes(e.target.value)}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal"
-          >
-            <option value="todos">Todos</option>
-            {mesesDisponibles.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          <select value={mes} onChange={e=>setMes(Number(e.target.value))}
+            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
+            {MESES_LABEL.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
           </select>
-        </label>
-        {(filtroSede !== 'todas' || filtroMes !== 'todos') && (
-          <button
-            onClick={() => { setFiltroSede('todas'); setFiltroMes('todos') }}
-            className="ml-auto text-xs font-mono text-brand-muted hover:text-brand-red transition-colors border border-brand-border rounded-lg px-3 py-1.5"
-          >
-            × Limpiar filtros
+          <button onClick={cargar} disabled={loading}
+            className="bg-brand-teal/20 hover:bg-brand-teal/30 border border-brand-teal/40 text-brand-teal rounded-lg px-4 py-2 text-sm font-mono transition-colors">
+            ↻ Actualizar
           </button>
-        )}
+          {ultimaAct&&<span className="text-xs text-brand-subtle font-mono">Act: {ultimaAct.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</span>}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiCard icon={<TrendingUp size={15} />}  label="Total facturado" value={fmtM(kpis.totalNeto)} accent="teal" hint={fmtCOP(kpis.totalNeto)} />
-        <KpiCard icon={<ShoppingBag size={15} />} label="Número de ventas" value={kpis.numVentas} accent="gold" />
-        <KpiCard icon={<Package size={15} />}     label="Artículos únicos" value={kpis.articulosUnicos} accent="blue" />
-        <KpiCard icon={<Building2 size={15} />}   label="Ticket promedio" value={fmtM(kpis.ticketProm)} accent="muted" />
+      {error&&<div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">{error}</div>}
+
+      {/* % Avance */}
+      <Panel className="border-brand-teal/30">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">
+              Avance vs presupuesto — {MESES_LABEL[mes-1]} {anio}{sede!=='Todas'?` · ${sede}`:''}
+            </p>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-4xl font-bold font-title" style={{color:colorAvance}}>{fmtPct(pctAvance)}</span>
+              <span className="text-sm text-brand-subtle font-mono">{fmtCOP(totalNeto)} de {fmtCOP(totalPpto)}</span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-mono text-brand-subtle">Pronóstico cierre</p>
+            <p className="text-xl font-bold font-title" style={{color:colorAvance}}>{fmtPct(pctPronos)}</p>
+          </div>
+        </div>
+        <div className="relative mb-2">
+          <ProgressBar pct={pctAvance} color={colorAvance} h="h-4"/>
+          <div className="absolute top-0 h-full flex items-center pointer-events-none" style={{left:`${Math.min(100,pctDias)}%`}}>
+            <div className="w-0.5 h-6 bg-white/50 -mt-1"/>
+          </div>
+        </div>
+        <div className="flex justify-between text-xs font-mono text-brand-subtle">
+          <span>{fmtPct(pctAvance)} facturado</span>
+          <span className="opacity-50">↑ {fmtPct(pctDias)} días hábiles</span>
+          <span>{fmtCOP(totalPpto)} presupuesto</span>
+        </div>
+      </Panel>
+
+      {/* Días hábiles */}
+      <Panel>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
+          <div>
+            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">Días hábiles — {MESES_LABEL[mes-1]} {anio}</p>
+            <p className="text-lg font-bold font-title text-brand-text mt-0.5">{dhTransc} de {totalDH} transcurridos · {dhRest} restantes</p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold font-title text-brand-teal">{pctDias.toFixed(0)}%</p>
+            <p className="text-xs text-brand-subtle font-mono">del mes avanzado</p>
+          </div>
+        </div>
+        <ProgressBar pct={pctDias} color="#4FD1C5"/>
+      </Panel>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="Facturado" value={fmtCOP(totalNeto)} sub={`de ${fmtCOP(totalPpto)}`} sub2={`${fmtPct(pctAvance)} de avance`} accent="text-brand-teal"/>
+        <KpiCard label="Utilidad" value={fmtCOP(totalUtil)} sub={`Margen: ${fmtPct(pctUtil)}`} sub2={`Costo: ${fmtCOP(totalCosto)}`} accent="text-green-400"/>
+        <KpiCard label="Facturación / día" value={fmtCOP(porDia)}
+          sub={necesario>0?`Necesario: ${fmtCOP(necesario)}/día`:'✓ Presupuesto alcanzado'}
+          sub2={porDia>=necesario&&necesario>0?'✓ Por encima del ritmo':necesario===0?'':'✗ Por debajo del ritmo'}
+          accent={porDia>=necesario?'text-green-400':'text-yellow-400'}/>
+        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronostico)} sub={`${fmtPct(pctPronos)} del presupuesto`}
+          accent={pctPronos>=95?'text-green-400':pctPronos>=85?'text-yellow-400':'text-red-400'}/>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <Panel title="Facturación mensual" sub="Neto total por mes de cierre">
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={porMes} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false} />
-              <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false} />
-              <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => fmtM(v)} />
-              <Tooltip
-                contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
-                labelStyle={{ color: '#EAF0F6' }}
-                formatter={(v: number) => fmtCOP(v)}
-              />
-              <Bar dataKey="total" fill="#4FD1C5" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel title="Facturación por sede" sub="Comparativo entre sedes">
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={porSede} layout="vertical" margin={{ left: 8, right: 16, top: 8, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" horizontal={false} />
-              <XAxis type="number" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => fmtM(v)} />
-              <YAxis type="category" dataKey="sede" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false} width={90} />
-              <Tooltip
-                contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
-                labelStyle={{ color: '#EAF0F6' }}
-                formatter={(v: number) => fmtCOP(v)}
-              />
-              <Bar dataKey="total" fill="#E8A33D" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
+      {/* Cards por sede */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {porSede.map(s=>(
+          <button key={s.sede} onClick={()=>setSede(sede===s.sede?'Todas':s.sede)}
+            className={`rounded-xl border p-5 text-left transition-all ${sede===s.sede?'border-brand-teal bg-brand-teal/10':'border-brand-border bg-brand-surface hover:border-brand-teal/50'}`}>
+            <div className="flex justify-between items-start mb-2">
+              <p className="text-sm font-semibold text-brand-text">Accesorios {s.sede}</p>
+              {sede===s.sede&&<span className="text-xs px-2 py-0.5 rounded-full bg-brand-teal text-black font-mono">Activo</span>}
+            </div>
+            <p className="text-xs font-mono text-brand-subtle mb-2">{s.facturas} facturas</p>
+            <p className="text-2xl font-bold font-title" style={{color:COLORES_SEDE[s.sede]}}>{fmtCOP(s.neto)}</p>
+            <p className={`text-xs font-mono mt-1 ${s.util>=0?'text-green-400':'text-red-400'}`}>
+              Utilidad: {fmtCOP(s.util)} ({s.neto?fmtPct((s.util/s.neto)*100):'0%'})
+            </p>
+          </button>
+        ))}
       </div>
 
-      <Panel title="Top artículos" sub="Los 8 artículos con mayor facturación neta en el periodo filtrado">
-        <div className="overflow-x-auto">
+      {/* Gráficas y tablas */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        {/* Por fuente: Taller vs Mostrador */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Por fuente — {MESES_LABEL[mes-1]} {anio}</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
-                <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">Artículo</th>
-                <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">Total facturado</th>
+                {['Fuente','Fact.','Neto','Costo','Utilidad','% Util'].map(h=>(
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {porArticulo.map(a => (
-                <tr key={a.articulo} className="border-b border-brand-border/40 hover:bg-brand-bg/50 transition-colors">
-                  <td className="py-3 pr-6 text-brand-text">{a.articulo}</td>
-                  <td className="py-3 pr-6 font-mono text-brand-teal font-semibold">{fmtCOP(a.total)}</td>
+              {porFuente.map(f=>(
+                <tr key={f.fuente}
+                  className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors cursor-pointer ${fuente===f.fuente?'bg-brand-teal/5 border-l-2 border-l-brand-teal':''}`}
+                  onClick={()=>setFuente(fuente===f.fuente?'Todas':f.fuente)}>
+                  <td className="py-3 pr-4 text-brand-text text-xs font-medium">{f.fuente==='Taller'?'🔧':'🛒'} {f.fuente}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.facturas}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(f.neto)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(f.costo)}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(f.util)}</td>
+                  <td className="py-3 font-mono text-xs text-brand-subtle">{f.neto?fmtPct((f.util/f.neto)*100):'0%'}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-brand-border font-bold">
+                <td className="pt-2 font-mono text-xs uppercase text-brand-text">Total</td>
+                <td className="pt-2 font-mono text-xs text-brand-subtle">{factFiltradas.length}</td>
+                <td className="pt-2 font-mono text-xs text-brand-teal">{fmtCOP(totalNeto)}</td>
+                <td className="pt-2 font-mono text-xs text-brand-subtle">{fmtCOP(totalCosto)}</td>
+                <td className="pt-2 font-mono text-xs text-green-400">{fmtCOP(totalUtil)}</td>
+                <td className="pt-2 font-mono text-xs text-brand-subtle">{fmtPct(pctUtil)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </Panel>
+
+        {/* Por asesor */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Por asesor — {MESES_LABEL[mes-1]} {anio}</h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-brand-border">
+                {['Asesor','Fact.','Neto','Utilidad','% Util'].map(h=>(
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {porAsesor.map(a=>(
+                <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                  <td className="py-2 pr-4 text-brand-text text-xs font-medium max-w-[180px] truncate">{a.nombre}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{a.facturas}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.neto)}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-green-400">{fmtCOP(a.util)}</td>
+                  <td className="py-2 font-mono text-xs text-brand-subtle">{a.neto?fmtPct((a.util/a.neto)*100):'0%'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </Panel>
+
+        {/* Evolución mensual */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Evolución mensual {anio}</h2>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={evolucion} margin={{top:5,right:10,left:10,bottom:5}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+              <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>fmtCOP(v)} width={110}/>
+              <Tooltip content={<CustomTooltip/>}/>
+              <Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
+              <Bar dataKey="Presupuesto" fill="#2D3748" radius={[4,4,0,0]}/>
+              <Bar dataKey="Facturado"   fill="#F6AD55" radius={[4,4,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        {/* Por sede detalle */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Por sede — {MESES_LABEL[mes-1]} {anio}</h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-brand-border">
+                {['Sede','Fact.','Neto','Utilidad','% Util','Presupuesto','% Avance'].map(h=>(
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {porSede.map(s=>(
+                <tr key={s.sede}
+                  className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors cursor-pointer ${sede===s.sede?'bg-brand-teal/5 border-l-2 border-l-brand-teal':''}`}
+                  onClick={()=>setSede(sede===s.sede?'Todas':s.sede)}>
+                  <td className="py-2 pr-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{background:COLORES_SEDE[s.sede]}}/>
+                      <span className="text-brand-text text-xs font-medium">{s.sede}</span>
+                    </div>
+                  </td>
+                  <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{s.facturas}</td>
+                  <td className="py-2 pr-4 font-mono text-xs font-semibold" style={{color:COLORES_SEDE[s.sede]}}>{fmtCOP(s.neto)}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-green-400">{fmtCOP(s.util)}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{s.neto?fmtPct((s.util/s.neto)*100):'0%'}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(s.ppto)}</td>
+                  <td className="py-2 font-mono text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-14 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{width:`${Math.min(100,s.pct)}%`,background:COLORES_SEDE[s.sede]}}/>
+                      </div>
+                      <span className="text-brand-subtle">{fmtPct(s.pct)}</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      </div>
+
+      {/* Tabla detalle */}
+      <Panel>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle">
+            Detalle de facturas — {MESES_LABEL[mes-1]} {anio}
+          </h2>
+          <input type="text" placeholder="Buscar cliente, referencia, asesor..."
+            value={buscar} onChange={e=>setBuscar(e.target.value)}
+            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal w-72"/>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-brand-border">
+                {['Referencia','Cliente','Asesor','Sede','Fuente','Fecha','Items','Costo','Neto','Utilidad','% Util'].map(h=>(
+                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {factBuscar.map(f=>{
+                const util=Number(f.neto)-Number(f.costo)
+                const pctU=Number(f.neto)?(util/Number(f.neto))*100:0
+                const esDevolucion=Number(f.neto)<0
+                return (
+                  <tr key={`${f.referencia}_${f.fuente}`}
+                    className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors ${esDevolucion?'bg-red-500/5':''}`}>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.referencia}</td>
+                    <td className="py-3 pr-4 text-brand-text text-xs font-medium max-w-[150px] truncate">{f.nombre_cliente}</td>
+                    <td className="py-3 pr-4 text-brand-subtle text-xs max-w-[130px] truncate">{f.nombre_vendedor}</td>
+                    <td className="py-3 pr-4 font-mono text-xs" style={{color:COLORES_SEDE[f.sede]}}>{f.sede}</td>
+                    <td className="py-3 pr-4">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${f.fuente==='Taller'?'bg-brand-teal/10 text-brand-teal':'bg-purple-500/10 text-purple-400'}`}>
+                        {f.fuente==='Taller'?'🔧':'🛒'} {f.fuente}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.fecha}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle text-center">{f.lineas}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(Number(f.costo))}</td>
+                    <td className={`py-3 pr-4 font-mono text-xs font-semibold ${esDevolucion?'text-red-400':'text-brand-teal'}`}>
+                      {fmtCOP(Number(f.neto))}{esDevolucion&&<span className="ml-1 text-red-400/70">(dev)</span>}
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(util)}</td>
+                    <td className="py-3 font-mono text-xs text-brand-subtle">{fmtPct(pctU)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-brand-border font-bold">
+                <td className="pt-3 font-mono text-xs uppercase text-brand-text" colSpan={6}>Total — {factBuscar.length} facturas</td>
+                <td className="pt-3 font-mono text-xs text-brand-subtle text-center">{factBuscar.reduce((s,f)=>s+Number(f.lineas),0)}</td>
+                <td className="pt-3 font-mono text-xs text-brand-subtle">{fmtCOP(factBuscar.reduce((s,f)=>s+Number(f.costo),0))}</td>
+                <td className="pt-3 font-mono text-xs text-brand-teal">{fmtCOP(factBuscar.reduce((s,f)=>s+Number(f.neto),0))}</td>
+                <td className="pt-3 font-mono text-xs text-green-400">{fmtCOP(factBuscar.reduce((s,f)=>s+(Number(f.neto)-Number(f.costo)),0))}</td>
+                <td className="pt-3 font-mono text-xs text-brand-subtle">{fmtPct(pctUtil)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </Panel>
+
+      <p className="text-xs text-brand-subtle font-mono text-center pb-4">
+        Datos desde Supabase · Sincronización automática diaria desde Google Sheets
+      </p>
     </div>
   )
 }
