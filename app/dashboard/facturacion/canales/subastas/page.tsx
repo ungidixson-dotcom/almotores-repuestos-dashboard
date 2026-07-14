@@ -21,6 +21,7 @@ interface LineaFactura {
   costo:           number
   beneficio:       number
   canal:           string
+  _fuente:         string
 }
 
 interface ResumenVista {
@@ -144,18 +145,20 @@ export default function SubastasPage() {
     setLoading(true); setError('')
     try {
       // 1) Líneas de detalle — mostrador + crédito canal Subastas
-      const [{ data: dataMost }, { data: dataCred }] = await Promise.all([
+      const [{ data: dataMost, error: errMost }, { data: dataCred, error: errCred }] = await Promise.all([
         supabase
           .from('facturas_mostrador')
           .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
           .eq('canal', 'Subastas')
           .eq('anio', anio)
-          .eq('mes', MESES_KEY[mes - 1]),
+          .eq('mes', MESES_KEY[mes - 1])
+          .limit(5000),
         supabase
           .from('facturas_credito')
           .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
           .eq('anio', anio)
-          .eq('mes', MESES_KEY[mes - 1]),
+          .eq('mes', MESES_KEY[mes - 1])
+          .limit(5000),
       ])
 
       // 2) Resumen de la vista general
@@ -165,7 +168,10 @@ export default function SubastasPage() {
         .eq('canal', 'Subastas')
         .eq('anio', anio)
 
-      setLineas([...(dataMost ?? []), ...(dataCred ?? [])] as LineaFactura[])
+      // Etiquetar fuente para distinguir mostrador vs crédito en el mapa
+      const lineasMost = (dataMost ?? []).map(r => ({ ...r, _fuente: 'mostrador' }))
+      const lineasCred = (dataCred ?? []).map(r => ({ ...r, _fuente: 'credito' }))
+      setLineas([...lineasMost, ...lineasCred] as any)
       setResumen((dataResumen ?? []) as ResumenVista[])
       setUltimaAct(new Date())
     } catch (e: any) {
@@ -202,8 +208,8 @@ export default function SubastasPage() {
     }> = {}
 
     lineas.forEach(l => {
-      // Clave única: referencia + canal para evitar colisión entre mostrador y crédito
-      const key = `${l.referencia}_${l.canal}`
+      // Clave única: referencia + fuente para evitar colisión entre mostrador y crédito
+      const key = `${l.referencia}_${l._fuente}`
       if (!mapa[key]) {
         mapa[key] = {
           referencia:  l.referencia,
