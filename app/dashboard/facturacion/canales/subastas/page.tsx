@@ -202,7 +202,8 @@ export default function SubastasPage() {
     }> = {}
 
     lineas.forEach(l => {
-      const key = String(l.referencia)
+      // Clave única: referencia + canal para evitar colisión entre mostrador y crédito
+      const key = `${l.referencia}_${l.canal}`
       if (!mapa[key]) {
         mapa[key] = {
           referencia:  l.referencia,
