@@ -479,6 +479,41 @@ export default function TallerPage() {
           accent={pctPronos >= 95 ? 'text-green-400' : pctPronos >= 85 ? 'text-yellow-400' : 'text-red-400'} />
       </div>
 
+      {/* Cards resumen por sede */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {['Norte', 'Pasoancho', 'Sede 39'].map(s => {
+          const lineasS = lineas.filter(l => l.sede === s && (tipo === 'Todos' || l.tipo_taller === tipo))
+          const netoS   = lineasS.reduce((sum, l) => sum + Number(l.neto), 0)
+          const costoS  = lineasS.reduce((sum, l) => sum + Number(l.costo), 0)
+          const utilS   = netoS - costoS
+          const pctU    = netoS ? (utilS / netoS) * 100 : 0
+          const factsS  = lineasS.length
+          const isActiva = sede === s
+          return (
+            <button key={s} onClick={() => setSede(sede === s ? 'Todas' : s)}
+              className={`rounded-xl border p-5 text-left transition-all ${
+                isActiva
+                  ? 'border-brand-teal bg-brand-teal/10'
+                  : 'border-brand-border bg-brand-surface hover:border-brand-teal/50'
+              }`}>
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-sm font-semibold text-brand-text">Taller {s}</p>
+                {isActiva && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-brand-teal text-black font-mono">Activo</span>
+                )}
+              </div>
+              <p className="text-xs font-mono text-brand-subtle mb-2">{factsS} facturas</p>
+              <p className={`text-2xl font-bold font-title ${netoS >= 0 ? 'text-brand-teal' : 'text-red-400'}`}>
+                {fmtCOP(netoS)}
+              </p>
+              <p className={`text-xs font-mono mt-1 ${utilS >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                Utilidad: {fmtCOP(utilS)} ({fmtPct(pctU)})
+              </p>
+            </button>
+          )
+        })}
+      </div>
+
       {/* Desglose por tipo y por sede */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
