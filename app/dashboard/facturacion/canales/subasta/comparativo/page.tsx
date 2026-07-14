@@ -1,576 +1,653 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
-import Link from 'next/link'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, Legend, LineChart, Line, RadarChart, Radar,
+  PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
-import {
-  ArrowLeft, TrendingUp, TrendingDown, Gavel, CheckCircle, DollarSign,
-  Percent, Award, AlertTriangle, Building2, User,
-} from 'lucide-react'
-import { KpiCard, Panel, fmtCOP, fmtM, fmtPct } from '@/components/dashboard-ui'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
-type HistoricoRow  = { anio: number; mes_num: number; mes: string; total_subastas: number; ganadas: number; no_autorizadas: number; valor_autorizado: number; valor_subastado: number }
-type SubastaRow    = { id: number; placa: string | null; marca: string | null; aseguradora_id: number | null; asesor_id: number | null; estado_autorizacion: string | null; valor_subastado: number | null; valor_autorizado: number | null; fecha_subasta: string | null; anio: number | null }
-type Aseguradora   = { id: number; nombre_corto: string }
-type Asesor        = { id: number; nombre: string }
-
-const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
-
-const normMarca = (raw: string | null | undefined): string => {
-  if (!raw) return 'Sin marca'
-  const k = raw.trim().toLowerCase()
-  const MAP: Record<string,string> = { kia:'Kia', vw:'VW', jac:'Jac', renault:'Renault' }
-  return MAP[k] || (k.charAt(0).toUpperCase() + k.slice(1))
+interface DatoAseg {
+  anio: number; aseguradora_id: number; aseguradora: string
+  total: number; autorizadas: number; no_autorizadas: number
+  facturadas: number; radicadas: number
+  valor_subastado: number; valor_autorizado: number
 }
-const esGanada = (e: string | null) => e === 'Autorizada Completa' || e === 'Autorizada parcial'
+interface DatoAsesor {
+  anio: number; asesor_id: number; asesor: string
+  total: number; autorizadas: number; no_autorizadas: number
+  facturadas: number; radicadas: number
+  valor_subastado: number; valor_autorizado: number; descuento_prom: number
+}
+interface DatoMes {
+  anio: number; mes_subasta: string
+  total: number; autorizadas: number; facturadas: number
+  valor_subastado: number; valor_autorizado: number
+}
 
-// ── VarTag ────────────────────────────────────────────────────────────────────
-const VarTag = ({ v }: { v: number }) => (
-  <span className={`inline-flex items-center gap-1 text-xs font-mono ${v >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
-    {v >= 0 ? <TrendingUp size={11}/> : <TrendingDown size={11}/>} {fmtPct(Math.abs(v))}
-  </span>
-)
+// ── Constantes ────────────────────────────────────────────────────────────────
+const YEARS = [2024, 2025, 2026]
+const MESES_ORD   = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+const MESES_LABEL = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+const COLORES_AÑO: Record<number,string> = { 2024:'#63B3ED', 2025:'#68D391', 2026:'#F6AD55' }
+const COLORES = ['#4FD1C5','#68D391','#F6AD55','#FC8181','#B794F4','#63B3ED','#F687B3','#FBD38D','#9AE6B4','#90CDF4','#FEB2B2','#E9D8FD']
 
-// ── Tabla de desglose (aseguradora / asesor) ──────────────────────────────────
-type DesgloseRow = { nombre: string; subObj: number; subComp: number; ganObj: number; ganComp: number; valObj: number; valComp: number }
+const fmtCOP = (v: number) => {
+  if (!v && v !== 0) return '—'
+  const abs = Math.abs(v), sign = v < 0 ? '-' : ''
+  if (abs >= 1e9) return `${sign}$${(abs/1e9).toFixed(2)}B`
+  if (abs >= 1e6) return `${sign}$${(abs/1e6).toFixed(1)}M`
+  return `${sign}$${abs.toLocaleString('es-CO',{maximumFractionDigits:0})}`
+}
+const pct = (n: number, d: number) => d > 0 ? `${((n/d)*100).toFixed(1)}%` : '—'
+const pctN = (n: number, d: number) => d > 0 ? (n/d)*100 : 0
 
-function TablaDesglose({ titulo, icono, filas, anioObj, anioComp }: {
-  titulo: string; icono: React.ReactNode
-  filas: DesgloseRow[]; anioObj: number; anioComp: number
-}) {
+function Panel({children, className=''}:{children:React.ReactNode; className?:string}) {
+  return <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>{children}</div>
+}
+
+function Delta({ val, inv=false }: { val: number; inv?: boolean }) {
+  if (isNaN(val) || !isFinite(val)) return <span className="text-xs font-mono text-brand-subtle">—</span>
+  const positive = inv ? val < 0 : val > 0
+  const color = val === 0 ? 'text-brand-subtle' : positive ? 'text-green-400' : 'text-red-400'
+  const icon  = val > 0 ? '↑' : val < 0 ? '↓' : '→'
+  return <span className={`text-xs font-mono ${color}`}>{icon} {Math.abs(val).toFixed(1)}%</span>
+}
+
+const TT = ({active,payload,label}:any) => {
+  if (!active||!payload?.length) return null
   return (
-    <Panel title={titulo} sub={`${anioObj} vs ${anioComp} · subastas, conversión y facturación`}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-brand-border">
-              <th className="text-left font-mono text-[10px] text-brand-subtle uppercase tracking-wider pb-3 pr-4">
-                <span className="inline-flex items-center gap-1">{icono} Nombre</span>
-              </th>
-              {[`Sub. ${anioObj}`,`Sub. ${anioComp}`,'Var.','%Conv. actual','%Conv. ant.','Var. pp',`Factur. ${anioObj}`,`Factur. ${anioComp}`,'Var. $'].map(h => (
-                <th key={h} className="text-right font-mono text-[10px] text-brand-subtle uppercase tracking-wider pb-3 pr-3 last:pr-0">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map(f => {
-              const varSub  = f.subComp  ? ((f.subObj  - f.subComp)  / f.subComp)  * 100 : null
-              const varVal  = f.valComp  ? ((f.valObj  - f.valComp)  / f.valComp)  * 100 : null
-              const convObj  = f.subObj  ? (f.ganObj  / f.subObj)  * 100 : 0
-              const convComp = f.subComp ? (f.ganComp / f.subComp) * 100 : 0
-              const varConv  = convObj - convComp
-              return (
-                <tr key={f.nombre} className="border-b border-brand-border/40 hover:bg-brand-bg/50 transition-colors">
-                  <td className="py-2.5 pr-4 text-brand-text font-medium">{f.nombre}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono text-brand-text">{f.subObj || '—'}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono text-brand-muted">{f.subComp || '—'}</td>
-                  <td className="py-2.5 pr-3 text-right">{varSub !== null ? <VarTag v={varSub}/> : <span className="text-brand-muted">—</span>}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono text-brand-text">{f.subObj ? fmtPct(convObj) : '—'}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono text-brand-muted">{f.subComp ? fmtPct(convComp) : '—'}</td>
-                  <td className="py-2.5 pr-3 text-right">
-                    {f.subObj && f.subComp ? (
-                      <span className={`text-xs font-mono ${varConv >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
-                        {varConv >= 0 ? '+' : ''}{varConv.toFixed(1)} pp
-                      </span>
-                    ) : <span className="text-brand-muted">—</span>}
-                  </td>
-                  <td className="py-2.5 pr-3 text-right font-mono text-brand-text">{f.valObj ? fmtM(f.valObj) : '—'}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono text-brand-muted">{f.valComp ? fmtM(f.valComp) : '—'}</td>
-                  <td className="py-2.5 text-right">{varVal !== null ? <VarTag v={varVal}/> : <span className="text-brand-muted">—</span>}</td>
-                </tr>
-              )
-            })}
-            {filas.length === 0 && (
-              <tr><td colSpan={10} className="py-8 text-center text-brand-subtle text-sm">Sin datos en este rango</td></tr>
-            )}
-          </tbody>
-          {filas.length > 0 && (() => {
-            const totSubObj  = filas.reduce((a,f) => a + f.subObj,  0)
-            const totSubComp = filas.reduce((a,f) => a + f.subComp, 0)
-            const totGanObj  = filas.reduce((a,f) => a + f.ganObj,  0)
-            const totGanComp = filas.reduce((a,f) => a + f.ganComp, 0)
-            const totValObj  = filas.reduce((a,f) => a + f.valObj,  0)
-            const totValComp = filas.reduce((a,f) => a + f.valComp, 0)
-            const varSub = totSubComp  ? ((totSubObj - totSubComp) / totSubComp) * 100 : null
-            const varVal = totValComp  ? ((totValObj - totValComp) / totValComp) * 100 : null
-            const cObj   = totSubObj   ? (totGanObj  / totSubObj)  * 100 : 0
-            const cComp  = totSubComp  ? (totGanComp / totSubComp) * 100 : 0
-            return (
-              <tfoot>
-                <tr className="border-t-2 border-brand-border bg-brand-surface">
-                  <td className="py-2.5 pr-4 text-brand-text font-semibold font-mono text-xs uppercase">TOTAL</td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold text-brand-text">{totSubObj}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold text-brand-muted">{totSubComp}</td>
-                  <td className="py-2.5 pr-3 text-right">{varSub !== null ? <VarTag v={varSub}/> : '—'}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold text-brand-text">{fmtPct(cObj)}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold text-brand-muted">{fmtPct(cComp)}</td>
-                  <td className="py-2.5 pr-3 text-right">
-                    <span className={`text-xs font-mono font-semibold ${(cObj-cComp) >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
-                      {(cObj-cComp) >= 0 ? '+' : ''}{(cObj-cComp).toFixed(1)} pp
-                    </span>
-                  </td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold text-brand-text">{fmtM(totValObj)}</td>
-                  <td className="py-2.5 pr-3 text-right font-mono font-semibold text-brand-muted">{fmtM(totValComp)}</td>
-                  <td className="py-2.5 text-right">{varVal !== null ? <VarTag v={varVal}/> : '—'}</td>
-                </tr>
-              </tfoot>
-            )
-          })()}
-        </table>
-      </div>
-    </Panel>
+    <div className="bg-brand-surface border border-brand-border rounded-lg p-3 shadow-xl min-w-[160px]">
+      <p className="text-xs font-mono text-brand-subtle mb-2">{label}</p>
+      {payload.map((p:any,i:number)=>(
+        <p key={i} className="text-xs font-mono" style={{color:p.color}}>
+          {p.name}: {p.value>10000?fmtCOP(p.value):typeof p.value==='number'?p.value.toFixed(1):p.value}
+        </p>
+      ))}
+    </div>
   )
 }
 
-// ── Página ────────────────────────────────────────────────────────────────────
-export default function ComparativoPeriodosPage() {
-  const [loading, setLoading]           = useState(true)
-  const [historico, setHistorico]       = useState<HistoricoRow[]>([])
-  const [subastas, setSubastas]         = useState<SubastaRow[]>([])
-  const [aseguradoras, setAseguradoras] = useState<Aseguradora[]>([])
-  const [asesores, setAsesores]         = useState<Asesor[]>([])
+// ── Página principal ──────────────────────────────────────────────────────────
+export default function ComparativoSubastasPage() {
+  const [añoBase,    setAñoBase]    = useState(2025)
+  const [añoComp,    setAñoComp]    = useState(2026)
+  const [tab,        setTab]        = useState<'resumen'|'aseguradoras'|'asesores'|'tendencias'|'oportunidades'>('resumen')
+  const [filtroAseg, setFiltroAseg] = useState(0)
 
-  // Filtros
-  const [anioObjetivo, setAnioObjetivo]         = useState(0)       // 0 = auto
-  const [mesInicio, setMesInicio]               = useState(1)
-  const [mesFin, setMesFin]                     = useState(7)
-  const [filtroMarca, setFiltroMarca]           = useState('todas')
-  const [filtroAseguradora, setFiltroAseguradora] = useState(0)     // 0 = todas
-  const [inicializado, setInicializado]         = useState(false)
+  const [datosAseg,   setDatosAseg]   = useState<DatoAseg[]>([])
+  const [datosAsesor, setDatosAsesor] = useState<DatoAsesor[]>([])
+  const [datosMes,    setDatosMes]    = useState<DatoMes[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
+  const [ultimaAct,   setUltimaAct]   = useState<Date|null>(null)
 
-  useEffect(() => {
-    async function fetchData() {
-      const [{ data: rh }, { data: sub }, { data: aseg }, { data: ases }] = await Promise.all([
-        supabase.from('resumen_historico_subastas').select('*').order('anio,mes_num'),
-        supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta,anio').order('anio', {ascending: false}).limit(25000),
-        supabase.from('aseguradoras').select('id,nombre_corto').order('nombre_corto'),
-        supabase.from('asesores').select('id,nombre').order('nombre'),
+  const cargar = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const [{data:dA},{data:dAs},{data:dM}] = await Promise.all([
+        supabase.from('v_subastas_por_aseguradora').select('*').in('anio', YEARS),
+        supabase.from('v_subastas_por_asesor').select('*').in('anio', YEARS),
+        supabase.from('v_subastas_por_mes').select('*').in('anio', YEARS),
       ])
-      setHistorico((rh as HistoricoRow[]) || [])
-      setSubastas((sub as SubastaRow[]) || [])
-      setAseguradoras((aseg as Aseguradora[]) || [])
-      setAsesores((ases as Asesor[]) || [])
-      setLoading(false)
-    }
-    fetchData()
-  }, [])
-
-  // Realtime: recarga cuando el Apps Script sincroniza datos
-  useEffect(()=>{
-    const refetch = () => {
-      supabase.from('resumen_historico_subastas').select('*').order('anio,mes_num')
-        .then(({data})=>{ if(data) setHistorico(data as HistoricoRow[]) })
-      supabase.from('subastas')
-        .select('id,placa,marca,aseguradora_id,asesor_id,estado_autorizacion,valor_subastado,valor_autorizado,fecha_subasta,anio')
-        .order('anio', {ascending: false})
-        .limit(25000)
-        .then(({data})=>{ if(data) setSubastas(data as SubastaRow[]) })
-    }
-    const chSub  = supabase.channel('cmp-rt-subastas').on('postgres_changes',{event:'*',schema:'public',table:'subastas'},  refetch).subscribe()
-    const chHist = supabase.channel('cmp-rt-historico').on('postgres_changes',{event:'*',schema:'public',table:'resumen_historico_subastas'}, refetch).subscribe()
-    return ()=>{ supabase.removeChannel(chSub); supabase.removeChannel(chHist) }
+      setDatosAseg((dA??[]) as DatoAseg[])
+      setDatosAsesor((dAs??[]) as DatoAsesor[])
+      setDatosMes((dM??[]) as DatoMes[])
+      setUltimaAct(new Date())
+    } catch(e:any){setError(`Error: ${e?.message}`)}
+    setLoading(false)
   },[])
 
-  // ── Agrupar histórico en estructura anio → mesNum → stats ─────────────────
-  // El año actual (2026) viene SOLO de la tabla subastas (v_resumen_mensual ya no la usamos)
-  const allData = useMemo(() => {
-    const data: Record<number, Record<number, HistoricoRow>> = {}
+  useEffect(()=>{cargar()},[cargar])
 
-    // 1. Volcar histórico (2024, 2025)
-    historico.forEach(r => {
-      if (!data[r.anio]) data[r.anio] = {}
-      data[r.anio][r.mes_num] = r
+  // ── Agrupación por año (todos los meses) ──────────────────────────────────
+  const porAño = useMemo(()=>{
+    const r:Record<number,{total:number;autorizadas:number;facturadas:number;radicadas:number;valSub:number;valAuth:number}> = {}
+    YEARS.forEach(y => r[y]={total:0,autorizadas:0,facturadas:0,radicadas:0,valSub:0,valAuth:0})
+    datosMes.forEach(d=>{
+      if (!r[d.anio]) return
+      r[d.anio].total      += Number(d.total||0)
+      r[d.anio].autorizadas+= Number(d.autorizadas||0)
+      r[d.anio].facturadas += Number(d.facturadas||0)
+      r[d.anio].valSub     += Number(d.valor_subastado||0)
+      r[d.anio].valAuth    += Number(d.valor_autorizado||0)
     })
+    return r
+  },[datosMes])
 
-    // 2. Construir año actual en tiempo real desde la tabla subastas (usando campo anio)
-    const yearMap: Record<number, Record<number, HistoricoRow>> = {}
-    subastas.forEach(s => {
-      if (!s.fecha_subasta) return
-      const sAnio = s.anio || parseInt(s.fecha_subasta.slice(0,4), 10)
-      if (!sAnio || data[sAnio]) return // solo años no cubiertos por historico
-      const m = parseInt(s.fecha_subasta.slice(5,7), 10)
-      if (!yearMap[sAnio]) yearMap[sAnio] = {}
-      if (!yearMap[sAnio][m]) yearMap[sAnio][m] = { anio:sAnio, mes_num:m, mes:MESES_ES[m-1], total_subastas:0, ganadas:0, no_autorizadas:0, valor_autorizado:0, valor_subastado:0 }
-      yearMap[sAnio][m].total_subastas++
-      yearMap[sAnio][m].valor_subastado += s.valor_subastado || 0
-      if (esGanada(s.estado_autorizacion)) { yearMap[sAnio][m].ganadas++; yearMap[sAnio][m].valor_autorizado += s.valor_autorizado || 0 }
-      else if (s.estado_autorizacion === 'NO Autorizada') yearMap[sAnio][m].no_autorizadas++
-    })
-    Object.entries(yearMap).forEach(([anio, meses]) => {
-      if (Object.keys(meses).length > 0) data[Number(anio)] = meses
-    })
+  // ── Variación % entre dos años ────────────────────────────────────────────
+  const variacion = (base: number, comp: number) => base > 0 ? ((comp - base) / base) * 100 : 0
 
-    return data
-  }, [historico, subastas])
-
-  const aniosDisponibles = useMemo(() => Object.keys(allData).map(Number).sort((a,b) => a - b), [allData])
-
-  // Inicializar año y rango la primera vez
-  useEffect(() => {
-    if (!inicializado && aniosDisponibles.length > 0) {
-      const maxAnio = aniosDisponibles[aniosDisponibles.length - 1]
-      setAnioObjetivo(maxAnio)
-      const meses = Object.keys(allData[maxAnio] || {}).map(Number)
-      if (meses.length) setMesFin(Math.max(...meses))
-      setInicializado(true)
-    }
-  }, [aniosDisponibles, allData, inicializado])
-
-  const anioActivo = anioObjetivo || 2026
-  const anioComp   = anioActivo - 1
-  const desde = Math.min(mesInicio, mesFin)
-  const hasta = Math.max(mesInicio, mesFin)
-
-  // Reset rango cuando cambia el año
-  useEffect(() => {
-    if (!inicializado) return
-    const meses = Object.keys(allData[anioActivo] || {}).map(Number)
-    if (meses.length) {
-      setMesInicio(Math.min(...meses))
-      setMesFin(Math.max(...meses))
-    }
-  }, [anioActivo])
-
-  // ── Marcas disponibles ───────────────────────────────────────────────────
-  const marcas = useMemo(() => {
-    const s = new Set<string>()
-    subastas.forEach(r => { const m = normMarca(r.marca); if (m !== 'Sin marca') s.add(m) })
-    return ['todas', ...Array.from(s).sort()]
-  }, [subastas])
-
-  // ── Filtrar subastas row-by-row para el año objetivo (2026 siempre vivo) ─
-  const filtrarSubastas = (anio: number) =>
-    subastas.filter(s => {
-      if (!s.fecha_subasta) return false
-      const sAnio = s.anio || new Date(s.fecha_subasta).getFullYear()
-      if (sAnio !== anio) return false
-      const m = parseInt(s.fecha_subasta.slice(5,7), 10)
-      if (m < desde || m > hasta) return false
-      if (filtroMarca !== 'todas' && normMarca(s.marca) !== filtroMarca) return false
-      if (filtroAseguradora !== 0 && s.aseguradora_id !== filtroAseguradora) return false
-      return true
-    })
-
-  // Para el año de comparación también podemos filtrar si tiene datos row-by-row
-  const tieneDetalle = (anio: number) => subastas.some(s => (s.anio === anio) || (s.fecha_subasta && new Date(s.fecha_subasta).getFullYear() === anio))
-
-  // ── Función para calcular stats de un conjunto de subastas row-by-row ────
-  const calcStats = (rows: SubastaRow[]) => {
-    const total = rows.length
-    const gan   = rows.filter(s => esGanada(s.estado_autorizacion)).length
-    const val   = rows.reduce((a, s) => a + (s.valor_autorizado || 0), 0)
-    const sub   = rows.reduce((a, s) => a + (s.valor_subastado  || 0), 0)
-    return { total, gan, val, sub, conv: total ? (gan/total)*100 : 0, ticket: gan ? val/gan : 0 }
-  }
-
-  // ── Obtener stats del período ya sea row-by-row o de histórico ───────────
-  const getPeriodoStats = (anio: number) => {
-    // Si filtro activo de marca o aseguradora → siempre row-by-row
-    if (filtroMarca !== 'todas' || filtroAseguradora !== 0 || tieneDetalle(anio)) {
-      return calcStats(filtrarSubastas(anio))
-    }
-    // Sin filtros → sumar histórico
-    let total=0, gan=0, val=0, sub=0
-    for (let m = desde; m <= hasta; m++) {
-      const r = (allData[anio] || {})[m]
-      if (r) { total += r.total_subastas; gan += r.ganadas; val += r.valor_autorizado; sub += r.valor_subastado }
-    }
-    return { total, gan, val, sub, conv: total ? (gan/total)*100 : 0, ticket: gan ? val/gan : 0 }
-  }
-
-  const statsObj  = useMemo(() => getPeriodoStats(anioActivo),  [anioActivo, desde, hasta, filtroMarca, filtroAseguradora, subastas, allData])
-  const statsComp = useMemo(() => getPeriodoStats(anioComp),    [anioComp,   desde, hasta, filtroMarca, filtroAseguradora, subastas, allData])
-
-  const pct = (a: number, b: number) => (b ? ((a-b)/b)*100 : 0)
-
-  // ── Tendencia mensual ─────────────────────────────────────────────────────
-  const tendencia = useMemo(() => {
-    const useDetalle = filtroMarca !== 'todas' || filtroAseguradora !== 0
-    const filasObj:  SubastaRow[] = useDetalle ? filtrarSubastas(anioActivo) : []
-    const filasComp: SubastaRow[] = useDetalle ? filtrarSubastas(anioComp)   : []
-
-    return Array.from({ length: hasta - desde + 1 }, (_, i) => {
-      const m = desde + i
-      let sO=0, gO=0, vO=0, sC=0, gC=0, vC=0
-      if (useDetalle) {
-        const rO = filasObj.filter(s => new Date(s.fecha_subasta!).getMonth()+1 === m)
-        const rC = filasComp.filter(s => new Date(s.fecha_subasta!).getMonth()+1 === m)
-        sO=rO.length; gO=rO.filter(s=>esGanada(s.estado_autorizacion)).length; vO=rO.reduce((a,s)=>a+(s.valor_autorizado||0),0)
-        sC=rC.length; gC=rC.filter(s=>esGanada(s.estado_autorizacion)).length; vC=rC.reduce((a,s)=>a+(s.valor_autorizado||0),0)
-      } else {
-        const dO = (allData[anioActivo]||{})[m]; const dC = (allData[anioComp]||{})[m]
-        sO=dO?.total_subastas||0; gO=dO?.ganadas||0; vO=dO?.valor_autorizado||0
-        sC=dC?.total_subastas||0; gC=dC?.ganadas||0; vC=dC?.valor_autorizado||0
+  // ── Aseguradoras agrupadas por año ────────────────────────────────────────
+  const asegPorAño = useMemo(()=>{
+    const mapa:Record<string,Record<number,DatoAseg&{tasaAuth:number;convTotal:number}>> = {}
+    datosAseg.forEach(d=>{
+      if (!mapa[d.aseguradora]) mapa[d.aseguradora] = {}
+      mapa[d.aseguradora][d.anio] = {
+        ...d,
+        tasaAuth: pctN(Number(d.autorizadas),Number(d.total)),
+        convTotal: pctN(Number(d.facturadas),Number(d.total)),
       }
-      return { mes:MESES_ES[m-1].slice(0,3), subO:sO, ganO:gO, valO:vO, subC:sC, ganC:gC, valC:vC }
     })
-  }, [anioActivo, anioComp, desde, hasta, filtroMarca, filtroAseguradora, subastas, allData])
+    return mapa
+  },[datosAseg])
 
-  const mejorMes = useMemo(() => tendencia.reduce((a,b) => (b.valC && (!a.valC || (b.valO-b.valC)/b.valC > (a.valO-a.valC)/a.valC)) ? b : a, tendencia[0]), [tendencia])
-  const peorMes  = useMemo(() => tendencia.reduce((a,b) => (b.valC && (!a.valC || (b.valO-b.valC)/b.valC < (a.valO-a.valC)/a.valC)) ? b : a, tendencia[0]), [tendencia])
-
-  // ── Desgloses row-by-row ──────────────────────────────────────────────────
-  const buildDesglose = (getKey: (s: SubastaRow) => number | null, nombres: Record<number, string>): DesgloseRow[] => {
-    const mapa: Record<number, DesgloseRow> = {}
-    Object.entries(nombres).forEach(([id, nombre]) => {
-      mapa[Number(id)] = { nombre, subObj:0, subComp:0, ganObj:0, ganComp:0, valObj:0, valComp:0 }
+  // ── Asesores agrupados por año ─────────────────────────────────────────────
+  const asesorPorAño = useMemo(()=>{
+    const mapa:Record<string,Record<number,DatoAsesor&{tasaAuth:number;convTotal:number}>> = {}
+    datosAsesor.forEach(d=>{
+      if (!mapa[d.asesor]) mapa[d.asesor] = {}
+      mapa[d.asesor][d.anio] = {
+        ...d,
+        tasaAuth: pctN(Number(d.autorizadas),Number(d.total)),
+        convTotal: pctN(Number(d.facturadas),Number(d.total)),
+      }
     })
-    // Usar campo anio directamente para evitar problemas de parseo de fecha
-    subastas.filter(s => {
-      const sAnio = s.anio || (s.fecha_subasta ? parseInt(s.fecha_subasta.slice(0,4),10) : 0)
-      if (sAnio !== anioActivo) return false
-      const m = s.fecha_subasta ? parseInt(s.fecha_subasta.slice(5,7),10) : 0
-      return m >= desde && m <= hasta
-    }).forEach(s => {
-      const k = getKey(s); if (!k || !mapa[k]) return
-      mapa[k].subObj++
-      if (esGanada(s.estado_autorizacion)) { mapa[k].ganObj++; mapa[k].valObj += s.valor_autorizado||0 }
+    return mapa
+  },[datosAsesor])
+
+  // ── Evolución mensual comparativa ─────────────────────────────────────────
+  const evolucionMensual = useMemo(()=>{
+    return MESES_ORD.map((m,i)=>{
+      const entry:any = {name: MESES_LABEL[i]}
+      YEARS.forEach(y=>{
+        const fila = datosMes.find(d=>d.mes_subasta===m&&d.anio===y)
+        entry[`Sub${y}`]  = Number(fila?.total||0)
+        entry[`Auth${y}`] = Number(fila?.autorizadas||0)
+        entry[`Fact${y}`] = Number(fila?.facturadas||0)
+      })
+      return entry
     })
-    subastas.filter(s => {
-      const sAnio = s.anio || (s.fecha_subasta ? parseInt(s.fecha_subasta.slice(0,4),10) : 0)
-      if (sAnio !== anioComp) return false
-      const m = s.fecha_subasta ? parseInt(s.fecha_subasta.slice(5,7),10) : 0
-      return m >= desde && m <= hasta
-    }).forEach(s => {
-      const k = getKey(s); if (!k || !mapa[k]) return
-      mapa[k].subComp++
-      if (esGanada(s.estado_autorizacion)) { mapa[k].ganComp++; mapa[k].valComp += s.valor_autorizado||0 }
-    })
-    return Object.values(mapa).filter(f => f.subObj > 0 || f.subComp > 0).sort((a,b) => b.subObj - a.subObj)
-  }
+  },[datosMes])
 
-  const nombresAseg  = useMemo(() => Object.fromEntries(aseguradoras.map(a => [a.id, a.nombre_corto])), [aseguradoras])
-  const nombresAses  = useMemo(() => Object.fromEntries(asesores.map(a    => [a.id, a.nombre])),        [asesores])
+  // ── Oportunidades (aseguradoras con caída en conversión) ─────────────────
+  const oportunidades = useMemo(()=>{
+    return Object.entries(asegPorAño).map(([nombre,data])=>{
+      const b = data[añoBase], c = data[añoComp]
+      if (!b || !c) return null
+      const varConv  = variacion(b.convTotal, c.convTotal)
+      const varAuth  = variacion(b.tasaAuth, c.tasaAuth)
+      const varSub   = variacion(Number(b.valor_subastado), Number(c.valor_subastado))
+      return { nombre, base:b, comp:c, varConv, varAuth, varSub }
+    }).filter(Boolean)
+      .sort((a:any,b:any) => a.varConv - b.varConv) as any[]
+  },[asegPorAño, añoBase, añoComp])
 
-  const desgloseAseg = useMemo(() => buildDesglose(s => s.aseguradora_id, nombresAseg), [subastas, anioActivo, anioComp, desde, hasta, filtroMarca, filtroAseguradora, nombresAseg])
-  const desgloseAses = useMemo(() => buildDesglose(s => s.asesor_id,      nombresAses), [subastas, anioActivo, anioComp, desde, hasta, filtroMarca, filtroAseguradora, nombresAses])
+  // ── Radar data para asesores ───────────────────────────────────────────────
+  const radarData = useMemo(()=>{
+    const asesoresLista = Object.keys(asesorPorAño)
+    return [
+      { metric: 'Vol. Subastas',  ...Object.fromEntries(asesoresLista.map(a=>[a, Math.round(pctN(Number(asesorPorAño[a][añoComp]?.total||0), Math.max(...asesoresLista.map(x=>Number(asesorPorAño[x][añoComp]?.total||0)))+1)*100)])) },
+      { metric: 'Tasa Auth.',     ...Object.fromEntries(asesoresLista.map(a=>[a, Math.round(asesorPorAño[a][añoComp]?.tasaAuth||0)])) },
+      { metric: 'Conversión',     ...Object.fromEntries(asesoresLista.map(a=>[a, Math.round((asesorPorAño[a][añoComp]?.convTotal||0)*3)])) },
+      { metric: 'Val. Autorizado',...Object.fromEntries(asesoresLista.map(a=>[a, Math.round(pctN(Number(asesorPorAño[a][añoComp]?.valor_autorizado||0), Math.max(...asesoresLista.map(x=>Number(asesorPorAño[x][añoComp]?.valor_autorizado||0)))+1)*100)])) },
+      { metric: 'Radicadas',      ...Object.fromEntries(asesoresLista.map(a=>[a, Math.round(pctN(Number(asesorPorAño[a][añoComp]?.radicadas||0), Math.max(...asesoresLista.map(x=>Number(asesorPorAño[x][añoComp]?.radicadas||0)))+1)*100)])) },
+    ]
+  },[asesorPorAño, añoComp])
 
-  // ── Gráfico aseguradoras ──────────────────────────────────────────────────
-  const chartAseg = useMemo(() =>
-    desgloseAseg.slice(0,8).map(f => ({
-      nombre: f.nombre.length > 9 ? f.nombre.slice(0,9)+'…' : f.nombre,
-      [`${anioActivo}`]: f.subObj, [`${anioComp}`]: f.subComp,
-      [`Gan. ${anioActivo}`]: f.ganObj, [`Gan. ${anioComp}`]: f.ganComp,
-    }))
-  , [desgloseAseg, anioActivo, anioComp])
+  const COLORS_ASESORES = ['#4FD1C5','#68D391','#F6AD55','#FC8181','#B794F4']
+  const asesoresLista = Object.keys(asesorPorAño)
 
-  if (loading) return <div className="p-6"><p className="text-brand-subtle font-mono text-sm">Cargando datos…</p></div>
-
-  const hayDatosComp = aniosDisponibles.includes(anioComp)
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-10 h-10 border-2 border-brand-teal border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
+        <p className="text-brand-subtle text-sm font-mono">Cargando análisis comparativo...</p>
+      </div>
+    </div>
+  )
 
   return (
-    <div className="p-6">
-      <Link href="/dashboard/facturacion/canales/subasta" className="inline-flex items-center gap-1.5 text-xs font-mono text-brand-subtle hover:text-brand-teal mb-4 transition-colors">
-        <ArrowLeft size={13}/> Volver a Subasta
-      </Link>
-      <div className="mb-6">
-        <h1 className="font-title text-2xl font-bold text-brand-text">Análisis Comparativo de Períodos</h1>
-        <p className="text-brand-subtle text-sm mt-1">Período seleccionado vs el mismo período del año anterior · por marca, aseguradora y asesor</p>
-      </div>
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
 
-      {/* ── Selectores ───────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-end gap-3 mb-6 p-4 bg-brand-surface border border-brand-border rounded-xl">
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-brand-muted font-mono uppercase">Año</span>
-          <select value={anioActivo} onChange={e => setAnioObjetivo(Number(e.target.value))}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-            {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-brand-muted font-mono uppercase">Desde</span>
-          <select value={mesInicio} onChange={e => setMesInicio(Number(e.target.value))}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-            {MESES_ES.map((m,i) => <option key={m} value={i+1}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-brand-muted font-mono uppercase">Hasta</span>
-          <select value={mesFin} onChange={e => setMesFin(Number(e.target.value))}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-            {MESES_ES.map((m,i) => <option key={m} value={i+1}>{m.charAt(0).toUpperCase()+m.slice(1)}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-brand-muted font-mono uppercase">Marca</span>
-          <select value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-gold">
-            {marcas.map(m => <option key={m} value={m}>{m === 'todas' ? 'Todas las marcas' : m}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-brand-muted font-mono uppercase">Aseguradora</span>
-          <select value={filtroAseguradora} onChange={e => setFiltroAseguradora(Number(e.target.value))}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-blue">
-            <option value={0}>Todas</option>
-            {aseguradoras.map(a => <option key={a.id} value={a.id}>{a.nombre_corto}</option>)}
-          </select>
-        </label>
-        <div className="ml-auto text-right">
-          <p className="text-[10px] text-brand-muted font-mono uppercase">Comparando contra</p>
-          <p className="text-sm font-title font-semibold text-brand-gold">
-            {anioComp} {!hayDatosComp && <span className="text-brand-red">(sin datos)</span>}
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-mono text-brand-subtle uppercase tracking-wider">Subastas</span>
+            <span className="text-xs text-brand-subtle">·</span>
+            <span className="text-xs font-mono text-brand-teal">Análisis Comparativo</span>
+          </div>
+          <h1 className="text-2xl font-bold font-title text-brand-text">📈 Comparativo de Períodos</h1>
+          <p className="text-sm text-brand-subtle mt-0.5">
+            Evolución {añoBase} → {añoComp} · por aseguradora y asesor · identificación de oportunidades
           </p>
-          {(filtroMarca !== 'todas' || filtroAseguradora !== 0) && (
-            <p className="text-[10px] text-brand-teal font-mono mt-0.5">
-              {[filtroMarca !== 'todas' && filtroMarca, filtroAseguradora !== 0 && aseguradoras.find(a=>a.id===filtroAseguradora)?.nombre_corto].filter(Boolean).join(' · ')}
-            </p>
-          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 bg-brand-surface border border-brand-border rounded-lg px-3 py-2">
+            <span className="text-xs font-mono text-brand-subtle">Año base:</span>
+            <select value={añoBase} onChange={e=>setAñoBase(Number(e.target.value))}
+              className="bg-transparent text-sm font-mono text-brand-text focus:outline-none">
+              {YEARS.map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <span className="text-brand-subtle font-mono">vs</span>
+          <div className="flex items-center gap-2 bg-brand-surface border border-brand-teal/40 rounded-lg px-3 py-2">
+            <span className="text-xs font-mono text-brand-subtle">Comparar:</span>
+            <select value={añoComp} onChange={e=>setAñoComp(Number(e.target.value))}
+              className="bg-transparent text-sm font-mono text-brand-teal focus:outline-none">
+              {YEARS.map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <button onClick={cargar}
+            className="bg-brand-teal/20 hover:bg-brand-teal/30 border border-brand-teal/40 text-brand-teal rounded-lg px-4 py-2 text-sm font-mono transition-colors">
+            ↻ Actualizar
+          </button>
+          {ultimaAct && <span className="text-xs text-brand-subtle font-mono">Act: {ultimaAct.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</span>}
         </div>
       </div>
 
-      {!hayDatosComp ? (
-        <div className="bg-brand-surface border border-dashed border-brand-border rounded-xl p-10 text-center">
-          <AlertTriangle className="mx-auto mb-3 text-brand-gold" size={28}/>
-          <p className="text-brand-text font-title font-semibold mb-1">No hay datos de {anioComp}</p>
-          <p className="text-brand-subtle text-sm">El histórico cubre desde 2024. Elige 2025 o 2026 como año objetivo.</p>
-        </div>
-      ) : (
-        <>
-          {/* ── KPIs ─────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
-            <KpiCard icon={<Gavel     size={15}/>} label={`Subastas ${anioActivo}`}  value={statsObj.total}           accent="teal" hint={`vs ${statsComp.total} en ${anioComp}`}/>
-            <KpiCard icon={<CheckCircle size={15}/>} label="Ganadas"                 value={statsObj.gan}             accent="blue" hint={`vs ${statsComp.gan} en ${anioComp}`}/>
-            <KpiCard icon={<Percent   size={15}/>} label="% Conversión"              value={fmtPct(statsObj.conv)}    accent="gold" hint={`vs ${fmtPct(statsComp.conv)} en ${anioComp}`}/>
-            <KpiCard icon={<DollarSign size={15}/>} label="Facturación"              value={fmtM(statsObj.val)}       accent="teal" hint={`vs ${fmtM(statsComp.val)} en ${anioComp}`}/>
-            <KpiCard icon={<Award     size={15}/>} label="Ticket promedio"           value={fmtM(statsObj.ticket)}    accent="gold" hint={`vs ${fmtM(statsComp.ticket)} en ${anioComp}`}/>
-          </div>
+      {error && <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">{error}</div>}
 
-          {/* ── Variaciones ──────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            {[
-              { label:'Var. subastas',       v: pct(statsObj.total, statsComp.total) },
-              { label:'Var. facturación',    v: pct(statsObj.val,   statsComp.val)   },
-              { label:'Var. ganadas',        v: pct(statsObj.gan,   statsComp.gan)   },
-              { label:'Var. conv. (pp)',     v: statsObj.conv - statsComp.conv        },
-            ].map(({label,v}) => (
-              <div key={label} className="bg-brand-surface border border-brand-border rounded-xl p-3">
-                <p className="text-[10px] text-brand-muted font-mono uppercase mb-1">{label}</p>
-                <VarTag v={v}/>
+      {/* Resumen comparativo — 3 años */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {YEARS.map(y=>{
+          const d = porAño[y]
+          const tasaAuth  = pctN(d.autorizadas, d.total)
+          const convTotal = pctN(d.facturadas, d.total)
+          const isComp = y === añoComp
+          const isBase = y === añoBase
+          return (
+            <Panel key={y} className={isComp?'border-brand-teal/50':isBase?'border-brand-border/80':''}>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-lg font-bold font-title" style={{color:COLORES_AÑO[y]}}>{y}</span>
+                {isComp && <span className="text-xs px-2 py-0.5 rounded-full bg-brand-teal/10 text-brand-teal border border-brand-teal/30 font-mono">Comparar</span>}
+                {isBase && <span className="text-xs px-2 py-0.5 rounded-full bg-brand-border/30 text-brand-subtle border border-brand-border font-mono">Base</span>}
               </div>
-            ))}
-          </div>
-
-          {/* ── Mejor/peor mes ───────────────────────────────────────────── */}
-          {mejorMes && peorMes && mejorMes.mes !== peorMes.mes && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-              <div className="bg-brand-teal/5 border border-brand-teal/30 rounded-xl p-4">
-                <p className="text-xs text-brand-teal font-mono uppercase tracking-wider mb-1">Mejor mes del período vs {anioComp}</p>
-                <p className="font-title text-lg font-bold text-brand-text capitalize">{mejorMes.mes}</p>
-                {mejorMes.valC > 0 && <><VarTag v={(mejorMes.valO-mejorMes.valC)/mejorMes.valC*100}/><span className="text-brand-muted text-xs ml-2">en facturación</span></>}
+              <div className="space-y-2">
+                <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">Total subastas</span><span className="text-xs font-mono text-brand-text font-semibold">{d.total.toLocaleString()}</span></div>
+                <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">Autorizadas</span><span className="text-xs font-mono text-green-400">{d.autorizadas.toLocaleString()} ({tasaAuth.toFixed(1)}%)</span></div>
+                <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">Facturadas</span><span className="text-xs font-mono text-brand-teal">{d.facturadas.toLocaleString()} ({convTotal.toFixed(1)}%)</span></div>
+                <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">Valor subastado</span><span className="text-xs font-mono text-brand-text">{fmtCOP(d.valSub)}</span></div>
+                <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">Valor autorizado</span><span className="text-xs font-mono text-green-400">{fmtCOP(d.valAuth)}</span></div>
               </div>
-              <div className="bg-brand-red/5 border border-brand-red/30 rounded-xl p-4">
-                <p className="text-xs text-brand-red font-mono uppercase tracking-wider mb-1">Mes más débil vs {anioComp}</p>
-                <p className="font-title text-lg font-bold text-brand-text capitalize">{peorMes.mes}</p>
-                {peorMes.valC > 0 && <><VarTag v={(peorMes.valO-peorMes.valC)/peorMes.valC*100}/><span className="text-brand-muted text-xs ml-2">en facturación</span></>}
-              </div>
-            </div>
-          )}
-
-          {/* ── Gráficos tendencia ───────────────────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <Panel title="Tendencia de subastas" sub={`${anioActivo} vs ${anioComp}`}>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={tendencia} margin={{left:0,right:8,top:8,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                  <XAxis dataKey="mes" tick={{fill:'#8AA4C8',fontSize:11}} axisLine={{stroke:'#2A3340'}} tickLine={false}/>
-                  <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false}/>
-                  <Tooltip contentStyle={{background:'#1B232D',border:'1px solid #2A3340',borderRadius:8,fontSize:12}}
-                    formatter={(v:number, n:string) => [v, n==='subO' ? String(anioActivo) : String(anioComp)]}/>
-                  <Legend wrapperStyle={{fontSize:11,color:'#8AA4C8'}}
-                    formatter={(v) => v==='subO' ? String(anioActivo) : String(anioComp)}/>
-                  <Line type="monotone" dataKey="subC" stroke="#5B6472" strokeWidth={2} dot={false} name="subC"/>
-                  <Line type="monotone" dataKey="subO" stroke="#4FD1C5" strokeWidth={2.5} dot={{r:3}} name="subO"/>
-                </LineChart>
-              </ResponsiveContainer>
+              {y === añoComp && porAño[añoBase] && (
+                <div className="mt-3 pt-3 border-t border-brand-border space-y-1">
+                  <p className="text-xs font-mono text-brand-subtle mb-1">vs {añoBase}:</p>
+                  <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">Volumen</span><Delta val={variacion(porAño[añoBase].total, d.total)}/></div>
+                  <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">% Auth</span><Delta val={variacion(pctN(porAño[añoBase].autorizadas,porAño[añoBase].total), tasaAuth)}/></div>
+                  <div className="flex justify-between"><span className="text-xs font-mono text-brand-subtle">% Conversión</span><Delta val={variacion(pctN(porAño[añoBase].facturadas,porAño[añoBase].total), convTotal)}/></div>
+                </div>
+              )}
             </Panel>
-            <Panel title="Tendencia de facturación" sub={`${anioActivo} vs ${anioComp}`}>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={tendencia} margin={{left:0,right:8,top:8,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                  <XAxis dataKey="mes" tick={{fill:'#8AA4C8',fontSize:11}} axisLine={{stroke:'#2A3340'}} tickLine={false}/>
-                  <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={(v:number)=>fmtM(v)}/>
-                  <Tooltip contentStyle={{background:'#1B232D',border:'1px solid #2A3340',borderRadius:8,fontSize:12}}
-                    formatter={(v:number, n:string) => [fmtCOP(v), n==='valO' ? String(anioActivo) : String(anioComp)]}/>
-                  <Legend wrapperStyle={{fontSize:11,color:'#8AA4C8'}}
-                    formatter={(v) => v==='valO' ? String(anioActivo) : String(anioComp)}/>
-                  <Line type="monotone" dataKey="valC" stroke="#5B6472" strokeWidth={2} dot={false} name="valC"/>
-                  <Line type="monotone" dataKey="valO" stroke="#E8A33D" strokeWidth={2.5} dot={{r:3}} name="valO"/>
-                </LineChart>
-              </ResponsiveContainer>
-            </Panel>
-          </div>
+          )
+        })}
+      </div>
 
-          {/* ── Gráfico aseguradoras ─────────────────────────────────────── */}
-          <div className="mb-4">
-            <Panel title="Subastas por aseguradora" sub={`Top 8 · ${anioActivo} vs ${anioComp}`}>
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={chartAseg} margin={{left:0,right:8,top:8,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                  <XAxis dataKey="nombre" tick={{fill:'#8AA4C8',fontSize:10}} axisLine={{stroke:'#2A3340'}} tickLine={false}/>
-                  <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false}/>
-                  <Tooltip contentStyle={{background:'#1B232D',border:'1px solid #2A3340',borderRadius:8,fontSize:12}}/>
-                  <Legend wrapperStyle={{fontSize:11,color:'#8AA4C8'}}/>
-                  <Bar dataKey={`${anioComp}`}      fill="#5B6472" radius={[3,3,0,0]}/>
-                  <Bar dataKey={`${anioActivo}`}    fill="#4FD1C5" radius={[3,3,0,0]}/>
-                  <Bar dataKey={`Gan. ${anioComp}`} fill="#8AA4C8" radius={[3,3,0,0]}/>
-                  <Bar dataKey={`Gan. ${anioActivo}`} fill="#E8A33D" radius={[3,3,0,0]}/>
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-brand-border">
+        {([
+          {id:'resumen',       label:'📊 Evolución'},
+          {id:'aseguradoras',  label:'🏢 Aseguradoras'},
+          {id:'asesores',      label:'👤 Asesores'},
+          {id:'tendencias',    label:'📉 Tendencias'},
+          {id:'oportunidades', label:'🎯 Oportunidades'},
+        ] as const).map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            className={`px-4 py-2 text-xs font-mono transition-colors border-b-2 -mb-px ${tab===t.id?'border-brand-teal text-brand-teal':'border-transparent text-brand-subtle hover:text-brand-text'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* TAB: Evolución */}
+      {tab==='resumen' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <Panel>
+              <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Volumen mensual comparativo</h2>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={evolucionMensual} margin={{top:5,right:10,left:10,bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+                  <XAxis dataKey="name" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                  <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
+                  {YEARS.map(y=><Bar key={y} dataKey={`Sub${y}`} name={`Subastas ${y}`} fill={COLORES_AÑO[y]} radius={[3,3,0,0]}/>)}
                 </BarChart>
               </ResponsiveContainer>
             </Panel>
+            <Panel>
+              <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Facturadas mensual comparativo</h2>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={evolucionMensual} margin={{top:5,right:10,left:10,bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+                  <XAxis dataKey="name" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                  <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
+                  {YEARS.map(y=><Line key={y} type="monotone" dataKey={`Fact${y}`} name={`Fact. ${y}`} stroke={COLORES_AÑO[y]} strokeWidth={2} dot={{r:3}}/>)}
+                </LineChart>
+              </ResponsiveContainer>
+            </Panel>
+          </div>
+          {/* Tabla resumen anual */}
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Resumen anual comparativo</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-brand-border">
+                  {['Año','Total','Autorizadas','% Auth','Facturadas','% Conv','V. Subastado','V. Autorizado','% Recup.'].map(h=>(
+                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {YEARS.map(y=>{
+                    const d = porAño[y]
+                    const prev = porAño[y-1]
+                    return(
+                      <tr key={y} className={`border-b border-brand-border/40 ${y===añoComp?'bg-brand-teal/5':''}`}>
+                        <td className="py-3 pr-6 font-bold font-title text-sm" style={{color:COLORES_AÑO[y]}}>{y}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-text font-semibold">{d.total.toLocaleString()}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-green-400">{d.autorizadas.toLocaleString()}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-green-400">{pct(d.autorizadas,d.total)}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-teal">{d.facturadas.toLocaleString()}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-teal">{pct(d.facturadas,d.total)}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(d.valSub)}</td>
+                        <td className="py-3 pr-6 font-mono text-xs text-green-400">{fmtCOP(d.valAuth)}</td>
+                        <td className="py-3 font-mono text-xs text-brand-subtle">{pct(d.valAuth,d.valSub)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {/* TAB: Aseguradoras */}
+      {tab==='aseguradoras' && (
+        <div className="space-y-6">
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+              Comparativo por aseguradora — {añoBase} vs {añoComp}
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-brand-border">
+                  <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4">Aseguradora</th>
+                  {['Total','Auth.','%Auth','Fact.','%Conv','V.Sub.','Δ Conv'].map(h=>(
+                    <th key={`${añoBase}-${h}`} className="text-right font-mono text-xs pb-3 pr-4 whitespace-nowrap" style={{color:COLORES_AÑO[añoBase]}}>{añoBase} {h}</th>
+                  ))}
+                  {['Total','Auth.','%Auth','Fact.','%Conv','V.Sub.','Δ Conv'].map(h=>(
+                    <th key={`${añoComp}-${h}`} className="text-right font-mono text-xs pb-3 pr-4 whitespace-nowrap" style={{color:COLORES_AÑO[añoComp]}}>{añoComp} {h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {Object.entries(asegPorAño).map(([nombre,data],i)=>{
+                    const b = data[añoBase], c = data[añoComp]
+                    const varConv = b&&c ? variacion(pctN(Number(b.facturadas),Number(b.total)), pctN(Number(c.facturadas),Number(c.total))) : null
+                    return(
+                      <tr key={nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                        <td className="py-2 pr-4 text-xs font-medium text-brand-text">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full shrink-0" style={{background:COLORES[i%12]}}/>
+                            {nombre}
+                          </div>
+                        </td>
+                        {/* Base */}
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-subtle">{b?.total?.toLocaleString()||'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-green-400">{b?Number(b.autorizadas).toLocaleString():'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-green-400">{b?pct(Number(b.autorizadas),Number(b.total)):'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-teal">{b?Number(b.facturadas).toLocaleString():'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-teal">{b?pct(Number(b.facturadas),Number(b.total)):'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-subtle">{b?fmtCOP(Number(b.valor_subastado)):'—'}</td>
+                        <td className="py-2 pr-4 text-right">{b?<Delta val={0}/>:'—'}</td>
+                        {/* Comp */}
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-subtle">{c?Number(c.total).toLocaleString():'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-green-400">{c?Number(c.autorizadas).toLocaleString():'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-green-400">{c?pct(Number(c.autorizadas),Number(c.total)):'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-teal">{c?Number(c.facturadas).toLocaleString():'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-teal">{c?pct(Number(c.facturadas),Number(c.total)):'—'}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-right text-brand-subtle">{c?fmtCOP(Number(c.valor_subastado)):'—'}</td>
+                        <td className="py-2 pr-4 text-right">{varConv!==null?<Delta val={varConv}/>:'—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {/* TAB: Asesores */}
+      {tab==='asesores' && (
+        <div className="space-y-6">
+          {/* Cards por asesor */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {Object.entries(asesorPorAño).map(([nombre,data],i)=>{
+              const b = data[añoBase], c = data[añoComp]
+              return(
+                <Panel key={nombre} className="border-brand-border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-3 h-3 rounded-full" style={{background:COLORS_ASESORES[i]}}/>
+                    <h3 className="text-sm font-semibold text-brand-text">{nombre}</h3>
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead><tr className="border-b border-brand-border pb-1">
+                      <th className="text-left font-mono text-brand-subtle pb-2">Métrica</th>
+                      <th className="text-right font-mono pb-2" style={{color:COLORES_AÑO[añoBase]}}>{añoBase}</th>
+                      <th className="text-right font-mono pb-2" style={{color:COLORES_AÑO[añoComp]}}>{añoComp}</th>
+                      <th className="text-right font-mono text-brand-subtle pb-2">Δ</th>
+                    </tr></thead>
+                    <tbody className="space-y-1">
+                      {[
+                        {label:'Subastas',  bv:Number(b?.total||0),      cv:Number(c?.total||0),      fmt:(v:number)=>v.toLocaleString()},
+                        {label:'Auth.',     bv:Number(b?.autorizadas||0), cv:Number(c?.autorizadas||0), fmt:(v:number)=>v.toLocaleString()},
+                        {label:'% Auth',    bv:b?.tasaAuth||0,            cv:c?.tasaAuth||0,            fmt:(v:number)=>`${v.toFixed(1)}%`},
+                        {label:'Facturadas',bv:Number(b?.facturadas||0),  cv:Number(c?.facturadas||0),  fmt:(v:number)=>v.toLocaleString()},
+                        {label:'% Conv',    bv:b?.convTotal||0,           cv:c?.convTotal||0,           fmt:(v:number)=>`${v.toFixed(1)}%`},
+                        {label:'V.Auth.',   bv:Number(b?.valor_autorizado||0),cv:Number(c?.valor_autorizado||0),fmt:fmtCOP},
+                      ].map(row=>(
+                        <tr key={row.label} className="border-b border-brand-border/20">
+                          <td className="py-1.5 font-mono text-brand-subtle">{row.label}</td>
+                          <td className="py-1.5 text-right font-mono" style={{color:COLORES_AÑO[añoBase]}}>{row.fmt(row.bv)}</td>
+                          <td className="py-1.5 text-right font-mono" style={{color:COLORES_AÑO[añoComp]}}>{row.fmt(row.cv)}</td>
+                          <td className="py-1.5 text-right"><Delta val={variacion(row.bv,row.cv)}/></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Panel>
+              )
+            })}
           </div>
 
-          {/* ── Tabla mes a mes ───────────────────────────────────────────── */}
-          <div className="mb-4">
-            <Panel title="Detalle mes a mes" sub={`${anioActivo} vs ${anioComp}`}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-brand-border">
-                      {['Mes',`Sub. ${anioActivo}`,`Sub. ${anioComp}`,'Var.',`Gan. ${anioActivo}`,`Gan. ${anioComp}`,`Factur. ${anioActivo}`,`Factur. ${anioComp}`,'Var. $'].map(h => (
-                        <th key={h} className="text-right first:text-left font-mono text-[10px] text-brand-subtle uppercase tracking-wider pb-3 pr-3 last:pr-0">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tendencia.map(f => {
-                      const vS = f.subC ? ((f.subO-f.subC)/f.subC)*100 : null
-                      const vV = f.valC ? ((f.valO-f.valC)/f.valC)*100 : null
-                      return (
-                        <tr key={f.mes} className="border-b border-brand-border/40 hover:bg-brand-bg/50 transition-colors">
-                          <td className="py-2.5 pr-3 text-brand-text font-medium capitalize">{f.mes}</td>
-                          <td className="py-2.5 pr-3 text-right font-mono text-brand-text">{f.subO||'—'}</td>
-                          <td className="py-2.5 pr-3 text-right font-mono text-brand-muted">{f.subC||'—'}</td>
-                          <td className="py-2.5 pr-3 text-right">{vS!==null?<VarTag v={vS}/>:<span className="text-brand-muted">—</span>}</td>
-                          <td className="py-2.5 pr-3 text-right font-mono text-brand-text">{f.ganO||'—'}</td>
-                          <td className="py-2.5 pr-3 text-right font-mono text-brand-muted">{f.ganC||'—'}</td>
-                          <td className="py-2.5 pr-3 text-right font-mono text-brand-text">{f.valO?fmtM(f.valO):'—'}</td>
-                          <td className="py-2.5 pr-3 text-right font-mono text-brand-muted">{f.valC?fmtM(f.valC):'—'}</td>
-                          <td className="py-2.5 text-right">{vV!==null?<VarTag v={vV}/>:<span className="text-brand-muted">—</span>}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+          {/* Radar chart */}
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Perfil de efectividad por asesor — {añoComp}</h2>
+            <ResponsiveContainer width="100%" height={360}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="#2D3748"/>
+                <PolarAngleAxis dataKey="metric" tick={{fill:'#718096',fontSize:11}}/>
+                <PolarRadiusAxis tick={{fill:'#718096',fontSize:9}} domain={[0,100]}/>
+                {asesoresLista.map((a,i)=>(
+                  <Radar key={a} name={a} dataKey={a} stroke={COLORS_ASESORES[i]} fill={COLORS_ASESORES[i]} fillOpacity={0.1}/>
+                ))}
+                <Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
+                <Tooltip/>
+              </RadarChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          {/* Tabla detallada */}
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Comparativo detallado por asesor</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-brand-border">
+                  <th className="text-left font-mono text-xs text-brand-subtle uppercase pb-3 pr-4">Asesor</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4" style={{color:COLORES_AÑO[añoBase]}}>Sub {añoBase}</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4" style={{color:COLORES_AÑO[añoComp]}}>Sub {añoComp}</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4 text-brand-subtle">Δ Vol</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4" style={{color:COLORES_AÑO[añoBase]}}>%Auth {añoBase}</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4" style={{color:COLORES_AÑO[añoComp]}}>%Auth {añoComp}</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4 text-brand-subtle">Δ Auth</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4" style={{color:COLORES_AÑO[añoBase]}}>%Conv {añoBase}</th>
+                  <th className="text-right font-mono text-xs pb-3 pr-4" style={{color:COLORES_AÑO[añoComp]}}>%Conv {añoComp}</th>
+                  <th className="text-right font-mono text-xs pb-3 text-brand-subtle">Δ Conv</th>
+                </tr></thead>
+                <tbody>
+                  {Object.entries(asesorPorAño).map(([nombre,data],i)=>{
+                    const b = data[añoBase], c = data[añoComp]
+                    return(
+                      <tr key={nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50">
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{background:COLORS_ASESORES[i]}}/>
+                            <span className="text-xs font-medium text-brand-text">{nombre}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 text-right font-mono text-xs" style={{color:COLORES_AÑO[añoBase]}}>{b?Number(b.total).toLocaleString():'—'}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-xs" style={{color:COLORES_AÑO[añoComp]}}>{c?Number(c.total).toLocaleString():'—'}</td>
+                        <td className="py-3 pr-4 text-right">{b&&c?<Delta val={variacion(Number(b.total),Number(c.total))}/>:'—'}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-xs text-green-400">{b?`${(b.tasaAuth||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-xs text-green-400">{c?`${(c.tasaAuth||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4 text-right">{b&&c?<Delta val={variacion(b.tasaAuth||0,c.tasaAuth||0)}/>:'—'}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-xs text-brand-teal">{b?`${(b.convTotal||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4 text-right font-mono text-xs text-brand-teal">{c?`${(c.convTotal||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 text-right">{b&&c?<Delta val={variacion(b.convTotal||0,c.convTotal||0)}/>:'—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {/* TAB: Tendencias */}
+      {tab==='tendencias' && (
+        <div className="space-y-6">
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Tasa de autorización por aseguradora — evolución {añoBase} → {añoComp}</h2>
+            <ResponsiveContainer width="100%" height={Math.max(250,Object.keys(asegPorAño).length*30)}>
+              <BarChart
+                data={Object.entries(asegPorAño).map(([nombre,data])=>({
+                  nombre: nombre.length>12?nombre.slice(0,12)+'…':nombre,
+                  [añoBase]: Number(data[añoBase]?.tasaAuth||0).toFixed(1),
+                  [añoComp]: Number(data[añoComp]?.tasaAuth||0).toFixed(1),
+                }))}
+                layout="vertical" margin={{top:5,right:50,left:100,bottom:5}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" horizontal={false}/>
+                <XAxis type="number" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`}/>
+                <YAxis type="category" dataKey="nombre" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={95}/>
+                <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
+                <Bar dataKey={añoBase} fill={COLORES_AÑO[añoBase]} radius={[0,4,4,0]}/>
+                <Bar dataKey={añoComp} fill={COLORES_AÑO[añoComp]} radius={[0,4,4,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Conversión (subasta → factura) por aseguradora</h2>
+            <ResponsiveContainer width="100%" height={Math.max(250,Object.keys(asegPorAño).length*30)}>
+              <BarChart
+                data={Object.entries(asegPorAño).map(([nombre,data])=>({
+                  nombre: nombre.length>12?nombre.slice(0,12)+'…':nombre,
+                  [añoBase]: Number(data[añoBase]?.convTotal||0).toFixed(1),
+                  [añoComp]: Number(data[añoComp]?.convTotal||0).toFixed(1),
+                }))}
+                layout="vertical" margin={{top:5,right:50,left:100,bottom:5}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" horizontal={false}/>
+                <XAxis type="number" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`${v}%`}/>
+                <YAxis type="category" dataKey="nombre" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={95}/>
+                <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
+                <Bar dataKey={añoBase} fill={COLORES_AÑO[añoBase]} radius={[0,4,4,0]}/>
+                <Bar dataKey={añoComp} fill={COLORES_AÑO[añoComp]} radius={[0,4,4,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </Panel>
+        </div>
+      )}
+
+      {/* TAB: Oportunidades */}
+      {tab==='oportunidades' && (
+        <div className="space-y-6">
+          {/* Insights clave */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Panel className="border-red-500/30 bg-red-500/5">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-red-400 mb-3">⚠ Mayor caída en conversión</h3>
+              {oportunidades.slice(0,3).map((o:any)=>(
+                <div key={o.nombre} className="flex justify-between items-center py-2 border-b border-red-500/10">
+                  <span className="text-xs text-brand-text font-medium truncate max-w-[130px]">{o.nombre}</span>
+                  <Delta val={o.varConv}/>
+                </div>
+              ))}
+              <p className="text-xs font-mono text-red-400/70 mt-3">Requieren atención inmediata</p>
+            </Panel>
+            <Panel className="border-green-500/30 bg-green-500/5">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-green-400 mb-3">✅ Mayor mejora en conversión</h3>
+              {[...oportunidades].sort((a:any,b:any)=>b.varConv-a.varConv).slice(0,3).map((o:any)=>(
+                <div key={o.nombre} className="flex justify-between items-center py-2 border-b border-green-500/10">
+                  <span className="text-xs text-brand-text font-medium truncate max-w-[130px]">{o.nombre}</span>
+                  <Delta val={o.varConv}/>
+                </div>
+              ))}
+              <p className="text-xs font-mono text-green-400/70 mt-3">Replicar estrategia</p>
+            </Panel>
+            <Panel className="border-yellow-500/30 bg-yellow-500/5">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-yellow-400 mb-3">📈 Mayor volumen en {añoComp}</h3>
+              {Object.entries(asegPorAño)
+                .map(([n,d])=>({nombre:n,total:Number(d[añoComp]?.total||0)}))
+                .sort((a,b)=>b.total-a.total).slice(0,3).map(o=>(
+                <div key={o.nombre} className="flex justify-between items-center py-2 border-b border-yellow-500/10">
+                  <span className="text-xs text-brand-text font-medium truncate max-w-[130px]">{o.nombre}</span>
+                  <span className="text-xs font-mono text-yellow-400">{o.total.toLocaleString()} sub.</span>
+                </div>
+              ))}
+              <p className="text-xs font-mono text-yellow-400/70 mt-3">Mayor potencial de facturación</p>
             </Panel>
           </div>
 
-          {/* ── Desglose por aseguradora ─────────────────────────────────── */}
-          <div className="mb-4">
-            <TablaDesglose titulo="Desglose por aseguradora" icono={<Building2 size={11}/>} filas={desgloseAseg} anioObj={anioActivo} anioComp={anioComp}/>
-          </div>
-
-          {/* ── Desglose por asesor ───────────────────────────────────────── */}
-          <div className="mb-4">
-            <TablaDesglose titulo="Desglose por asesor" icono={<User size={11}/>} filas={desgloseAses} anioObj={anioActivo} anioComp={anioComp}/>
-          </div>
-        </>
+          {/* Tabla completa de oportunidades */}
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+              Análisis de oportunidades — {añoBase} vs {añoComp} — ordenado por caída en conversión
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-brand-border">
+                  {['Aseguradora',`Sub ${añoBase}`,`Sub ${añoComp}`,'Δ Vol',`%Auth ${añoBase}`,`%Auth ${añoComp}`,'Δ Auth',`%Conv ${añoBase}`,`%Conv ${añoComp}`,'Δ Conv','Potencial'].map(h=>(
+                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {oportunidades.map((o:any)=>{
+                    const potencial = Number(o.comp?.autorizadas||0) - Number(o.comp?.facturadas||0)
+                    return(
+                      <tr key={o.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                        <td className="py-3 pr-4 text-xs font-medium text-brand-text">{o.nombre}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{Number(o.base?.total||0).toLocaleString()}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{Number(o.comp?.total||0).toLocaleString()}</td>
+                        <td className="py-3 pr-4"><Delta val={o.varSub}/></td>
+                        <td className="py-3 pr-4 font-mono text-xs text-green-400">{o.base?`${(o.base.tasaAuth||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-green-400">{o.comp?`${(o.comp.tasaAuth||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4"><Delta val={o.varAuth}/></td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-teal">{o.base?`${(o.base.convTotal||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-teal">{o.comp?`${(o.comp.convTotal||0).toFixed(1)}%`:'—'}</td>
+                        <td className="py-3 pr-4"><Delta val={o.varConv}/></td>
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-1">
+                            <div className={`w-2 h-2 rounded-full ${potencial > 50 ? 'bg-red-400' : potencial > 20 ? 'bg-yellow-400' : 'bg-green-400'}`}/>
+                            <span className="font-mono text-xs text-brand-subtle">{potencial} auth. sin facturar</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
       )}
+
+      <p className="text-xs text-brand-subtle font-mono text-center pb-4">
+        Datos desde Supabase · 2024-2026 · {Object.values(porAño).reduce((s,d)=>s+d.total,0).toLocaleString()} registros totales
+      </p>
     </div>
   )
 }
