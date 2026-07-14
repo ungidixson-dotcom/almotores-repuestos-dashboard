@@ -383,6 +383,63 @@ export default function FacGeneralPage() {
           alert={estadoGeneral === 'riesgo'} />
       </div>
 
+      {/* ── Círculos de progreso por canal ── */}
+      <Panel>
+        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-6">
+          Cumplimiento vs presupuesto por canal · {sede !== 'Todas' ? sede : 'Todas las sedes'}
+        </h2>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-6">
+          {canalesData.map(c => {
+            const pct      = Math.min(100, Math.max(0, c.pct))
+            const r        = 36
+            const circum   = 2 * Math.PI * r
+            const offset   = circum - (pct / 100) * circum
+            const clr      = c.pct >= pctDias ? '#68D391' : c.pct >= pctDias * 0.8 ? '#F6AD55' : '#FC8181'
+            return (
+              <div key={c.canal} className="flex flex-col items-center gap-2">
+                <div className="relative w-24 h-24">
+                  <svg viewBox="0 0 88 88" className="w-full h-full -rotate-90">
+                    {/* Track */}
+                    <circle cx="44" cy="44" r={r} fill="none" stroke="#2D3748" strokeWidth="8"/>
+                    {/* Progress */}
+                    <circle cx="44" cy="44" r={r} fill="none"
+                      stroke={clr} strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeDasharray={circum}
+                      strokeDashoffset={offset}
+                      style={{transition:'stroke-dashoffset 0.7s ease'}}
+                    />
+                    {/* Marcador días hábiles */}
+                    <circle cx="44" cy="44" r={r} fill="none"
+                      stroke="rgba(255,255,255,0.2)" strokeWidth="2"
+                      strokeDasharray={`2 ${circum - 2}`}
+                      strokeDashoffset={-(circum * pctDias / 100)}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-xs font-mono text-brand-subtle">{c.icon}</span>
+                    <span className="text-sm font-bold font-title" style={{color: clr}}>
+                      {c.pct.toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-medium text-brand-text">{c.canal}</p>
+                  <p className="text-xs font-mono text-brand-subtle mt-0.5">{fmtCOP(c.neto)}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* Leyenda */}
+        <div className="flex items-center gap-6 mt-6 pt-4 border-t border-brand-border">
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-400"/><span className="text-xs font-mono text-brand-subtle">En meta</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-400"/><span className="text-xs font-mono text-brand-subtle">Alerta</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"/><span className="text-xs font-mono text-brand-subtle">Riesgo</span></div>
+          <div className="flex items-center gap-2 ml-auto"><div className="w-4 h-0.5 bg-white/20"/><span className="text-xs font-mono text-brand-subtle">↑ {fmtPct(pctDias)} días hábiles</span></div>
+        </div>
+      </Panel>
+
       {/* ── Tabla por canal ── */}
       <Panel>
         <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
