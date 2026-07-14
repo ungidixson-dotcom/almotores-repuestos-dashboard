@@ -147,15 +147,15 @@ export default function SubastasPage() {
       // 1) Líneas de detalle — mostrador + crédito canal Subastas
       const [{ data: dataMost, error: errMost }, { data: dataCred, error: errCred }] = await Promise.all([
         supabase
-          .from('facturas_mostrador')
-          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
+          .from('v_mostrador_facturas')
+          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, neto, costo, beneficio, canal, lineas')
           .eq('canal', 'Subastas')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes - 1])
           .limit(5000),
         supabase
-          .from('facturas_credito')
-          .select('referencia, numero_factura, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
+          .from('v_credito_facturas')
+          .select('referencia, numero_factura, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, neto, costo, beneficio, canal, lineas')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes - 1])
           .limit(5000),
@@ -168,12 +168,8 @@ export default function SubastasPage() {
         .eq('canal', 'Subastas')
         .eq('anio', anio)
 
-      const lineasMost = (dataMost ?? []).map((r: any) => ({ ...r, _fuente: 'mostrador' }))
-      const lineasCred = (dataCred ?? []).map((r: any) => ({ 
-        ...r, 
-        prefijo_num: r.numero_factura ? String(r.numero_factura) : '',
-        _fuente: 'credito' 
-      }))
+      const lineasMost = (dataMost ?? []).map((r: any) => ({ ...r, _fuente: 'mostrador', prefijo_num: r.prefijo_num || '' }))
+      const lineasCred = (dataCred ?? []).map((r: any) => ({ ...r, _fuente: 'credito', prefijo_num: r.numero_factura ? String(r.numero_factura) : '' }))
       setLineas([...lineasMost, ...lineasCred] as any)
       setResumen((dataResumen ?? []) as ResumenVista[])
       setUltimaAct(new Date())
@@ -204,34 +200,21 @@ export default function SubastasPage() {
 
   // ── Tabla de facturas agrupadas por referencia ────────────────────────────
   const facturasMes = useMemo(() => {
-    const mapa: Record<string, {
-      referencia: number; prefijo_num: string; cliente: string
-      asesor: string; cuenta: number; fecha: string; prefijo: string
-      neto: number; costo: number; beneficio: number; items: number
-    }> = {}
-
-    lineas.forEach(l => {
-      // Clave única: referencia + fuente para evitar colisión entre mostrador y crédito
-      const key = `${l.referencia}_${l._fuente}`
-      if (!mapa[key]) {
-        mapa[key] = {
-          referencia:  l.referencia,
-          prefijo_num: l.prefijo_num,
-          cliente:     l.nombre_cliente,
-          asesor:      l.nombre_vendedor || 'Sin asesor',
-          cuenta:      l.cuenta,
-          fecha:       l.fecha,
-          prefijo:     l.prefijo,
-          neto: 0, costo: 0, beneficio: 0, items: 0,
-        }
-      }
-      mapa[key].neto      += Number(l.neto)
-      mapa[key].costo     += Number(l.costo)
-      mapa[key].beneficio += Number(l.beneficio)
-      mapa[key].items     += 1
-    })
-
-    return Object.values(mapa).sort((a, b) => b.neto - a.neto)
+    return lineas
+      .map(l => ({
+        referencia:  l.referencia,
+        prefijo_num: l.prefijo_num || '',
+        cliente:     l.nombre_cliente || '',
+        asesor:      l.nombre_vendedor || 'Sin asesor',
+        cuenta:      l.cuenta,
+        fecha:       (l as any).fecha || '',
+        prefijo:     l.prefijo,
+        neto:        Number(l.neto),
+        costo:       Number(l.costo),
+        beneficio:   Number(l.beneficio),
+        items:       (l as any).lineas || 1,
+      }))
+      .sort((a, b) => b.neto - a.neto)
   }, [lineas])
 
   // ── Listas únicas para filtros ────────────────────────────────────────────
