@@ -8,18 +8,19 @@ import {
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface LineaFactura {
-  referencia:     number
-  prefijo_num:    string
-  nombre_cliente: string
-  cuenta:         number
-  fecha:          string
-  prefijo:        string
-  articulo:       string
-  descripcion:    string
-  neto:           number
-  costo:          number
-  beneficio:      number
-  canal:          string
+  referencia:      number
+  prefijo_num:     string
+  nombre_cliente:  string
+  nombre_vendedor: string
+  cuenta:          number
+  fecha:           string
+  prefijo:         string
+  articulo:        string
+  descripcion:     string
+  neto:            number
+  costo:           number
+  beneficio:       number
+  canal:           string
 }
 
 interface ResumenVista {
@@ -134,7 +135,9 @@ export default function SubastasPage() {
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState('')
   const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
-  const [buscar,    setBuscar]    = useState('')
+  const [buscar,         setBuscar]         = useState('')
+  const [filtroAseg,     setFiltroAseg]     = useState('Todas')
+  const [filtroAsesor,   setFiltroAsesor]   = useState('Todos')
 
   // ── Carga desde Supabase ──────────────────────────────────────────────────
   const cargar = useCallback(async () => {
@@ -144,13 +147,13 @@ export default function SubastasPage() {
       const [{ data: dataMost }, { data: dataCred }] = await Promise.all([
         supabase
           .from('facturas_mostrador')
-          .select('referencia, prefijo_num, nombre_cliente, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
+          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
           .eq('canal', 'Subastas')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes - 1]),
         supabase
           .from('facturas_credito')
-          .select('referencia, prefijo_num, nombre_cliente, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
+          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes - 1]),
       ])
@@ -204,7 +207,7 @@ export default function SubastasPage() {
   const facturasMes = useMemo(() => {
     const mapa: Record<string, {
       referencia: number; prefijo_num: string; cliente: string
-      cuenta: number; fecha: string; prefijo: string
+      asesor: string; cuenta: number; fecha: string; prefijo: string
       neto: number; costo: number; beneficio: number; items: number
     }> = {}
 
@@ -212,12 +215,13 @@ export default function SubastasPage() {
       const key = String(l.referencia)
       if (!mapa[key]) {
         mapa[key] = {
-          referencia: l.referencia,
+          referencia:  l.referencia,
           prefijo_num: l.prefijo_num,
-          cliente: l.nombre_cliente,
-          cuenta: l.cuenta,
-          fecha: l.fecha,
-          prefijo: l.prefijo,
+          cliente:     l.nombre_cliente,
+          asesor:      l.nombre_vendedor || 'Sin asesor',
+          cuenta:      l.cuenta,
+          fecha:       l.fecha,
+          prefijo:     l.prefijo,
           neto: 0, costo: 0, beneficio: 0, items: 0,
         }
       }
@@ -230,17 +234,46 @@ export default function SubastasPage() {
     return Object.values(mapa).sort((a, b) => b.neto - a.neto)
   }, [lineas])
 
-  // ── Búsqueda ──────────────────────────────────────────────────────────────
+  // ── Listas únicas para filtros ────────────────────────────────────────────
+  const aseguradoras = useMemo(() => {
+    const s = new Set(facturasMes.map(f => f.cliente))
+    return ['Todas', ...Array.from(s).sort()]
+  }, [facturasMes])
+
+  const asesores = useMemo(() => {
+    const s = new Set(facturasMes.map(f => f.asesor))
+    return ['Todos', ...Array.from(s).sort()]
+  }, [facturasMes])
+
+  // ── Filtrado combinado ────────────────────────────────────────────────────
   const facturasFiltradas = useMemo(() => {
-    if (!buscar.trim()) return facturasMes
-    const b = buscar.toLowerCase()
-    return facturasMes.filter(f =>
-      f.cliente.toLowerCase().includes(b) ||
-      String(f.referencia).includes(b) ||
-      String(f.cuenta).includes(b) ||
-      f.prefijo.toLowerCase().includes(b)
-    )
-  }, [facturasMes, buscar])
+    return facturasMes.filter(f => {
+      if (filtroAseg !== 'Todas' && f.cliente !== filtroAseg) return false
+      if (filtroAsesor !== 'Todos' && f.asesor !== filtroAsesor) return false
+      if (buscar.trim()) {
+        const b = buscar.toLowerCase()
+        return f.cliente.toLowerCase().includes(b) ||
+          String(f.referencia).includes(b) ||
+          String(f.cuenta).includes(b) ||
+          f.prefijo.toLowerCase().includes(b)
+      }
+      return true
+    })
+  }, [facturasMes, filtroAseg, filtroAsesor, buscar])
+
+  // ── Por asesor ────────────────────────────────────────────────────────────
+  const porAsesor = useMemo(() => {
+    const mapa: Record<string, { neto: number; costo: number; facturas: number }> = {}
+    facturasMes.forEach(f => {
+      if (!mapa[f.asesor]) mapa[f.asesor] = { neto: 0, costo: 0, facturas: 0 }
+      mapa[f.asesor].neto     += f.neto
+      mapa[f.asesor].costo    += f.costo
+      mapa[f.asesor].facturas += 1
+    })
+    return Object.entries(mapa)
+      .map(([nombre, d]) => ({ nombre, ...d, util: d.neto - d.costo }))
+      .sort((a, b) => b.neto - a.neto)
+  }, [facturasMes])
 
   // ── Por aseguradora ───────────────────────────────────────────────────────
   const porAseguradora = useMemo(() => {
@@ -418,15 +451,61 @@ export default function SubastasPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-brand-border">
-                  {['Aseguradora', 'Facturas', 'Neto', 'Utilidad', '% Util'].map(h => (
+                  {['Aseguradora', 'Fact.', 'Neto', 'Utilidad', '% Util'].map(h => (
                     <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {porAseguradora.map(a => (
-                  <tr key={a.nombre} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                    <td className="py-2 pr-4 text-brand-text text-xs font-medium max-w-[180px] truncate">{a.nombre}</td>
+                  <tr key={a.nombre}
+                    className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors cursor-pointer
+                      ${filtroAseg === a.nombre ? 'bg-brand-teal/5 border-l-2 border-l-brand-teal' : ''}`}
+                    onClick={() => setFiltroAseg(filtroAseg === a.nombre ? 'Todas' : a.nombre)}>
+                    <td className="py-2 pr-4 text-brand-text text-xs font-medium max-w-[160px] truncate">{a.nombre}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{a.facturas}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.neto)}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-green-400">{fmtCOP(a.util)}</td>
+                    <td className="py-2 font-mono text-xs text-brand-subtle">
+                      {a.neto ? fmtPct((a.util / a.neto) * 100) : '0.0%'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-brand-border">
+                  <td className="pt-2 font-mono text-xs uppercase text-brand-text font-bold">Total</td>
+                  <td className="pt-2 font-mono text-xs text-brand-subtle">{facturasMes.length}</td>
+                  <td className="pt-2 font-mono text-xs text-brand-teal font-bold">{fmtCOP(totalNeto)}</td>
+                  <td className="pt-2 font-mono text-xs text-green-400 font-bold">{fmtCOP(totalUtil)}</td>
+                  <td className="pt-2 font-mono text-xs text-brand-subtle">{fmtPct(pctUtil)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Panel>
+
+        {/* Por asesor */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+            Por asesor — {MESES_LABEL[mes - 1]} {anio}
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-brand-border">
+                  {['Asesor', 'Fact.', 'Neto', 'Utilidad', '% Util'].map(h => (
+                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {porAsesor.map(a => (
+                  <tr key={a.nombre}
+                    className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors cursor-pointer
+                      ${filtroAsesor === a.nombre ? 'bg-brand-teal/5 border-l-2 border-l-brand-teal' : ''}`}
+                    onClick={() => setFiltroAsesor(filtroAsesor === a.nombre ? 'Todos' : a.nombre)}>
+                    <td className="py-2 pr-4 text-brand-text text-xs font-medium max-w-[160px] truncate">{a.nombre}</td>
                     <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{a.facturas}</td>
                     <td className="py-2 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.neto)}</td>
                     <td className="py-2 pr-4 font-mono text-xs text-green-400">{fmtCOP(a.util)}</td>
@@ -456,15 +535,31 @@ export default function SubastasPage() {
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle">
             Detalle de facturas — {MESES_LABEL[mes - 1]} {anio}
           </h2>
-          <input type="text" placeholder="Buscar cliente, referencia, prefijo..."
-            value={buscar} onChange={e => setBuscar(e.target.value)}
-            className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal w-72" />
+            <div className="flex flex-wrap gap-2">
+            <select value={filtroAseg} onChange={e => setFiltroAseg(e.target.value)}
+              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal max-w-[200px]">
+              {aseguradoras.map(a => <option key={a} value={a}>{a === 'Todas' ? 'Todas las aseguradoras' : a}</option>)}
+            </select>
+            <select value={filtroAsesor} onChange={e => setFiltroAsesor(e.target.value)}
+              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal max-w-[200px]">
+              {asesores.map(a => <option key={a} value={a}>{a === 'Todos' ? 'Todos los asesores' : a}</option>)}
+            </select>
+            <input type="text" placeholder="Buscar cliente, referencia..."
+              value={buscar} onChange={e => setBuscar(e.target.value)}
+              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal w-52" />
+            {(filtroAseg !== 'Todas' || filtroAsesor !== 'Todos' || buscar) && (
+              <button onClick={() => { setFiltroAseg('Todas'); setFiltroAsesor('Todos'); setBuscar('') }}
+                className="text-xs font-mono text-brand-subtle hover:text-brand-text px-2 py-1.5 border border-brand-border rounded-lg transition-colors">
+                ✕ Limpiar
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
-                {['Referencia', 'Factura', 'Cliente', 'Fecha', 'Prefijo', 'Items', 'Costo', 'Neto', 'Utilidad', '% Util'].map(h => (
+                {['Referencia', 'Factura', 'Cliente', 'Asesor', 'Fecha', 'Prefijo', 'Items', 'Costo', 'Neto', 'Utilidad', '% Util'].map(h => (
                   <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -479,7 +574,8 @@ export default function SubastasPage() {
                     className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors ${esDevolucion ? 'bg-red-500/5' : ''}`}>
                     <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.referencia}</td>
                     <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.prefijo_num}</td>
-                    <td className="py-3 pr-4 text-brand-text text-xs font-medium max-w-[180px] truncate">{f.cliente}</td>
+                    <td className="py-3 pr-4 text-brand-text text-xs font-medium max-w-[160px] truncate">{f.cliente}</td>
+                    <td className="py-3 pr-4 text-brand-subtle text-xs max-w-[130px] truncate">{f.asesor}</td>
                     <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.fecha}</td>
                     <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{f.prefijo}</td>
                     <td className="py-3 pr-4 font-mono text-xs text-brand-subtle text-center">{f.items}</td>
@@ -495,7 +591,7 @@ export default function SubastasPage() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-brand-border font-bold">
-                <td className="pt-3 pr-4 font-mono text-xs uppercase text-brand-text" colSpan={5}>
+                <td className="pt-3 pr-4 font-mono text-xs uppercase text-brand-text" colSpan={6}>
                   Total — {facturasFiltradas.length} facturas
                 </td>
                 <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle text-center">
@@ -504,9 +600,7 @@ export default function SubastasPage() {
                 <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(facturasFiltradas.reduce((s, f) => s + f.costo, 0))}</td>
                 <td className="pt-3 pr-4 font-mono text-xs text-brand-teal">{fmtCOP(facturasFiltradas.reduce((s, f) => s + f.neto, 0))}</td>
                 <td className="pt-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(facturasFiltradas.reduce((s, f) => s + (f.neto - f.costo), 0))}</td>
-                <td className="pt-3 font-mono text-xs text-brand-subtle">
-                  {fmtPct(pctUtil)}
-                </td>
+                <td className="pt-3 font-mono text-xs text-brand-subtle">{fmtPct(pctUtil)}</td>
               </tr>
             </tfoot>
           </table>
