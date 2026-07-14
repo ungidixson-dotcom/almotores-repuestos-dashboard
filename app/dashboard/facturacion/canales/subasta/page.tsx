@@ -126,7 +126,7 @@ export default function TorreControlSubastasPage() {
     setLoading(true); setError('')
     try {
       const [{ data: dSub }, { data: dAseg }, { data: dAs }] = await Promise.all([
-        supabase.from('subastas').select('*').eq('anio', anio).limit(10000),
+        supabase.from('subastas').select('*', { count: 'exact' }).eq('anio', anio).range(0, 9999),
         supabase.from('aseguradoras').select('id, nombre_corto'),
         supabase.from('asesores').select('id, nombre'),
       ])
