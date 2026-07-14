@@ -145,9 +145,9 @@ export default function TorreControlSubastasPage() {
   const nombreAsesor= (id:number) => asesores.find(a=>a.id===id)?.nombre||`Asesor ${id}`
 
   // ── Filtrado de vistas agregadas ──────────────────────────────────────────
-  const mesFiltro = (d:{mes_subasta:string}) => filtroMes==='todos'||d.mes_subasta===filtroMes
-  const asegFiltro= (d:{aseguradora_id:number}) => !filtroAseg||d.aseguradora_id===filtroAseg
-  const asrFiltro = (d:{asesor_id:number}) => !filtroAsesor||d.asesor_id===filtroAsesor
+  const mesFiltro = (d:any) => filtroMes==='todos'||d.mes_subasta===filtroMes
+  const asegFiltro= (d:any) => !filtroAseg||d.aseguradora_id===filtroAseg
+  const asrFiltro = (d:any) => !filtroAsesor||d.asesor_id===filtroAsesor
 
   // ── KPIs totales desde vistas ─────────────────────────────────────────────
   const kpi = useMemo(()=>{
