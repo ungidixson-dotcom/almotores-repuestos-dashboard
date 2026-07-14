@@ -158,8 +158,8 @@ export default function TallerPage() {
     try {
       const [{ data: dataLineas }, { data: dataResumen }, { data: dataPpto }] = await Promise.all([
         supabase
-          .from('facturas_taller')
-          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha_cierre, prefijo, taller, neto, costo, beneficio, sede, tipo_taller')
+          .from('v_taller_facturas')
+          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha_cierre, prefijo, taller, neto, costo, beneficio, sede, tipo_taller, lineas')
           .eq('canal', 'Taller')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes - 1])
@@ -222,34 +222,24 @@ export default function TallerPage() {
     })
   }, [lineas, sede, tipo])
 
-  // ── Facturas agrupadas por referencia ─────────────────────────────────────
+  // ── Facturas — ya vienen agrupadas por referencia desde la vista ─────────
   const facturas = useMemo(() => {
-    const mapa: Record<string, {
-      referencia: number; prefijo_num: string; cliente: string
-      asesor: string; taller: string; fecha: string; prefijo: string
-      tipo: string; neto: number; costo: number; beneficio: number; items: number
-    }> = {}
-    lineasFiltradas.forEach(l => {
-      const key = String(l.referencia)
-      if (!mapa[key]) {
-        mapa[key] = {
-          referencia:  l.referencia,
-          prefijo_num: l.prefijo_num || '',
-          cliente:     l.nombre_cliente || '',
-          asesor:      l.nombre_vendedor || 'Sin asesor',
-          taller:      l.taller,
-          fecha:       l.fecha_cierre,
-          prefijo:     l.prefijo,
-          tipo:        l.tipo_taller || '',
-          neto: 0, costo: 0, beneficio: 0, items: 0,
-        }
-      }
-      mapa[key].neto      += Number(l.neto)
-      mapa[key].costo     += Number(l.costo)
-      mapa[key].beneficio += Number(l.beneficio)
-      mapa[key].items     += 1
-    })
-    return Object.values(mapa).sort((a, b) => b.neto - a.neto)
+    return lineasFiltradas
+      .map(l => ({
+        referencia:  l.referencia,
+        prefijo_num: l.prefijo_num || '',
+        cliente:     l.nombre_cliente || '',
+        asesor:      l.nombre_vendedor || 'Sin asesor',
+        taller:      l.taller,
+        fecha:       l.fecha_cierre,
+        prefijo:     l.prefijo,
+        tipo:        l.tipo_taller || '',
+        neto:        Number(l.neto),
+        costo:       Number(l.costo),
+        beneficio:   Number(l.beneficio),
+        items:       (l as any).lineas || 1,
+      }))
+      .sort((a, b) => b.neto - a.neto)
   }, [lineasFiltradas])
 
   // ── Búsqueda en tabla ─────────────────────────────────────────────────────
