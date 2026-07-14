@@ -354,6 +354,32 @@ export default function SubastasPage() {
         </div>
       )}
 
+      {/* ── Accesos rápidos ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <a href="/dashboard/facturacion/canales/subasta"
+          className="flex items-center gap-4 rounded-xl border border-brand-border bg-brand-surface p-4 hover:border-brand-teal/50 transition-colors group">
+          <div className="w-10 h-10 rounded-lg bg-brand-teal/10 border border-brand-teal/30 flex items-center justify-center shrink-0">
+            <span className="text-lg">📊</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-brand-text group-hover:text-brand-teal transition-colors">Torre de Control</p>
+            <p className="text-xs text-brand-subtle font-mono mt-0.5">Seguimiento de subastas · cruce con radicación de facturas</p>
+          </div>
+          <span className="text-brand-subtle font-mono text-sm group-hover:text-brand-teal transition-colors">→</span>
+        </a>
+        <a href="/dashboard/facturacion/canales/subasta/comparativo"
+          className="flex items-center gap-4 rounded-xl border border-purple-500/30 bg-brand-surface p-4 hover:border-purple-500/50 transition-colors group">
+          <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center shrink-0">
+            <span className="text-lg">📈</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-brand-text group-hover:text-purple-400 transition-colors">Comparativo de Períodos</p>
+            <p className="text-xs text-brand-subtle font-mono mt-0.5">2026 vs 2025 · por aseguradora y asesor</p>
+          </div>
+          <span className="text-brand-subtle font-mono text-sm group-hover:text-purple-400 transition-colors">→</span>
+        </a>
+      </div>
+
       {/* % Avance — panel principal */}
       <Panel className="border-brand-teal/30">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
