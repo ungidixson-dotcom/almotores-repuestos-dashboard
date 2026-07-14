@@ -155,7 +155,7 @@ export default function SubastasPage() {
           .limit(5000),
         supabase
           .from('facturas_credito')
-          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
+          .select('referencia, numero_factura, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, articulo, descripcion, neto, costo, beneficio, canal')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes - 1])
           .limit(5000),
@@ -168,9 +168,12 @@ export default function SubastasPage() {
         .eq('canal', 'Subastas')
         .eq('anio', anio)
 
-      // Etiquetar fuente para distinguir mostrador vs crédito en el mapa
-      const lineasMost = (dataMost ?? []).map(r => ({ ...r, _fuente: 'mostrador' }))
-      const lineasCred = (dataCred ?? []).map(r => ({ ...r, _fuente: 'credito' }))
+      const lineasMost = (dataMost ?? []).map((r: any) => ({ ...r, _fuente: 'mostrador' }))
+      const lineasCred = (dataCred ?? []).map((r: any) => ({ 
+        ...r, 
+        prefijo_num: r.numero_factura ? String(r.numero_factura) : '',
+        _fuente: 'credito' 
+      }))
       setLineas([...lineasMost, ...lineasCred] as any)
       setResumen((dataResumen ?? []) as ResumenVista[])
       setUltimaAct(new Date())
