@@ -190,18 +190,8 @@ export default function SubastasPage() {
   const mesClave = MESES_KEY[mes - 1]
   const filasMes = resumen.filter(r => r.mes === mesClave)
 
-  const totalNeto  = filasMes.reduce((s, r) => s + Number(r.neto), 0)
-  const totalCosto = filasMes.reduce((s, r) => s + Number(r.costo), 0)
-  const totalUtil  = totalNeto - totalCosto
-  const totalPpto  = filasMes.reduce((s, r) => s + Number(r.presupuesto), 0)
-  const pctAvance  = totalPpto ? (totalNeto / totalPpto) * 100 : 0
-  const pctUtil    = totalNeto ? (totalUtil / totalNeto) * 100 : 0
-  const porDia     = dhTransc ? totalNeto / dhTransc : 0
-  const restante   = totalPpto - totalNeto
-  const necesario  = dhRest > 0 && restante > 0 ? restante / dhRest : 0
-  const pronostico = totalNeto + porDia * dhRest
-  const pctPronos  = totalPpto ? (pronostico / totalPpto) * 100 : 0
-  const colorAvance = pctPronos >= 95 ? '#68D391' : pctPronos >= 85 ? '#F6AD55' : '#FC8181'
+  // Presupuesto siempre de la vista (no cambia por aseguradora)
+  const totalPpto = filasMes.reduce((s, r) => s + Number(r.presupuesto), 0)
 
   // ── Tabla de facturas agrupadas por referencia ────────────────────────────
   const facturasMes = useMemo(() => {
@@ -261,10 +251,26 @@ export default function SubastasPage() {
     })
   }, [facturasMes, filtroAseg, filtroAsesor, buscar])
 
-  // ── Por asesor ────────────────────────────────────────────────────────────
+  // ── Totales — calculados desde facturas filtradas ─────────────────────────
+  const totalNeto  = facturasFiltradas.reduce((s, f) => s + f.neto,  0)
+  const totalCosto = facturasFiltradas.reduce((s, f) => s + f.costo, 0)
+  const totalUtil  = totalNeto - totalCosto
+  const pctAvance  = totalPpto ? (totalNeto / totalPpto) * 100 : 0
+  const pctUtil    = totalNeto ? (totalUtil / totalNeto) * 100 : 0
+  const porDia     = dhTransc ? totalNeto / dhTransc : 0
+  const restante   = totalPpto - totalNeto
+  const necesario  = dhRest > 0 && restante > 0 ? restante / dhRest : 0
+  const pronostico = totalNeto + porDia * dhRest
+  const pctPronos  = totalPpto ? (pronostico / totalPpto) * 100 : 0
+  const colorAvance = pctPronos >= 95 ? '#68D391' : pctPronos >= 85 ? '#F6AD55' : '#FC8181'
+
+  // ── Por asesor — sobre facturas filtradas por aseguradora ─────────────────
   const porAsesor = useMemo(() => {
+    const base = filtroAseg !== 'Todas'
+      ? facturasMes.filter(f => f.cliente === filtroAseg)
+      : facturasMes
     const mapa: Record<string, { neto: number; costo: number; facturas: number }> = {}
-    facturasMes.forEach(f => {
+    base.forEach(f => {
       if (!mapa[f.asesor]) mapa[f.asesor] = { neto: 0, costo: 0, facturas: 0 }
       mapa[f.asesor].neto     += f.neto
       mapa[f.asesor].costo    += f.costo
@@ -273,12 +279,15 @@ export default function SubastasPage() {
     return Object.entries(mapa)
       .map(([nombre, d]) => ({ nombre, ...d, util: d.neto - d.costo }))
       .sort((a, b) => b.neto - a.neto)
-  }, [facturasMes])
+  }, [facturasMes, filtroAseg])
 
-  // ── Por aseguradora ───────────────────────────────────────────────────────
+  // ── Por aseguradora — sobre facturas filtradas por asesor ─────────────────
   const porAseguradora = useMemo(() => {
+    const base = filtroAsesor !== 'Todos'
+      ? facturasMes.filter(f => f.asesor === filtroAsesor)
+      : facturasMes
     const mapa: Record<string, { neto: number; costo: number; facturas: number }> = {}
-    facturasMes.forEach(f => {
+    base.forEach(f => {
       if (!mapa[f.cliente]) mapa[f.cliente] = { neto: 0, costo: 0, facturas: 0 }
       mapa[f.cliente].neto     += f.neto
       mapa[f.cliente].costo    += f.costo
@@ -287,7 +296,7 @@ export default function SubastasPage() {
     return Object.entries(mapa)
       .map(([nombre, d]) => ({ nombre, ...d, util: d.neto - d.costo }))
       .sort((a, b) => b.neto - a.neto)
-  }, [facturasMes])
+  }, [facturasMes, filtroAsesor])
 
   // ── Evolución mensual ─────────────────────────────────────────────────────
   const evolucion = useMemo(() => {
@@ -318,10 +327,14 @@ export default function SubastasPage() {
         <div>
           <h1 className="text-2xl font-bold font-title text-brand-text">🔨 Subastas</h1>
           <p className="text-sm text-brand-subtle mt-0.5">
-            Repuestos para vehículos siniestrados · aseguradoras · {MESES_LABEL[mes - 1]} {anio}
+            Repuestos para vehículos siniestrados · {filtroAseg !== 'Todas' ? filtroAseg : 'todas las aseguradoras'} · {MESES_LABEL[mes - 1]} {anio}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <select value={filtroAseg} onChange={e => { setFiltroAseg(e.target.value); setFiltroAsesor('Todos') }}
+            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
+            {aseguradoras.map(a => <option key={a} value={a}>{a === 'Todas' ? '🏢 Todas las aseguradoras' : a}</option>)}
+          </select>
           <select value={anio} onChange={e => setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
             {[2024, 2025, 2026].map(a => <option key={a} value={a}>{a}</option>)}
@@ -536,19 +549,15 @@ export default function SubastasPage() {
             Detalle de facturas — {MESES_LABEL[mes - 1]} {anio}
           </h2>
             <div className="flex flex-wrap gap-2">
-            <select value={filtroAseg} onChange={e => setFiltroAseg(e.target.value)}
-              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal max-w-[200px]">
-              {aseguradoras.map(a => <option key={a} value={a}>{a === 'Todas' ? 'Todas las aseguradoras' : a}</option>)}
-            </select>
             <select value={filtroAsesor} onChange={e => setFiltroAsesor(e.target.value)}
-              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal max-w-[200px]">
+              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal">
               {asesores.map(a => <option key={a} value={a}>{a === 'Todos' ? 'Todos los asesores' : a}</option>)}
             </select>
             <input type="text" placeholder="Buscar cliente, referencia..."
               value={buscar} onChange={e => setBuscar(e.target.value)}
               className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-xs text-brand-text font-mono focus:outline-none focus:border-brand-teal w-52" />
-            {(filtroAseg !== 'Todas' || filtroAsesor !== 'Todos' || buscar) && (
-              <button onClick={() => { setFiltroAseg('Todas'); setFiltroAsesor('Todos'); setBuscar('') }}
+            {(filtroAsesor !== 'Todos' || buscar) && (
+              <button onClick={() => { setFiltroAsesor('Todos'); setBuscar('') }}
                 className="text-xs font-mono text-brand-subtle hover:text-brand-text px-2 py-1.5 border border-brand-border rounded-lg transition-colors">
                 ✕ Limpiar
               </button>
