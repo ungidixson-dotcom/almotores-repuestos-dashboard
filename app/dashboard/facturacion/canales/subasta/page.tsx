@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, LineChart, Line, PieChart, Pie, Cell,
+  AreaChart, Area,
 } from 'recharts'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -286,6 +287,18 @@ export default function TorreControlSubastasPage() {
 
       {error&&<div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">{error}</div>}
 
+      {/* Navegación */}
+      <div className="flex gap-3">
+        <a href="/dashboard/facturacion/canales/subastas"
+          className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-surface px-4 py-2.5 hover:border-brand-teal/50 transition-colors text-sm font-mono text-brand-subtle hover:text-brand-text">
+          ← Facturación Subastas
+        </a>
+        <a href="/dashboard/facturacion/canales/subasta/comparativo"
+          className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-surface px-4 py-2.5 hover:border-brand-teal/50 transition-colors text-sm font-mono text-brand-subtle hover:text-brand-text">
+          📈 Comparativo de Períodos →
+        </a>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Total subastas" value={kpi.total.toLocaleString()} sub={`${kpi.subastadas.toLocaleString()} subastadas`} accent="text-brand-teal"/>
@@ -356,13 +369,20 @@ export default function TorreControlSubastasPage() {
             <Panel>
               <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Tasa de autorización mensual (%)</h2>
               <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={evolucion} margin={{top:5,right:10,left:10,bottom:5}}>
+                <AreaChart data={evolucion} margin={{top:5,right:10,left:10,bottom:5}}>
+                  <defs>
+                    <linearGradient id="gradAuth" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#68D391" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#68D391" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
                   <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40} tickFormatter={v=>`${v.toFixed(0)}%`}/>
                   <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
-                  <Line type="monotone" dataKey="TasaAuth" name="% Auth" stroke="#68D391" strokeWidth={2} dot={{fill:'#68D391',r:4}}/>
-                </LineChart>
+                  <Area type="monotone" dataKey="TasaAuth" name="% Auth" stroke="#68D391" strokeWidth={2}
+                    fill="url(#gradAuth)" dot={{fill:'#68D391',r:4,strokeWidth:0}}/>
+                </AreaChart>
               </ResponsiveContainer>
             </Panel>
             <Panel>
@@ -384,14 +404,26 @@ export default function TorreControlSubastasPage() {
             <Panel>
               <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Valor subastado vs autorizado por mes</h2>
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={evolucion} margin={{top:5,right:10,left:10,bottom:5}}>
+                <AreaChart data={evolucion} margin={{top:5,right:10,left:10,bottom:5}}>
+                  <defs>
+                    <linearGradient id="gradSub" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4FD1C5" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="#4FD1C5" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="gradAut" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#68D391" stopOpacity={0.35}/>
+                      <stop offset="95%" stopColor="#68D391" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
                   <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={70} tickFormatter={v=>fmtCOP(v)}/>
                   <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:11,color:'#718096'}}/>
-                  <Bar dataKey="ValSubastado" name="Subastado" fill="#2D3748" radius={[4,4,0,0]}/>
-                  <Bar dataKey="ValAutorizado" name="Autorizado" fill="#68D391" radius={[4,4,0,0]}/>
-                </BarChart>
+                  <Area type="monotone" dataKey="ValSubastado" name="Subastado" stroke="#4FD1C5" strokeWidth={2}
+                    fill="url(#gradSub)" dot={{fill:'#4FD1C5',r:3,strokeWidth:0}}/>
+                  <Area type="monotone" dataKey="ValAutorizado" name="Autorizado" stroke="#68D391" strokeWidth={2}
+                    fill="url(#gradAut)" dot={{fill:'#68D391',r:3,strokeWidth:0}}/>
+                </AreaChart>
               </ResponsiveContainer>
             </Panel>
 
