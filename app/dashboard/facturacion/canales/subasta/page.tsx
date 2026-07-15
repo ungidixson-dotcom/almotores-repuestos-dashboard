@@ -395,24 +395,32 @@ export default function TorreControlSubastasPage() {
               </ResponsiveContainer>
             </Panel>
 
-            {/* Participación aseguradoras por mes */}
+            {/* Participación aseguradoras — gráfica mejorada */}
             <Panel className="xl:col-span-2">
               <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-                Participación de aseguradoras por mes — {anio}
+                Subastas y autorizaciones por aseguradora — {filtroMes!=='todos'?filtroMes:`año completo ${anio}`}
               </h2>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={320}>
                 <BarChart
-                  data={participacionMensual}
-                  margin={{top:5,right:10,left:10,bottom:5}}>
+                  data={porAseg.map((a:any)=>({
+                    name: (a.nombre||'').length>10?(a.nombre||'').slice(0,10)+'…':(a.nombre||''),
+                    Subastas: a.total,
+                    Autorizadas: a.autorizadas,
+                    Facturadas: a.facturadas,
+                    tasaAuth: a.tasaAuth*100,
+                  }))}
+                  margin={{top:10,right:20,left:10,bottom:60}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
-                  <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                  <XAxis dataKey="name" tick={{fill:'#718096',fontSize:11}} axisLine={false} tickLine={false}
+                    angle={-35} textAnchor="end" interval={0}/>
+                  <YAxis yAxisId="left" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={45}/>
+                  <YAxis yAxisId="right" orientation="right" tick={{fill:'#718096',fontSize:10}}
+                    axisLine={false} tickLine={false} width={45} tickFormatter={v=>`${v.toFixed(0)}%`}/>
                   <Tooltip content={<TT/>}/>
-                  <Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
-                  {aseguradoras.map((a,i)=>(
-                    <Bar key={a.nombre_corto} dataKey={a.nombre_corto} stackId="a"
-                      fill={COLORES[i%12]} radius={i===aseguradoras.length-1?[4,4,0,0]:[0,0,0,0]}/>
-                  ))}
+                  <Legend wrapperStyle={{fontSize:11,color:'#718096'}} verticalAlign="top"/>
+                  <Bar yAxisId="left" dataKey="Subastas"    fill="#2D3748"  radius={[4,4,0,0]}/>
+                  <Bar yAxisId="left" dataKey="Autorizadas" fill="#68D391"  radius={[4,4,0,0]}/>
+                  <Bar yAxisId="left" dataKey="Facturadas"  fill="#4FD1C5"  radius={[4,4,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </Panel>
