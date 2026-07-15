@@ -388,16 +388,57 @@ export default function TorreControlSubastasPage() {
             <Panel>
               <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Distribución por estado de autorización</h2>
               <div className="flex items-center gap-6">
-                <ResponsiveContainer width={200} height={200}>
-                  <PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
-                    {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                  </Pie><Tooltip formatter={(v:any)=>[`${v} subastas`,'']}/></PieChart>
-                </ResponsiveContainer>
-                <div className="flex-1 space-y-2">
-                  {pieData.map(d=>(<div key={d.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full" style={{background:d.color}}/><span className="text-xs font-mono text-brand-subtle">{d.name}</span></div>
-                    <span className="text-xs font-mono text-brand-text">{d.value.toLocaleString()} <span className="text-brand-subtle">({kpi.total>0?((d.value/kpi.total)*100).toFixed(1):0}%)</span></span>
-                  </div>))}
+                <div className="relative shrink-0" style={{width:200,height:200}}>
+                  {/* Sombra 3D */}
+                  <div className="absolute inset-0 rounded-full" style={{
+                    background:'radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, transparent 70%)',
+                    transform:'translateY(12px) scaleX(0.85)',filter:'blur(10px)',zIndex:0
+                  }}/>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <defs>
+                        {pieData.map((d,i)=>(
+                          <radialGradient key={i} id={`g3d${i}`} cx="35%" cy="35%">
+                            <stop offset="0%" stopColor={d.color} stopOpacity={1}/>
+                            <stop offset="100%" stopColor={d.color} stopOpacity={0.55}/>
+                          </radialGradient>
+                        ))}
+                      </defs>
+                      <Pie data={pieData} cx="50%" cy="50%"
+                        innerRadius={52} outerRadius={90}
+                        dataKey="value" paddingAngle={3}
+                        strokeWidth={2} stroke="#0d1117">
+                        {pieData.map((e,i)=><Cell key={i} fill={`url(#g3d${i})`}/>)}
+                      </Pie>
+                      <Tooltip formatter={(v:any)=>[`${v} subastas`,'']}/>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {/* Total en el centro */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <p className="text-xl font-bold font-title text-brand-text">{kpi.total.toLocaleString()}</p>
+                    <p className="text-xs font-mono text-brand-subtle">total</p>
+                  </div>
+                </div>
+                <div className="flex-1 space-y-3">
+                  {pieData.map(d=>(
+                    <div key={d.name}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{background:d.color,boxShadow:`0 0 6px ${d.color}80`}}/>
+                          <span className="text-xs font-mono text-brand-subtle">{d.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs font-mono text-brand-text font-semibold">{d.value.toLocaleString()}</span>
+                          <span className="text-xs font-mono text-brand-subtle ml-1">({kpi.total>0?((d.value/kpi.total)*100).toFixed(1):0}%)</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 bg-brand-border rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{width:`${kpi.total>0?(d.value/kpi.total)*100:0}%`,
+                            background:d.color,boxShadow:`0 0 8px ${d.color}60`}}/>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </Panel>
