@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend, CartesianGrid,
+  ResponsiveContainer, Legend, CartesianGrid, Cell,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 
@@ -51,11 +51,11 @@ const SEDES_LIST = ['Todas','Norte','Pasoancho','Sede 39']
 
 const CANALES_CONFIG = [
   { canal:'Taller',     icon:'🔧', color:'#4FD1C5' },
-  { canal:'Colisión',   icon:'🚗', color:'#68D391' },
-  { canal:'Accesorios', icon:'🎁', color:'#F6AD55' },
-  { canal:'Mostrador',  icon:'🛒', color:'#63B3ED' },
-  { canal:'Mayoristas', icon:'📦', color:'#B794F4' },
-  { canal:'Subastas',   icon:'🔨', color:'#FC8181' },
+  { canal:'Colisión',   icon:'🚗', color:'#F6AD55' },
+  { canal:'Accesorios', icon:'🎁', color:'#B794F4' },
+  { canal:'Mostrador',  icon:'🛒', color:'#68D391' },
+  { canal:'Mayoristas', icon:'📦', color:'#63B3ED' },
+  { canal:'Subastas',   icon:'🔨', color:'#F687B3' },
 ]
 
 const FESTIVOS = new Set([
@@ -110,9 +110,9 @@ function ProgressBar({ pct, color, h = 'h-2' }: { pct: number; color: string; h?
 }
 
 function Badge({ tipo }: { tipo: 'ok' | 'alerta' | 'riesgo' }) {
-  if (tipo === 'ok')     return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ En meta</span>
-  if (tipo === 'alerta') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Alerta</span>
-  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Riesgo</span>
+  if (tipo === 'ok')     return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ Óptimo</span>
+  if (tipo === 'alerta') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Aceptable</span>
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Deficiente</span>
 }
 
 function KpiCard({ label, value, sub, sub2, accent = 'text-brand-teal', alert = false }: {
@@ -433,9 +433,9 @@ export default function FacGeneralPage() {
         </div>
         {/* Leyenda */}
         <div className="flex items-center gap-6 mt-6 pt-4 border-t border-brand-border">
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-400"/><span className="text-xs font-mono text-brand-subtle">En meta</span></div>
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-400"/><span className="text-xs font-mono text-brand-subtle">Alerta</span></div>
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"/><span className="text-xs font-mono text-brand-subtle">Riesgo</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-400"/><span className="text-xs font-mono text-brand-subtle">Óptimo</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-400"/><span className="text-xs font-mono text-brand-subtle">Aceptable</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"/><span className="text-xs font-mono text-brand-subtle">Deficiente</span></div>
           <div className="flex items-center gap-2 ml-auto"><div className="w-4 h-0.5 bg-white/20"/><span className="text-xs font-mono text-brand-subtle">↑ {fmtPct(pctDias)} días hábiles</span></div>
         </div>
       </Panel>
@@ -562,7 +562,7 @@ export default function FacGeneralPage() {
               <Bar dataKey="Utilidad" radius={[4, 4, 0, 0]}>
                 {graficoCanales.map((entry, i) => {
                   const cfg = CANALES_CONFIG.find(c => c.canal === entry.name)
-                  return <rect key={i} fill={cfg?.color ?? '#4FD1C5'} />
+                  return <Cell key={i} fill={cfg?.color ?? '#4FD1C5'} />
                 })}
               </Bar>
             </BarChart>
