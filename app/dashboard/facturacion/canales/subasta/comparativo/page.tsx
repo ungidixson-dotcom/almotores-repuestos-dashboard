@@ -129,7 +129,7 @@ export default function ComparativoSubastasPage() {
     datosMes.forEach(d=>{
       if (!r[d.anio]) return
       r[d.anio].total      += Number(d.total||0)
-      r[d.anio].autorizadas+= Number(d.autorizadas||0)
+      r[d.anio].autorizadas+= Number(d.auth_completa||0) + Number(d.auth_parcial||0)
       r[d.anio].facturadas += Number(d.facturadas||0)
       r[d.anio].valSub     += Number(d.valor_subastado||0)
       r[d.anio].valAuth    += Number(d.valor_autorizado||0)
@@ -197,7 +197,7 @@ export default function ComparativoSubastasPage() {
       YEARS.forEach(y=>{
         const filas = datosFilt.filter((d:any)=>d.mes_subasta===m&&d.anio===y)
         entry[`Sub${y}`]  = filas.reduce((s:number,d:any)=>s+Number(d.total||0),0)
-        entry[`Auth${y}`] = filas.reduce((s:number,d:any)=>s+Number(d.autorizadas||0),0)
+        entry[`Auth${y}`] = filas.reduce((s:number,d:any)=>s+Number(d.auth_completa||0)+Number(d.auth_parcial||0),0)
         entry[`Fact${y}`] = filas.reduce((s:number,d:any)=>s+Number(d.facturadas||0),0)
       })
       return entry
