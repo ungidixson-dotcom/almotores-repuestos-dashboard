@@ -222,6 +222,18 @@ export default function TorreControlSubastasPage() {
     })).sort((a:any,b:any)=>b.total-a.total)
   },[datosAsesor, filtroMes, filtroAseg, kpi.total, asesores])
 
+  // ── Evolución mensual por asesor ─────────────────────────────────────────
+  const evolucionPorAsesorTC = useMemo(()=>{
+    return MESES_ORD.map((m,i)=>{
+      const entry:any = {name: MESES_LABEL[i]}
+      asesores.forEach(a=>{
+        const filas = datosAsesor.filter((d:any)=>d.mes_subasta===m&&d.asesor===a.nombre&&d.anio===anio)
+        entry[a.nombre] = filas.reduce((s:number,d:any)=>s+Number(d.total||0),0)
+      })
+      return entry
+    }).filter(e=>Object.values(e).some((v,k)=>k>0&&Number(v)>0))
+  },[datosAsesor, asesores, anio])
+
   // ── Participación aseguradoras por mes ───────────────────────────────────
   const participacionMensual = useMemo(()=>{
     return MESES_ORD.map((m,i)=>{
@@ -645,6 +657,32 @@ export default function TorreControlSubastasPage() {
               </table>
             </div>
           </Panel>
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Subastas registradas por asesor — evolución mensual {anio}</h2>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={evolucionPorAsesorTC} margin={{top:5,right:10,left:10,bottom:5}}>
+                <defs>
+                  {asesores.map((a,i)=>(
+                    <linearGradient key={a.nombre} id={`gradTC${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORES[i%12]} stopOpacity={0.35}/>
+                      <stop offset="95%" stopColor={COLORES[i%12]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+                <XAxis dataKey="name" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
+                {asesores.map((a,i)=>(
+                  <Area key={a.nombre} type="monotone" dataKey={a.nombre} name={a.nombre.split(' ')[0]}
+                    stroke={COLORES[i%12]} strokeWidth={2}
+                    fill={`url(#gradTC${i})`}
+                    dot={{fill:COLORES[i%12],r:3,strokeWidth:0}}/>
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </Panel>
+
           <Panel>
             <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Comparativa de asesores</h2>
             <ResponsiveContainer width="100%" height={260}>
