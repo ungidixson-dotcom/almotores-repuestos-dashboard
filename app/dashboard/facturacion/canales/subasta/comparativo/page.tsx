@@ -217,6 +217,19 @@ export default function ComparativoSubastasPage() {
       .sort((a:any,b:any) => a.varConv - b.varConv) as any[]
   },[asegPorAño, añoBase, añoComp])
 
+  // ── Evolución mensual por asesor ─────────────────────────────────────────
+  const evolucionPorAsesor = useMemo(()=>{
+    const asesoresLista2 = Object.keys(asesorPorAño)
+    return MESES_ORD.map((m,i)=>{
+      const entry:any = {name: MESES_LABEL[i]}
+      asesoresLista2.forEach(a=>{
+        const fila = aplicarFiltros(datosAsesor).find((d:any)=>d.mes_subasta===m&&d.asesor===a&&d.anio===añoComp)
+        entry[a] = Number(fila?.total||0)
+      })
+      return entry
+    })
+  },[datosAsesor, asesorPorAño, añoComp, filtroMarca, filtroAseg, filtroMes])
+
   // ── Radar data para asesores ───────────────────────────────────────────────
   const radarData = useMemo(()=>{
     const asesoresLista = Object.keys(asesorPorAño)
@@ -430,6 +443,33 @@ export default function ComparativoSubastasPage() {
           </div>
           {/* Tabla resumen anual */}
           <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Total subastas registradas por año — comparativo mensual</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={evolucionMensual} margin={{top:5,right:10,left:10,bottom:5}}>
+                <defs>
+                  {YEARS.map(y=>(
+                    <linearGradient key={y} id={`gradSub${y}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORES_AÑO[y]} stopOpacity={0.35}/>
+                      <stop offset="95%" stopColor={COLORES_AÑO[y]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+                <XAxis dataKey="name" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
+                {YEARS.map(y=>(
+                  <Area key={y} type="monotone" dataKey={`Sub${y}`} name={`Subastas ${y}`}
+                    stroke={COLORES_AÑO[y]} strokeWidth={2}
+                    fill={`url(#gradSub${y})`}
+                    dot={{fill:COLORES_AÑO[y],r:3,strokeWidth:0}}/>
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          {/* Tabla resumen anual numérica */}
+          <Panel>
             <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Resumen anual comparativo</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -522,6 +562,35 @@ export default function ComparativoSubastasPage() {
       {/* TAB: Asesores */}
       {tab==='asesores' && (
         <div className="space-y-6">
+          {/* Gráfica evolución subastas por asesor */}
+          <Panel>
+            <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+              Subastas registradas por asesor — {añoComp}
+            </h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={evolucionPorAsesor} margin={{top:5,right:10,left:10,bottom:5}}>
+                <defs>
+                  {asesoresLista.map((a,i)=>(
+                    <linearGradient key={a} id={`gradAs${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS_ASESORES[i]} stopOpacity={0.35}/>
+                      <stop offset="95%" stopColor={COLORS_ASESORES[i]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false}/>
+                <XAxis dataKey="name" tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:'#718096',fontSize:10}} axisLine={false} tickLine={false} width={40}/>
+                <Tooltip content={<TT/>}/><Legend wrapperStyle={{fontSize:10,color:'#718096'}}/>
+                {asesoresLista.map((a,i)=>(
+                  <Area key={a} type="monotone" dataKey={a} name={a.split(' ')[0]}
+                    stroke={COLORS_ASESORES[i]} strokeWidth={2}
+                    fill={`url(#gradAs${i})`}
+                    dot={{fill:COLORS_ASESORES[i],r:3,strokeWidth:0}}/>
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </Panel>
+
           {/* Cards por asesor */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {Object.entries(asesorPorAño).map(([nombre,data],i)=>{
