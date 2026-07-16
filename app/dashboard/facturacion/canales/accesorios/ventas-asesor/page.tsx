@@ -8,9 +8,12 @@ import {
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface VentaAsesor {
-  id: number; cedula: string; asesor: string
+  asesor: string; ventas: number; comision: number
+  sede: string; area: string; anio: number; registros: number
+}
+interface EvolucionAsesor {
+  asesor: string; mes: string; anio: number
   ventas: number; comision: number
-  sede: string; area: string; mes: string; anio: number
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -55,20 +58,27 @@ export default function AccesoriosVentasAsesorPage() {
   const [buscar,     setBuscar]     = useState('')
   const [topN,       setTopN]       = useState(10)
 
-  const [datos,    setDatos]    = useState<VentaAsesor[]>([])
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState('')
-  const [ultimaAct,setUltimaAct]= useState<Date|null>(null)
+  const [datos,     setDatos]     = useState<VentaAsesor[]>([])
+  const [evolucion, setEvolucion] = useState<EvolucionAsesor[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState('')
+  const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
 
   const cargar = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const {data, error: err} = await supabase
-        .from('v_ventas_asesor_accesorios')
-        .select('id,cedula,asesor,ventas,comision,sede,area,mes,anio')
-        .range(0, 4999)
-      if (err) throw err
-      setDatos((data??[]) as VentaAsesor[])
+      const [{data:dR, error:eR},{data:dE, error:eE}] = await Promise.all([
+        supabase.from('v_ranking_asesor_accesorios')
+          .select('asesor,sede,area,anio,ventas,comision,registros')
+          .range(0, 4999),
+        supabase.from('v_evolucion_asesor_accesorios')
+          .select('asesor,mes,anio,ventas,comision')
+          .range(0, 4999),
+      ])
+      if (eR) throw eR
+      if (eE) throw eE
+      setDatos((dR??[]) as VentaAsesor[])
+      setEvolucion((dE??[]) as EvolucionAsesor[])
       setUltimaAct(new Date())
     } catch(e:any){setError(`Error cargando datos: ${e?.message}`)}
     setLoading(false)
@@ -139,12 +149,12 @@ export default function AccesoriosVentasAsesorPage() {
     return MESES_ORD.map((m,i)=>{
       const entry:any={name:MESES_SHORT[i]}
       topAsesores.forEach(a=>{
-        const rows = base.filter(d=>d.mes===m&&d.asesor===a)
+        const rows = evolucion.filter(d=>d.mes===m&&d.asesor===a&&Number(d.anio)===anio)
         entry[a.split(' ')[0]] = rows.reduce((s,d)=>s+Number(d.ventas||0),0)
       })
       return entry
     }).filter(e=>Object.keys(e).length>1)
-  },[base, topAsesores])
+  },[evolucion, topAsesores, anio])
 
   // ── Histórico por asesor ──────────────────────────────────────────────────
   const historico = useMemo(()=>{
