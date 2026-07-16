@@ -66,7 +66,7 @@ export default function AccesoriosVentasAsesorPage() {
         .from('ventas_asesor_accesorios')
         .select('id,cedula,asesor,ventas,comision,sede,area,mes,anio')
         .in('anio', YEARS)
-        .limit(10000)
+        .range(0, 4999)
       setDatos((data??[]) as VentaAsesor[])
       setUltimaAct(new Date())
     } catch(e:any){setError(`Error: ${e?.message}`)}
