@@ -50,6 +50,7 @@ const TT=({active,payload,label}:any)=>{
 export default function AccesoriosVentasAsesorPage() {
   const [anio,       setAnio]       = useState(2026)
   const [sede,       setSede]       = useState('Todas')
+  const [area,       setArea]       = useState('Todas')
   const [tab,        setTab]        = useState<'ranking'|'norte'|'pasoancho'|'sede39'|'historico'>('ranking')
   const [buscar,     setBuscar]     = useState('')
   const [topN,       setTopN]       = useState(10)
@@ -62,23 +63,34 @@ export default function AccesoriosVentasAsesorPage() {
   const cargar = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const {data} = await supabase
-        .from('ventas_asesor_accesorios')
+      const {data, error: err} = await supabase
+        .from('v_ventas_asesor_accesorios')
         .select('id,cedula,asesor,ventas,comision,sede,area,mes,anio')
-        .in('anio', YEARS)
         .range(0, 4999)
+      if (err) throw err
       setDatos((data??[]) as VentaAsesor[])
       setUltimaAct(new Date())
-    } catch(e:any){setError(`Error: ${e?.message}`)}
+    } catch(e:any){setError(`Error cargando datos: ${e?.message}`)}
     setLoading(false)
   },[])
 
   useEffect(()=>{cargar()},[cargar])
 
+  // ── Áreas únicas ─────────────────────────────────────────────────────────
+  const areasUnicas = useMemo(()=>{
+    const s = new Set<string>()
+    datos.forEach(d=>{ if(d.area) s.add(d.area) })
+    return ['Todas', ...Array.from(s).sort()]
+  },[datos])
+
   // ── Filtrado base ─────────────────────────────────────────────────────────
   const base = useMemo(()=>{
-    return datos.filter(d => Number(d.anio) === anio && (sede==='Todas' || d.sede===sede))
-  },[datos, anio, sede])
+    return datos.filter(d =>
+      Number(d.anio) === anio &&
+      (sede==='Todas' || d.sede===sede) &&
+      (area==='Todas' || d.area===area)
+    )
+  },[datos, anio, sede, area])
 
   // ── Ranking general ───────────────────────────────────────────────────────
   const ranking = useMemo(()=>{
@@ -198,6 +210,10 @@ export default function AccesoriosVentasAsesorPage() {
               </button>
             ))}
           </div>
+          <select value={area} onChange={e=>setArea(e.target.value)}
+            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
+            {areasUnicas.map(a=><option key={a} value={a}>{a==='Todas'?'Todas las áreas':a}</option>)}
+          </select>
           <select value={anio} onChange={e=>setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
             {YEARS.map(y=><option key={y} value={y}>{y}</option>)}
