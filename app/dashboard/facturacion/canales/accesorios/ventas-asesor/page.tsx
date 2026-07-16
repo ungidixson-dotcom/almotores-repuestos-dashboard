@@ -77,7 +77,7 @@ export default function AccesoriosVentasAsesorPage() {
 
   // ── Filtrado base ─────────────────────────────────────────────────────────
   const base = useMemo(()=>{
-    return datos.filter(d => d.anio === anio && (sede==='Todas' || d.sede===sede))
+    return datos.filter(d => Number(d.anio) === anio && (sede==='Todas' || d.sede===sede))
   },[datos, anio, sede])
 
   // ── Ranking general ───────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ export default function AccesoriosVentasAsesorPage() {
     const result: Record<string,any[]> = {}
     SEDES.forEach(s=>{
       const mapa: Record<string,{ventas:number;comision:number}> = {}
-      datos.filter(d=>d.anio===anio&&d.sede===s).forEach(d=>{
+      datos.filter(d=>Number(d.anio)===anio&&d.sede===s).forEach(d=>{
         if (!mapa[d.asesor]) mapa[d.asesor]={ventas:0,comision:0}
         mapa[d.asesor].ventas   += Number(d.ventas||0)
         mapa[d.asesor].comision += Number(d.comision||0)
@@ -139,7 +139,8 @@ export default function AccesoriosVentasAsesorPage() {
     const mapa: Record<string,Record<number,number>> = {}
     datos.filter(d=>d.sede==='Todas'||sede==='Todas'?true:d.sede===sede).forEach(d=>{
       if (!mapa[d.asesor]) mapa[d.asesor]={}
-      mapa[d.asesor][d.anio] = (mapa[d.asesor][d.anio]||0) + Number(d.ventas||0)
+      const y = Number(d.anio)
+      mapa[d.asesor][y] = (mapa[d.asesor][y]||0) + Number(d.ventas||0)
     })
     return Object.entries(mapa)
       .map(([asesor,porAnio])=>({asesor,...Object.fromEntries(YEARS.map(y=>[y,porAnio[y]||0]))}))
