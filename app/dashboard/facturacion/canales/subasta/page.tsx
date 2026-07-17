@@ -9,18 +9,18 @@ import {
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface DatoMes {
-  anio: number; mes_subasta: string; total: number; subastadas: number
+  anio: number; mes_subasta: string; marca: string; total: number; subastadas: number
   auth_completa: number; auth_parcial: number; no_autorizadas: number; pend_auth: number
   en_pedido: number; facturadas: number; radicadas: number
   valor_subastado: number; valor_autorizado: number; descuento_prom: number
 }
 interface DatoAseg {
-  anio: number; mes_subasta: string; aseguradora_id: number; aseguradora: string
+  anio: number; mes_subasta: string; aseguradora_id: number; aseguradora: string; marca: string
   total: number; subastadas: number; autorizadas: number; no_autorizadas: number
   facturadas: number; radicadas: number; valor_subastado: number; valor_autorizado: number
 }
 interface DatoAsesor {
-  anio: number; mes_subasta: string; asesor_id: number; asesor: string
+  anio: number; mes_subasta: string; asesor_id: number; asesor: string; marca: string
   total: number; subastadas: number; autorizadas: number; no_autorizadas: number
   facturadas: number; radicadas: number; valor_subastado: number; valor_autorizado: number
   descuento_prom: number
