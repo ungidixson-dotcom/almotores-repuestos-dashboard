@@ -81,6 +81,7 @@ export default function TorreControlSubastasPage() {
   const [filtroMes,   setFiltroMes]   = useState('todos')
   const [filtroAseg,  setFiltroAseg]  = useState(0)
   const [filtroAsesor,setFiltroAsesor]= useState(0)
+  const [filtroMarca, setFiltroMarca] = useState('Todas')
   const [tab,         setTab]         = useState<'resumen'|'aseguradoras'|'asesores'|'pipeline'|'detalle'>('resumen')
   const [buscar,      setBuscar]      = useState('')
   const [detallePag,  setDetallePag]  = useState(0)
@@ -145,14 +146,22 @@ export default function TorreControlSubastasPage() {
   const nombreAseg  = (id:number) => aseguradoras.find(a=>a.id===id)?.nombre_corto||`Aseg ${id}`
   const nombreAsesor= (id:number) => asesores.find(a=>a.id===id)?.nombre||`Asesor ${id}`
 
+  // ── Marcas únicas ─────────────────────────────────────────────────────────
+  const marcasUnicas = useMemo(()=>{
+    const s = new Set<string>()
+    datosMes.forEach(d=>{ if(d.marca && d.marca!=='Sin marca') s.add(d.marca) })
+    return ['Todas', ...Array.from(s).sort()]
+  },[datosMes])
+
   // ── Filtrado de vistas agregadas ──────────────────────────────────────────
   const mesFiltro = (d:any) => filtroMes==='todos'||d.mes_subasta===filtroMes
   const asegFiltro= (d:any) => !filtroAseg||d.aseguradora_id===filtroAseg
   const asrFiltro = (d:any) => !filtroAsesor||d.asesor_id===filtroAsesor
+  const mrcFiltro = (d:any) => filtroMarca==='Todas'||d.marca===filtroMarca
 
   // ── KPIs totales desde vistas ─────────────────────────────────────────────
   const kpi = useMemo(()=>{
-    const base = datosMes.filter(mesFiltro)
+    const base = datosMes.filter(d=>mesFiltro(d)&&mrcFiltro(d))
     const sum  = (k:keyof DatoMes)=>base.reduce((s,d)=>s+Number(d[k]||0),0)
     const total        = sum('total')
     const subastadas   = sum('subastadas')
@@ -175,7 +184,7 @@ export default function TorreControlSubastasPage() {
   // ── Evolución mensual ─────────────────────────────────────────────────────
   const evolucion = useMemo(()=>{
     return MESES_ORD.map((m,i)=>{
-      const rows = datosMes.filter(d=>d.mes_subasta===m&&asegFiltro(d as any)&&asrFiltro(d as any))
+      const rows = datosMes.filter(d=>d.mes_subasta===m&&asegFiltro(d as any)&&asrFiltro(d as any)&&mrcFiltro(d as any))
       if(!rows.length)return null
       const sum=(k:keyof DatoMes)=>rows.reduce((s,d)=>s+Number(d[k]||0),0)
       const sub=sum('subastadas'), auth=sum('auth_completa')+sum('auth_parcial'), fact=sum('facturadas')
@@ -185,12 +194,12 @@ export default function TorreControlSubastasPage() {
         ValSubastado:sum('valor_subastado'), ValAutorizado:sum('valor_autorizado'),
       }
     }).filter(Boolean) as any[]
-  },[datosMes, filtroAseg, filtroAsesor])
+  },[datosMes, filtroAseg, filtroAsesor, filtroMarca, filtroMes])
 
   // ── Por aseguradora agrupado ──────────────────────────────────────────────
   const porAseg = useMemo(()=>{
     const mapa:Record<number,any>={}
-    datosAseg.filter(mesFiltro).filter(asrFiltro).forEach(d=>{
+    datosAseg.filter(mesFiltro).filter(asrFiltro).filter(mrcFiltro).forEach(d=>{
       if(!mapa[d.aseguradora_id])mapa[d.aseguradora_id]={id:d.aseguradora_id,nombre:d.aseguradora||nombreAseg(d.aseguradora_id),total:0,autorizadas:0,no_auth:0,facturadas:0,radicadas:0,valSub:0,valAuth:0}
       const r=mapa[d.aseguradora_id]
       r.total+=Number(d.total||0);r.autorizadas+=Number(d.autorizadas||0);r.no_auth+=Number(d.no_autorizadas||0)
@@ -201,12 +210,12 @@ export default function TorreControlSubastasPage() {
       tasaAuth:r.total?r.autorizadas/r.total:0,
       convTotal:r.total?r.facturadas/r.total:0,
     })).sort((a:any,b:any)=>b.total-a.total)
-  },[datosAseg, filtroMes, filtroAsesor, aseguradoras])
+  },[datosAseg, filtroMes, filtroAsesor, filtroMarca, aseguradoras])
 
   // ── Por asesor agrupado ───────────────────────────────────────────────────
   const porAsesor = useMemo(()=>{
     const mapa:Record<number,any>={}
-    datosAsesor.filter(mesFiltro).filter(asegFiltro).forEach(d=>{
+    datosAsesor.filter(mesFiltro).filter(asegFiltro).filter(mrcFiltro).forEach(d=>{
       if(!mapa[d.asesor_id])mapa[d.asesor_id]={id:d.asesor_id,nombre:d.asesor||nombreAsesor(d.asesor_id),total:0,autorizadas:0,no_auth:0,facturadas:0,radicadas:0,valSub:0,valAuth:0,descSum:0,descN:0}
       const r=mapa[d.asesor_id]
       r.total+=Number(d.total||0);r.autorizadas+=Number(d.autorizadas||0);r.no_auth+=Number(d.no_autorizadas||0)
@@ -220,7 +229,7 @@ export default function TorreControlSubastasPage() {
       descProm:r.descN?r.descSum/r.descN:0,
       pctPart:kpi.total?r.total/kpi.total:0,
     })).sort((a:any,b:any)=>b.total-a.total)
-  },[datosAsesor, filtroMes, filtroAseg, kpi.total, asesores])
+  },[datosAsesor, filtroMes, filtroAseg, filtroMarca, kpi.total, asesores])
 
   // ── Evolución mensual por asesor ─────────────────────────────────────────
   const evolucionPorAsesorTC = useMemo(()=>{
@@ -276,6 +285,10 @@ export default function TorreControlSubastasPage() {
           <select value={anio} onChange={e=>setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
             {YEARS.map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={filtroMarca} onChange={e=>setFiltroMarca(e.target.value)}
+            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
+            {marcasUnicas.map(m=><option key={m} value={m}>{m==='Todas'?'🚗 Todas las marcas':m}</option>)}
           </select>
           <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
