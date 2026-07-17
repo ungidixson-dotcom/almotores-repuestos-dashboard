@@ -20,9 +20,11 @@ module.exports = {
         }
       },
       fontFamily: {
-        sans:  ['IBM Plex Sans', 'sans-serif'],
-        mono:  ['IBM Plex Mono', 'monospace'],
-        title: ['Space Grotesk', 'sans-serif'],
+        // Cuerpo de texto y títulos — Plus Jakarta Sans
+        sans:  ['Plus Jakarta Sans', 'sans-serif'],
+        title: ['Plus Jakarta Sans', 'sans-serif'],
+        // Cifras financieras, monoespaciado — Geist Mono
+        mono:  ['Geist Mono', 'monospace'],
       }
     }
   },
