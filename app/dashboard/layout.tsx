@@ -7,8 +7,7 @@ import {
   ChevronDown, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 
-// ── Estructura de navegación del Workspace ──────────────────────────────────
-type NavItem = { label: string; href: string; icon?: React.ReactNode }
+type NavItem  = { label: string; href: string; icon?: React.ReactNode }
 type NavGroup = { label: string; icon: React.ReactNode; href?: string; children?: NavItem[] }
 
 const CANALES: NavItem[] = [
@@ -37,17 +36,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ Facturación: true })
 
-  const toggleGroup = (label: string) =>
+  const toggleGroup   = (label: string) =>
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }))
-
-  const isActive = (href?: string) => href && pathname === href
-  const isGroupActive = (children?: NavItem[]) => children?.some(c => pathname === c.href)
+  const isActive      = (href?: string)        => href && pathname === href
+  const isGroupActive = (children?: NavItem[]) => children?.some(c => pathname.startsWith(c.href))
 
   return (
-    <div className="flex min-h-screen bg-brand-bg text-brand-text font-sans">
-      {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 bg-brand-surface border-r border-brand-border flex flex-col">
-        <div className="p-5 border-b border-brand-border">
+    <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-text font-sans">
+
+      {/* ── SIDEBAR FIJO ─────────────────────────────────────────────── */}
+      <aside className="w-64 shrink-0 bg-brand-surface border-r border-brand-border flex flex-col h-screen">
+
+        {/* Logo */}
+        <div className="p-5 border-b border-brand-border shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-brand-teal/15 border border-brand-teal/30 flex items-center justify-center">
               <LayoutGrid size={16} className="text-brand-teal" />
@@ -59,6 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
+        {/* Nav scrolleable */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           <p className="font-mono text-[10px] text-brand-muted uppercase tracking-wider px-2 mb-2">Informes</p>
           <ul className="space-y-1">
@@ -108,16 +110,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </ul>
         </nav>
 
-        <div className="p-4 border-t border-brand-border">
+        {/* Footer */}
+        <div className="p-4 border-t border-brand-border shrink-0">
           <div className="flex items-center gap-2">
             <FolderOpen size={13} className="text-brand-muted" />
             <p className="text-[10px] text-brand-muted font-mono">Repuestos & Accesorios</p>
           </div>
         </div>
+
       </aside>
 
-      {/* ── CONTENIDO ───────────────────────────────────────────────────── */}
-      <main className="flex-1 min-w-0">{children}</main>
+      {/* ── CONTENIDO SCROLLEABLE ────────────────────────────────────── */}
+      <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
+
     </div>
   )
 }
