@@ -118,6 +118,15 @@ interface Factura {
   base_imp: number
   mes: string
 }
+interface PipelineAnio {
+  anio: number | null
+  total: number
+  pend_auth: number
+  en_pedido: number
+  por_facturar: number
+  por_radicar: number
+  completadas: number
+}
 
 // ── Fetch centralizado ───────────────────────────────────────────────────────
 interface DatosApp {
@@ -127,6 +136,7 @@ interface DatosApp {
   asesores:     Asesor[]
   resumenMensual:   ResumenMensual[]
   mesesDisponibles: Array<{ anio: number; mes: string; orden: number }>
+  pipelineData:     PipelineAnio[]
 }
 
 async function fetchTodosDatos(): Promise<DatosApp> {
@@ -137,6 +147,7 @@ async function fetchTodosDatos(): Promise<DatosApp> {
     { data: ases },
     { data: resumen },
     { data: meses },
+    { data: pipeline },
   ] = await Promise.all([
     supabase.from('v_kpis_subastas').select(
       'anio,mes_subasta,marca,aseguradora_id,asesor_id,estado_autorizacion,ciudad_destino,total,valor_subastado,valor_autorizado,tiempo_promedio'
@@ -150,14 +161,18 @@ async function fetchTodosDatos(): Promise<DatosApp> {
       'anio,mes,orden,total_subastas,ganadas,no_autorizadas,valor_autorizado,valor_subastado,max_fecha_subasta'
     ),
     supabase.from('v_meses_disponibles').select('anio,mes,orden').order('anio').order('orden'),
+    supabase.from('v_subastas_pipeline').select(
+      'anio,total,pend_auth,en_pedido,por_facturar,por_radicar,completadas'
+    ).order('anio'),
   ])
   return {
-    kpiRows:          (kpis    as KpiRow[]         ) || [],
-    facturas:         (f       as Factura[]         ) || [],
-    aseguradoras:     (aseg    as Aseguradora[]     ) || [],
-    asesores:         (ases    as Asesor[]          ) || [],
-    resumenMensual:   (resumen as ResumenMensual[]  ) || [],
-    mesesDisponibles: (meses   as Array<{ anio: number; mes: string; orden: number }>) || [],
+    kpiRows:          (kpis     as KpiRow[]        ) || [],
+    facturas:         (f        as Factura[]        ) || [],
+    aseguradoras:     (aseg     as Aseguradora[]    ) || [],
+    asesores:         (ases     as Asesor[]         ) || [],
+    resumenMensual:   (resumen  as ResumenMensual[] ) || [],
+    mesesDisponibles: (meses    as Array<{ anio: number; mes: string; orden: number }>) || [],
+    pipelineData:     (pipeline as PipelineAnio[]   ) || [],
   }
 }
 
@@ -171,6 +186,7 @@ export default function Dashboard() {
   const [asesores,         setAsesores]          = useState<Asesor[]>([])
   const [resumenMensual,   setResumenMensual]    = useState<ResumenMensual[]>([])
   const [mesesDisponibles, setMesesDisponibles]  = useState<Array<{ anio: number; mes: string; orden: number }>>([])
+  const [pipelineData,     setPipelineData]      = useState<PipelineAnio[]>([])
 
   const [loading,              setLoading]              = useState(true)
   const [ultimaActualizacion,  setUltimaActualizacion]  = useState<Date | null>(null)
@@ -210,6 +226,7 @@ export default function Dashboard() {
     setAsesores(datos.asesores)
     setResumenMensual(datos.resumenMensual)
     setMesesDisponibles(datos.mesesDisponibles)
+    setPipelineData(datos.pipelineData)
     setUltimaActualizacion(new Date())
     setLoading(false)
   }, [router])
@@ -432,6 +449,26 @@ export default function Dashboard() {
     })
     return Object.entries(rangos).map(([rango, cantidad]) => ({ rango, cantidad }))
   }, [sf])
+
+  // ── Pipeline del año filtrado ────────────────────────────────────────────
+  const pipeline = useMemo(() => {
+    const row = pipelineData.find(p => p.anio === filtroAnio)
+    if (!row) return null
+    const autorizadas = row.total - row.pend_auth
+    return {
+      total:        row.total,
+      autorizadas,
+      en_pedido:    row.en_pedido,
+      por_facturar: row.por_facturar,
+      por_radicar:  row.por_radicar,
+      completadas:  row.completadas,
+      pct_auth:     row.total  > 0 ? (autorizadas   / row.total)      * 100 : 0,
+      pct_pedido:   autorizadas > 0 ? (row.en_pedido / autorizadas)    * 100 : 0,
+      pct_facturar: row.en_pedido  > 0 ? (row.por_facturar / row.en_pedido) * 100 : 0,
+      pct_radicar:  row.por_facturar + row.completadas > 0
+        ? (row.completadas / (row.por_facturar + row.completadas)) * 100 : 0,
+    }
+  }, [pipelineData, filtroAnio])
 
   // ── Proyección anual (opera sobre el año filtrado) ───────────────────────
   const proyeccionMes = useMemo(() => {
@@ -676,6 +713,77 @@ export default function Dashboard() {
           <StatBadge icon={<FileClock size={14}/>} label="Facturas pendientes" value={fKpis.pendientes} color="gold"/>
           <StatBadge icon={<FileX size={14}/>}     label="Facturas anuladas"   value={fKpis.anuladas}   color="red"/>
         </div>
+
+        {/* ── PIPELINE DE CONVERSIÓN ───────────────────────────────────── */}
+        {pipeline && (
+          <div className="mb-4 p-5 bg-brand-surface border border-brand-border rounded-xl">
+            <h3 className="font-title text-base font-semibold text-brand-text mb-1">
+              Pipeline de conversión · {filtroAnio}
+            </h3>
+            <p className="text-xs text-brand-subtle mb-5">
+              Flujo acumulado del año — de subasta a factura radicada
+            </p>
+            <div className="flex items-stretch gap-2">
+
+              {/* Etapa 1 — Total */}
+              <PipelineEtapa
+                label="Total subastas"
+                value={pipeline.total}
+                color="subtle"
+              />
+
+              <PipelineArrow pct={pipeline.pct_auth} label="autorizadas" />
+
+              {/* Etapa 2 — Autorizadas */}
+              <PipelineEtapa
+                label="Autorizadas"
+                value={pipeline.autorizadas}
+                color="teal"
+                pct={pipeline.pct_auth}
+              />
+
+              <PipelineArrow pct={pipeline.pct_pedido} label="en pedido" />
+
+              {/* Etapa 3 — En pedido */}
+              <PipelineEtapa
+                label="En pedido"
+                value={pipeline.en_pedido}
+                color="blue"
+                pct={pipeline.pct_pedido}
+              />
+
+              <PipelineArrow pct={null} label="" />
+
+              {/* Etapa 4 — Por facturar */}
+              <PipelineEtapa
+                label="Por facturar"
+                value={pipeline.por_facturar}
+                color="gold"
+                pct={null}
+              />
+
+              <PipelineArrow pct={null} label="" />
+
+              {/* Etapa 5 — Por radicar */}
+              <PipelineEtapa
+                label="Por radicar"
+                value={pipeline.por_radicar}
+                color="gold"
+                pct={null}
+              />
+
+              <PipelineArrow pct={null} label="" />
+
+              {/* Etapa 6 — Completadas */}
+              <PipelineEtapa
+                label="Radicadas"
+                value={pipeline.completadas}
+                color="teal"
+                pct={null}
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── GRÁFICAS PRINCIPALES ──────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
@@ -922,6 +1030,48 @@ function Panel({ title, sub, children }: {
       <h3 className="font-title text-base font-semibold text-brand-text">{title}</h3>
       <p className="text-xs text-brand-subtle mb-4">{sub}</p>
       {children}
+    </div>
+  )
+}
+
+function PipelineEtapa({ label, value, color, pct }: {
+  label: string
+  value: number
+  color: 'teal' | 'gold' | 'blue' | 'subtle'
+  pct?: number | null
+}) {
+  const colorMap: Record<string, string> = {
+    teal:   'text-brand-teal   border-brand-teal/30   bg-brand-teal/5',
+    gold:   'text-brand-gold   border-brand-gold/30   bg-brand-gold/5',
+    blue:   'text-blue-400     border-blue-400/30     bg-blue-400/5',
+    subtle: 'text-brand-subtle border-brand-border    bg-brand-bg',
+  }
+  const textColor: Record<string, string> = {
+    teal: 'text-brand-teal', gold: 'text-brand-gold',
+    blue: 'text-blue-400',   subtle: 'text-brand-subtle',
+  }
+  return (
+    <div className={`flex-1 min-w-0 border rounded-xl p-3 flex flex-col gap-1 ${colorMap[color]}`}>
+      <p className="font-mono text-[10px] text-brand-muted uppercase tracking-wider leading-tight">{label}</p>
+      <p className={`font-title font-bold text-2xl ${textColor[color]}`}>{value.toLocaleString('es-CO')}</p>
+      {pct != null && (
+        <p className="font-mono text-[10px] text-brand-muted">{pct.toFixed(1)}% del anterior</p>
+      )}
+    </div>
+  )
+}
+
+function PipelineArrow({ pct, label }: { pct: number | null; label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 shrink-0 w-8">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <path d="M4 10h12M12 6l4 4-4 4" stroke="#2A3340" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+      {pct != null && (
+        <span className="font-mono text-[9px] text-brand-muted text-center leading-tight">
+          {pct.toFixed(0)}%
+        </span>
+      )}
     </div>
   )
 }
