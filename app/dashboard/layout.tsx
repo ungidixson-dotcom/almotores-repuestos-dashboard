@@ -4,27 +4,24 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Receipt, FolderOpen, Calendar, Shield, User,
-  ChevronDown, ChevronRight, LayoutGrid,
+  ChevronDown, ChevronRight, LayoutGrid, BarChart2,
 } from 'lucide-react'
 
 type NavItem  = { label: string; href: string; icon?: React.ReactNode }
 type NavGroup = { label: string; icon: React.ReactNode; href?: string; children?: NavItem[] }
-
-const CANALES: NavItem[] = [
-  { label: 'Accesorios', href: '/dashboard/facturacion/canales/accesorios' },
-  { label: 'Taller',     href: '/dashboard/facturacion/canales/taller' },
-  { label: 'Mostrador',  href: '/dashboard/facturacion/canales/mostrador' },
-  { label: 'Mayoristas', href: '/dashboard/facturacion/canales/mayoristas' },
-  { label: 'Subastas',   href: '/dashboard/facturacion/canales/subastas' },
-  { label: 'Colisión',   href: '/dashboard/facturacion/canales/colision' },
-]
 
 const NAV: NavGroup[] = [
   {
     label: 'Facturación', icon: <Receipt size={16} />,
     children: [
       { label: 'Facturación General', href: '/dashboard/facturacion/general' },
-      ...CANALES.map(c => ({ label: c.label, href: c.href })),
+      { label: 'Accesorios',          href: '/dashboard/facturacion/canales/accesorios' },
+      { label: 'Taller',              href: '/dashboard/facturacion/canales/taller' },
+      { label: 'Mostrador',           href: '/dashboard/facturacion/canales/mostrador' },
+      { label: 'Mayoristas',          href: '/dashboard/facturacion/canales/mayoristas' },
+      { label: 'Subastas',            href: '/dashboard/facturacion/canales/subastas' },
+      { label: '↳ Torre de Control',  href: '/dashboard' },
+      { label: 'Colisión',            href: '/dashboard/facturacion/canales/colision' },
     ],
   },
   { label: 'Resumen Mensual', icon: <Calendar size={16} />, href: '/dashboard/resumen-mensual' },
@@ -39,7 +36,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const toggleGroup   = (label: string) =>
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }))
   const isActive      = (href?: string)        => href && pathname === href
-  const isGroupActive = (children?: NavItem[]) => children?.some(c => pathname.startsWith(c.href))
+  const isGroupActive = (children?: NavItem[]) =>
+    children?.some(c => pathname === c.href || pathname.startsWith(c.href + '/'))
 
   return (
     <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-text font-sans">
@@ -85,7 +83,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                               className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
                                 ${isActive(sub.href)
                                   ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                  : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
+                                  : sub.label.startsWith('↳')
+                                    ? 'text-brand-subtle hover:text-brand-teal hover:bg-brand-bg pl-5'
+                                    : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
                             >
                               {sub.label}
                             </Link>
