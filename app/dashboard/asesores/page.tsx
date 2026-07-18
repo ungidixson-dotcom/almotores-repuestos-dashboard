@@ -119,13 +119,13 @@ export default function AsesoresPage() {
   const porAsesor = useMemo(() => {
     const map: Record<string, {
       id: number; nombre: string; total: number; autorizadas: number
-      no_autorizadas: number; facturadas: number; radicadas: number
+      no_autorizadas: number; pendientes: number; facturadas: number; radicadas: number
       valor_autorizado: number; valor_subastado: number
       desc_sum: number; desc_count: number
     }> = {}
     sf.forEach(r => {
       const k = r.asesor || 'Sin nombre'
-      if (!map[k]) map[k] = { id: r.asesor_id, nombre: k, total: 0, autorizadas: 0, no_autorizadas: 0, facturadas: 0, radicadas: 0, valor_autorizado: 0, valor_subastado: 0, desc_sum: 0, desc_count: 0 }
+      if (!map[k]) map[k] = { id: r.asesor_id, nombre: k, total: 0, autorizadas: 0, no_autorizadas: 0, pendientes: 0, facturadas: 0, radicadas: 0, valor_autorizado: 0, valor_subastado: 0, desc_sum: 0, desc_count: 0 }
       map[k].total            += r.total || 0
       map[k].autorizadas      += r.autorizadas || 0
       map[k].no_autorizadas   += r.no_autorizadas || 0
@@ -133,6 +133,10 @@ export default function AsesoresPage() {
       map[k].radicadas        += r.radicadas || 0
       map[k].valor_autorizado += r.valor_autorizado || 0
       map[k].valor_subastado  += r.valor_subastado || 0
+      // pendientes = total - autorizadas - no_autorizadas - no_aplicadas (subastadas sin respuesta)
+      const resueltas_fila = (r.autorizadas || 0) + (r.no_autorizadas || 0)
+      const subastadas_fila = r.subastadas || 0
+      map[k].pendientes += Math.max(0, subastadas_fila - resueltas_fila)
       if (r.descuento_prom > 0) { map[k].desc_sum += r.descuento_prom; map[k].desc_count++ }
     })
     return Object.values(map).map(a => {
@@ -303,12 +307,12 @@ export default function AsesoresPage() {
                   <p className="font-title font-bold text-xl" style={{ color: COLORES_ASESORES[i % 4] }}>{a.autorizadas.toLocaleString('es-CO')}</p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] text-brand-muted mb-0.5">Tasa aut.</p>
+                  <p className="font-mono text-[10px] text-brand-muted mb-0.5">Tasa aut. <span className="text-brand-muted">(resueltas)</span></p>
                   <p className="font-mono font-semibold text-brand-teal">{fmtPct(a.tasa_auth)}</p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] text-brand-muted mb-0.5">Efectividad</p>
-                  <p className="font-mono font-semibold text-brand-gold">{fmtPct(a.efectividad)}</p>
+                  <p className="font-mono text-[10px] text-brand-muted mb-0.5">Pendientes resp.</p>
+                  <p className="font-mono font-semibold text-brand-subtle">{a.pendientes.toLocaleString('es-CO')}</p>
                 </div>
                 <div>
                   <p className="font-mono text-[10px] text-brand-muted mb-0.5">Desc. prom.</p>
@@ -398,7 +402,7 @@ export default function AsesoresPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-brand-border">
-                  {['Asesor','Total','Autorizadas','No aut.','Tasa aut.','Efectividad','Facturadas','Radicadas','Desc. prom.','Valor autorizado'].map(h => (
+                  {['Asesor','Total','Autorizadas','No aut.','Pend. resp.','Tasa aut. (resueltas)','Efectividad','Facturadas','Radicadas','Desc. prom.','Valor autorizado'].map(h => (
                     <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -415,6 +419,7 @@ export default function AsesoresPage() {
                     <td className="py-3 pr-4 font-mono text-brand-subtle">{a.total.toLocaleString('es-CO')}</td>
                     <td className="py-3 pr-4 font-mono text-brand-teal font-semibold">{a.autorizadas.toLocaleString('es-CO')}</td>
                     <td className="py-3 pr-4 font-mono text-brand-red">{a.no_autorizadas.toLocaleString('es-CO')}</td>
+                    <td className="py-3 pr-4 font-mono text-brand-subtle">{a.pendientes.toLocaleString('es-CO')}</td>
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-2">
                         <div className="w-14 h-1.5 bg-brand-border rounded-full overflow-hidden">
@@ -444,6 +449,7 @@ export default function AsesoresPage() {
                   <td className="py-3 pr-4 font-mono text-brand-subtle font-semibold">{kpis.total.toLocaleString('es-CO')}</td>
                   <td className="py-3 pr-4 font-mono text-brand-teal font-semibold">{kpis.autorizadas.toLocaleString('es-CO')}</td>
                   <td className="py-3 pr-4 font-mono text-brand-red font-semibold">{kpis.no_aut.toLocaleString('es-CO')}</td>
+                  <td className="py-3 pr-4 font-mono text-brand-subtle font-semibold">—</td>
                   <td className="py-3 pr-4 font-mono text-xs text-brand-subtle font-semibold">{fmtPct(kpis.tasa_auth)}</td>
                   <td className="py-3 pr-4"/>
                   <td className="py-3 pr-4 font-mono text-brand-gold font-semibold">{kpis.facturadas.toLocaleString('es-CO')}</td>
