@@ -907,7 +907,7 @@ export default function Dashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-brand-border">
-                    {['Asesor','Total','Ganadas','No autorizadas','Pendientes','Tasa autorización','Efectividad','Valor autorizado'].map(h => (
+                    {['Asesor','Total','Ganadas','No autorizadas','Sin respuesta','Tasa aut. (resueltas)','Efectividad','Valor autorizado'].map(h => (
                       <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
                     ))}
                   </tr>
