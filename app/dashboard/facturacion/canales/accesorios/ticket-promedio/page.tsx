@@ -142,13 +142,16 @@ export default function TicketPromedioPage() {
 
   // ── KPIs globales del mes ────────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const neto      = sedeF.reduce((a, r) => a + (r.neto_total || 0), 0)
-    const vehiculos = sedeF.reduce((a, r) => a + (r.vehiculos_con_accesorios || 0), 0)
-    const facturas  = sedeF.reduce((a, r) => a + (r.facturas || 0), 0)
-    // Ticket: neto / vehiculos con accesorios (proxy hasta tener vehículos vendidos)
-    const ticket    = vehiculos > 0 ? neto / vehiculos : 0
-    return { neto, vehiculos, facturas, ticket }
-  }, [sedeF])
+    const neto               = sedeF.reduce((a, r) => a + (r.neto_total || 0), 0)
+    const vehiculos          = sedeF.reduce((a, r) => a + (r.vehiculos_con_accesorios || 0), 0)
+    const facturas           = sedeF.reduce((a, r) => a + (r.facturas || 0), 0)
+    const vehiculos_vendidos = asesorF.reduce((a, r) => a + (r.vehiculos_vendidos || 0), 0)
+    // Ticket real = neto / vehículos vendidos; si no hay, proxy con placas con accesorio
+    const ticket = vehiculos_vendidos > 0
+      ? neto / vehiculos_vendidos
+      : vehiculos > 0 ? neto / vehiculos : 0
+    return { neto, vehiculos, facturas, vehiculos_vendidos, ticket }
+  }, [sedeF, asesorF])
 
   // ── Evolución mensual por sede ───────────────────────────────────────────
   const evolucionMensual = useMemo(() => {
@@ -297,12 +300,15 @@ export default function TicketPromedioPage() {
         )}
 
         {/* KPIs GLOBALES */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
           <KpiCard icon={<ShoppingBag size={15}/>} label={`Neto accesorios ${mesNombre}`}
             value={fmtCOP(kpis.neto)} accent="teal" small/>
+          <KpiCard icon={<Car size={15}/>} label="Vehículos vendidos"
+            value={kpis.vehiculos_vendidos.toString()} accent="blue"
+            hint="según facturación de vehículos"/>
           <KpiCard icon={<Car size={15}/>} label="Vehículos con accesorios"
-            value={kpis.vehiculos.toString()} accent="blue"
-            hint="placas únicas con factura"/>
+            value={kpis.vehiculos.toString()} accent="subtle"
+            hint="placas únicas con factura acc."/>
           <KpiCard icon={<Target size={15}/>} label="Ticket promedio"
             value={fmtCOP(kpis.ticket)}
             accent={kpis.ticket >= META_TICKET ? 'teal' : kpis.ticket >= META_TICKET * 0.8 ? 'gold' : 'red'}
