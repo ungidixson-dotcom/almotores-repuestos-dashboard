@@ -347,23 +347,35 @@ export default function ResumenMensualPage() {
         <div className="mb-4">
           <Panel
             title={filtroAnioComp ? `Valor autorizado — ${filtroAnio} vs ${filtroAnioComp}` : `Valor autorizado por mes — ${filtroAnio}`}
-            sub="Línea principal = año seleccionado · línea punteada = año comparativo"
+            sub={filtroAnioComp ? `Área = ${filtroAnio} · línea punteada = ${filtroAnioComp}` : 'Evolución mensual del valor autorizado'}
           >
-            <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart data={serieValor} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="mesCorto" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={serieValor} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad_resumen_anio" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/>
+                    <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="mesCorto" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
                 <Tooltip
-                  contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                   formatter={(v: number, name: string) => [v ? fmtCOP(v) : '—', name]}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8' }}/>
+                  labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
+                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8', paddingTop: 8 }}/>
                 <Area type="monotone" dataKey="valor_aut" name={`${filtroAnio}`}
-                  fill="#4FD1C5" fillOpacity={0.1} stroke="#4FD1C5" strokeWidth={2.5} connectNulls/>
+                  fill="url(#grad_resumen_anio)" stroke="#4FD1C5" strokeWidth={2.5}
+                  dot={{ fill: '#4FD1C5', r: 4, strokeWidth: 2, stroke: '#0F1419' }}
+                  activeDot={{ r: 6, strokeWidth: 2, stroke: '#0F1419' }}
+                  connectNulls/>
                 {filtroAnioComp && (
                   <Line type="monotone" dataKey="valorComp" name={`${filtroAnioComp}`}
-                    stroke="#E8A33D" strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls/>
+                    stroke="#E8A33D" strokeWidth={2} strokeDasharray="6 3"
+                    dot={{ fill: '#E8A33D', r: 3, strokeWidth: 2, stroke: '#0F1419' }}
+                    activeDot={{ r: 5, fill: '#E8A33D' }}
+                    connectNulls/>
                 )}
               </ComposedChart>
             </ResponsiveContainer>
@@ -376,10 +388,10 @@ export default function ResumenMensualPage() {
             <Panel title="Volumen mensual por estado" sub="Autorizadas · No autorizadas · Pendientes respuesta">
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={resumenPorMes} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                  <XAxis dataKey="mesCorto" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                  <XAxis dataKey="mesCorto" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
                   <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
-                  <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}/>
+                  <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
                   <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8' }}/>
                   <Bar dataKey="auth_completa" name="Auth. completa" fill="#4FD1C5" stackId="a"/>
                   <Bar dataKey="auth_parcial"  name="Auth. parcial"  fill="#34D399" stackId="a"/>
@@ -392,10 +404,10 @@ export default function ResumenMensualPage() {
             <Panel title="Valor autorizado por marca" sub="Desglose mensual por cada marca">
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={seriePorMarca} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                  <XAxis dataKey="mesCorto" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                  <XAxis dataKey="mesCorto" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
                   <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                  <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
+                  <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                     formatter={(v: number) => [fmtCOP(v), '']}/>
                   <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8' }}/>
                   {marcasActivas.map(marca => (
