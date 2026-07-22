@@ -147,7 +147,27 @@ export default function FacGeneralPage() {
   const hoy  = new Date()
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mes,  setMes]  = useState(hoy.getMonth() + 1)
-  const [sede, setSede] = useState('Todas')
+  const [sedes, setSedes] = useState<Set<string>>(new Set(['Todas']))
+
+  // Lógica de toggle multiselección
+  const toggleSede = (s: string) => {
+    setSedes(prev => {
+      const next = new Set(prev)
+      if (s === 'Todas') return new Set(['Todas'])
+      next.delete('Todas')
+      if (next.has(s)) {
+        next.delete(s)
+        if (next.size === 0) return new Set(['Todas'])
+      } else {
+        next.add(s)
+        // Si están todas las sedes individuales seleccionadas → colapsar a 'Todas'
+        const indiv = ['Norte', 'Pasoancho', 'Sede 39']
+        if (indiv.every(i => next.has(i))) return new Set(['Todas'])
+      }
+      return next
+    })
+  }
+  const todasActivo = sedes.has('Todas')
 
   const [filas,     setFilas]     = useState<FilaVista[]>([])
   const [loading,   setLoading]   = useState(true)
@@ -188,17 +208,16 @@ export default function FacGeneralPage() {
     const mesClave = MESES_KEY[mes - 1]
     return filas.filter(f => {
       if (f.mes !== mesClave) return false
-      if (sede === 'Todas') return true
-      // Colisión no tiene sede Norte/Pasoancho/Sede 39 — siempre se excluye al filtrar
+      if (todasActivo) return true
       if (f.canal === 'Colisión') return false
-      return f.sede === sede
+      return sedes.has(f.sede)
     })
-  }, [filas, mes, sede])
+  }, [filas, mes, sedes, todasActivo])
 
   // ── Datos por canal ───────────────────────────────────────────────────────
   const canalesData = useMemo((): CanalData[] => {
     return CANALES_CONFIG
-      .filter(c => sede === 'Todas' || c.canal !== 'Colisión')
+      .filter(c => todasActivo || c.canal !== 'Colisión')
       .map(c => {
         // Sumar todas las filas que corresponden a este canal (puede haber varias sedes)
         const filasCanal = filasFiltradas.filter(f => f.canal === c.canal)
@@ -219,7 +238,7 @@ export default function FacGeneralPage() {
 
         return { ...c, neto, costo, util, pctUtil, ppto, pct, porDia, neces, pron, pctPron, estado }
       })
-  }, [filasFiltradas, dhTransc, dhRest, sede])
+  }, [filasFiltradas, dhTransc, dhRest, todasActivo])
 
   // ── Totales ───────────────────────────────────────────────────────────────
   const totalNeto    = canalesData.reduce((s, c) => s + c.neto, 0)
@@ -266,16 +285,27 @@ export default function FacGeneralPage() {
           <h1 className="text-2xl font-bold font-title text-brand-text">Facturación General</h1>
           <p className="text-sm text-brand-subtle mt-0.5">
             Seguimiento vs presupuesto · pronóstico · utilidad · {MESES_LABEL[mes - 1]} {anio}
+            {!todasActivo ? ` · ${Array.from(sedes).join(' + ')}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex rounded-lg border border-brand-border overflow-hidden">
-            {SEDES_LIST.map(s => (
-              <button key={s} onClick={() => setSede(s)}
-                className={`px-3 py-2 text-xs font-mono transition-colors ${
-                  sede === s ? 'bg-brand-teal text-black' : 'text-brand-subtle hover:text-brand-text'
-                }`}>{s}</button>
-            ))}
+            {SEDES_LIST.map(s => {
+              const activo = s === 'Todas' ? todasActivo : sedes.has(s)
+              return (
+                <button key={s} onClick={() => toggleSede(s)}
+                  className={`px-3 py-2 text-xs font-mono transition-colors relative ${
+                    activo
+                      ? 'bg-brand-teal text-black font-semibold'
+                      : 'text-brand-subtle hover:text-brand-text hover:bg-brand-surface'
+                  }`}>
+                  {s}
+                  {activo && s !== 'Todas' && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-teal rounded-full border border-black"/>
+                  )}
+                </button>
+              )
+            })}
           </div>
           <select value={anio} onChange={e => setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
@@ -309,7 +339,7 @@ export default function FacGeneralPage() {
           <div>
             <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">
               Avance vs presupuesto — {MESES_LABEL[mes - 1]} {anio}
-              {sede !== 'Todas' ? ` · ${sede}` : ''}
+              {!todasActivo ? ` · ${Array.from(sedes).join(' + ')}` : ''}
             </p>
             <div className="flex items-baseline gap-3 flex-wrap">
               <span className="text-4xl font-bold font-title" style={{ color: colorGeneral }}>
@@ -386,7 +416,7 @@ export default function FacGeneralPage() {
       {/* ── Círculos de progreso por canal ── */}
       <Panel>
         <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-6">
-          Cumplimiento vs presupuesto por canal · {sede !== 'Todas' ? sede : 'Todas las sedes'}
+          Cumplimiento vs presupuesto por canal · {todasActivo ? 'Todas las sedes' : Array.from(sedes).join(' + ')}
         </h2>
         <div className="grid grid-cols-3 md:grid-cols-6 gap-6">
           {canalesData.map(c => {
@@ -443,7 +473,7 @@ export default function FacGeneralPage() {
       {/* ── Tabla por canal ── */}
       <Panel>
         <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-          Detalle por canal · {sede !== 'Todas' ? sede : 'Todas las sedes'}
+          Detalle por canal · {todasActivo ? 'Todas las sedes' : Array.from(sedes).join(' + ')}
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
