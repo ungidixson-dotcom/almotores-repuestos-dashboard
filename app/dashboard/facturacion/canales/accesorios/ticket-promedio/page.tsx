@@ -4,8 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, LineChart, Line, Legend,
-  ReferenceLine,
+  ResponsiveContainer, Cell, AreaChart, Area, Legend,
+  ReferenceLine, ComposedChart, Line,
 } from 'recharts'
 import { RefreshCw, Target, TrendingUp, TrendingDown, Car, ShoppingBag, AlertTriangle } from 'lucide-react'
 
@@ -396,44 +396,78 @@ export default function TicketPromedioPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 
           {/* Evolución mensual del ticket */}
-          <Panel title="Ticket promedio mensual" sub={`Neto accesorios / vehículos con accesorios · ${filtroAnio}`}>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+          <Panel title="Ticket promedio mensual" sub={`Neto accesorios / vehículos vendidos · ${filtroAnio} · línea roja = meta $2.2M`}>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
+                <defs>
+                  {sedes.map(sede => (
+                    <linearGradient key={sede} id={`grad_${sede.replace(' ','_')}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={COLORES_SEDE[sede]} stopOpacity={0.35}/>
+                      <stop offset="100%" stopColor={COLORES_SEDE[sede]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                  <linearGradient id="grad_meta" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#E5484D" stopOpacity={0.08}/>
+                    <stop offset="100%" stopColor="#E5484D" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
                   tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                <ReferenceLine y={META_TICKET} stroke="#E5484D" strokeDasharray="4 2"
-                  label={{ value: 'Meta', fill: '#E5484D', fontSize: 10, position: 'right' }}/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
-                  formatter={(v: number) => [fmtCOP(v), '']}/>
-                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8' }}/>
+                <ReferenceLine y={META_TICKET} stroke="#E5484D" strokeWidth={1.5} strokeDasharray="6 3"
+                  label={{ value: 'Meta $2.2M', fill: '#E5484D', fontSize: 10, position: 'right' }}/>
+                <Tooltip
+                  contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+                  formatter={(v: number, name: string) => [fmtCOP(v), name]}
+                  labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
+                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8', paddingTop: 8 }}/>
                 {sedes.map(sede => (
-                  <Line key={sede} type="monotone" dataKey={sede}
+                  <Area key={sede} type="monotone" dataKey={sede} name={sede}
                     stroke={COLORES_SEDE[sede]} strokeWidth={2.5}
-                    dot={{ fill: COLORES_SEDE[sede], r: 4, strokeWidth: 0 }} connectNulls/>
+                    fill={`url(#grad_${sede.replace(' ','_')})`}
+                    dot={{ fill: COLORES_SEDE[sede], r: 4, strokeWidth: 2, stroke: '#0F1419' }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#0F1419' }}
+                    connectNulls/>
                 ))}
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </Panel>
 
-          {/* Ticket diario acumulado del mes */}
+          {/* Ticket acumulado diario del mes */}
           <Panel title={`Ticket acumulado diario — ${mesNombre} ${filtroAnio}`}
-            sub="Línea roja = meta $2.200.000">
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={acumuladoDiario} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="dia" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+            sub="Área teal = ticket acumulado · línea punteada = ticket del día · rojo = meta">
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={acumuladoDiario} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad_acum" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/>
+                    <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/>
+                  </linearGradient>
+                  <linearGradient id="grad_zona_meta" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.05}/>
+                    <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="dia" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
                   tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                <ReferenceLine y={META_TICKET} stroke="#E5484D" strokeDasharray="4 2"/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
-                  formatter={(v: number, name: string) => [fmtCOP(v), name === 'ticket_acum' ? 'Ticket acumulado' : 'Ticket del día']}/>
-                <Line type="monotone" dataKey="ticket_acum" name="ticket_acum"
-                  stroke="#4FD1C5" strokeWidth={2.5} dot={false}/>
+                <ReferenceLine y={META_TICKET} stroke="#E5484D" strokeWidth={1.5} strokeDasharray="6 3"
+                  label={{ value: '$2.2M', fill: '#E5484D', fontSize: 10, position: 'right' }}/>
+                <Tooltip
+                  contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+                  formatter={(v: number, name: string) => [fmtCOP(v), name === 'ticket_acum' ? 'Acumulado' : 'Del día']}
+                  labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
+                {/* Área sombreada del acumulado */}
+                <Area type="monotone" dataKey="ticket_acum" name="ticket_acum"
+                  stroke="#4FD1C5" strokeWidth={2.5} fill="url(#grad_acum)"
+                  dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#0F1419', fill: '#4FD1C5' }}/>
+                {/* Línea punteada del día */}
                 <Line type="monotone" dataKey="ticket_dia" name="ticket_dia"
-                  stroke="#8AA4C8" strokeWidth={1} strokeDasharray="3 2" dot={false}/>
-              </LineChart>
+                  stroke="#E8A33D" strokeWidth={1.5} strokeDasharray="4 3"
+                  dot={false} activeDot={{ r: 4, fill: '#E8A33D' }}/>
+              </ComposedChart>
             </ResponsiveContainer>
           </Panel>
         </div>
@@ -443,19 +477,25 @@ export default function TicketPromedioPage() {
           <Panel title={`Facturación diaria accesorios — ${mesNombre} ${filtroAnio}`}
             sub="Valor neto facturado por día">
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={acumuladoDiario} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="dia" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+              <AreaChart data={acumuladoDiario} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad_neto_dia" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'} stopOpacity={0.5}/>
+                    <stop offset="100%" stopColor={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'} stopOpacity={0.05}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="dia" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
                   tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
+                <Tooltip
+                  contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                   formatter={(v: number) => [fmtCOP(v), 'Neto del día']}/>
-                <Bar dataKey="neto_dia" name="Neto del día" radius={[4, 4, 0, 0]}>
-                  {acumuladoDiario.map((_, i) => (
-                    <Cell key={i} fill={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'}/>
-                  ))}
-                </Bar>
-              </BarChart>
+                <Area dataKey="neto_dia" name="Neto del día" type="monotone"
+                  stroke={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'}
+                  strokeWidth={2} fill="url(#grad_neto_dia)"
+                  dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#0F1419' }}/>
+              </AreaChart>
             </ResponsiveContainer>
           </Panel>
         </div>
