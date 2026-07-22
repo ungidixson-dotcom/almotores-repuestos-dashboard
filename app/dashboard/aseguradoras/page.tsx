@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, LineChart, Line, Legend,
+  ResponsiveContainer, Cell, AreaChart, Area, Legend,
 } from 'recharts'
 import { RefreshCw, Shield, TrendingUp, CheckCircle, FileCheck, FileClock } from 'lucide-react'
 
@@ -330,21 +330,33 @@ export default function AseguradorasPage() {
         {/* EVOLUCIÓN MENSUAL TOP 5 */}
         <div className="mb-4">
           <Panel title="Evolución mensual · Top 5 aseguradoras" sub={`Valor autorizado por mes — ${filtroAnio}`}>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={{ stroke: '#2A3340' }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
+                <defs>
+                  {top5.map((_, i) => (
+                    <linearGradient key={i} id={`grad_aseg_${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={COLORES[i % COLORES.length]} stopOpacity={0.3}/>
+                      <stop offset="100%" stopColor={COLORES[i % COLORES.length]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
                 <Tooltip
-                  contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                   formatter={(v: number) => [fmtCOP(v), '']}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8' }}/>
+                  labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
+                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8', paddingTop: 8 }}/>
                 {top5.map((nombre, i) => (
-                  <Line key={nombre} type="monotone" dataKey={nombre} stroke={COLORES[i % COLORES.length]}
-                    strokeWidth={2} dot={false} connectNulls/>
+                  <Area key={nombre} type="monotone" dataKey={nombre}
+                    stroke={COLORES[i % COLORES.length]} strokeWidth={2.5}
+                    fill={`url(#grad_aseg_${i})`}
+                    dot={false}
+                    activeDot={{ r: 5, strokeWidth: 2, stroke: '#0F1419', fill: COLORES[i % COLORES.length] }}
+                    connectNulls/>
                 ))}
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </Panel>
         </div>
