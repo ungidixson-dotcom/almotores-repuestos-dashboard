@@ -29,6 +29,7 @@ const NAV: NavSection[] = [
           { type: 'leaf', label: 'Facturación',      href: '/dashboard/facturacion/canales/accesorios' },
           { type: 'leaf', label: 'Comisiones',        href: '/dashboard/facturacion/canales/accesorios/comisiones' },
           { type: 'leaf', label: 'Ventas por asesor', href: '/dashboard/facturacion/canales/accesorios/ventas-asesor' },
+          { type: 'leaf', label: 'Ticket promedio',   href: '/dashboard/facturacion/canales/accesorios/ticket-promedio' },
         ],
       },
       { type: 'leaf', label: 'Taller',     href: '/dashboard/facturacion/canales/taller' },
