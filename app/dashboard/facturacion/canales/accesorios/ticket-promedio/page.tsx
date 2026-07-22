@@ -197,18 +197,21 @@ export default function TicketPromedioPage() {
   const porSede = useMemo(() =>
     ['Norte', 'Pasoancho', 'Calle 9'].map(sede => {
       const row = dataSede.find(r => r.mes_num === filtroMes && r.sede === sede)
-      const neto             = row?.neto_accesorios || 0
-      const vehiculos_vend   = row?.vehiculos_vendidos || 0
-      const vehiculos_acc    = row?.vehiculos_con_accesorios || 0
-      const ticket_real      = row?.ticket_real || 0
-      const ticket_parcial   = row?.ticket_parcial || 0
-      const pctMeta          = (ticket_real / META_TICKET) * 100
+      // Vehículos vendidos: suma desde dataAsesor (disponible aunque no haya accesorios en Dropbox)
+      const vehiculos_vend = dataAsesor
+        .filter(r => r.mes_num === filtroMes && r.sede === sede)
+        .reduce((a, r) => a + (r.vehiculos_vendidos || 0), 0)
+      const neto           = row?.neto_accesorios || 0
+      const vehiculos_acc  = row?.vehiculos_con_accesorios || 0
+      const ticket_real    = vehiculos_vend > 0 ? neto / vehiculos_vend : 0
+      const ticket_parcial = vehiculos_acc  > 0 ? neto / vehiculos_acc  : 0
+      const pctMeta        = (ticket_real / META_TICKET) * 100
       return {
         sede, neto, vehiculos_vend, vehiculos_acc,
         facturas: row?.facturas || 0,
         ticket_real, ticket_parcial, pctMeta,
       }
-    }), [dataSede, filtroMes])
+    }), [dataSede, dataAsesor, filtroMes])
 
   if (loading) return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center flex-col gap-3">
