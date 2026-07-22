@@ -22,7 +22,11 @@ const MESES_SHORT = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','O
 interface FilaSede {
   sede: string; mes_num: number; mes: string
   vehiculos_con_accesorios: number; facturas: number
-  neto_total: number; asesores_activos: number
+  neto_accesorios: number; asesores_activos: number
+  vehiculos_vendidos: number
+  ticket_real: number | null
+  ticket_parcial: number | null
+  pct_vs_meta: number | null
 }
 interface FilaDiario {
   fecha: string; sede: string
@@ -51,8 +55,8 @@ const colorTicket = (ticket: number | null): string => {
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 async function fetchDatos(anio: number, mes: number | null) {
   const [{ data: sede }, { data: diario }, { data: asesor }] = await Promise.all([
-    supabase.from('v_comisiones_acc_sede')
-      .select('sede,mes_num,mes,vehiculos_con_accesorios,facturas,neto_total,asesores_activos')
+    supabase.from('v_ticket_real_sede')
+      .select('sede,mes_num,mes,vehiculos_con_accesorios,facturas,neto_accesorios,asesores_activos,vehiculos_vendidos,ticket_real,ticket_parcial,pct_vs_meta')
       .eq('anio', anio),
     supabase.from('v_comisiones_acc_diario')
       .select('fecha,sede,vehiculos_dia,facturas_dia,neto_dia')
@@ -142,7 +146,7 @@ export default function TicketPromedioPage() {
 
   // ── KPIs globales del mes ────────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const neto               = sedeF.reduce((a, r) => a + (r.neto_total || 0), 0)
+    const neto               = sedeF.reduce((a, r) => a + (r.neto_accesorios || 0), 0)
     const vehiculos          = sedeF.reduce((a, r) => a + (r.vehiculos_con_accesorios || 0), 0)
     const facturas           = sedeF.reduce((a, r) => a + (r.facturas || 0), 0)
     const vehiculos_vendidos = asesorF.reduce((a, r) => a + (r.vehiculos_vendidos || 0), 0)
@@ -160,8 +164,8 @@ export default function TicketPromedioPage() {
       const sedes = filtroSede === 'Todas' ? ['Norte', 'Pasoancho', 'Calle 9'] : [filtroSede]
       sedes.forEach(sede => {
         const row = dataSede.find(r => r.mes_num === mesNum && r.sede === sede)
-        const neto      = row?.neto_total || 0
-        const vehiculos = row?.vehiculos_con_accesorios || 0
+        const neto      = row?.neto_accesorios || 0
+        const vehiculos = row?.vehiculos_vendidos || 0
         entry[sede] = vehiculos > 0 ? Math.round(neto / vehiculos) : 0
       })
       return entry
@@ -193,11 +197,17 @@ export default function TicketPromedioPage() {
   const porSede = useMemo(() =>
     ['Norte', 'Pasoancho', 'Calle 9'].map(sede => {
       const row = dataSede.find(r => r.mes_num === filtroMes && r.sede === sede)
-      const neto      = row?.neto_total || 0
-      const vehiculos = row?.vehiculos_con_accesorios || 0
-      const ticket    = vehiculos > 0 ? Math.round(neto / vehiculos) : 0
-      return { sede, neto, vehiculos, facturas: row?.facturas || 0, ticket,
-        pctMeta: (ticket / META_TICKET) * 100 }
+      const neto             = row?.neto_accesorios || 0
+      const vehiculos_vend   = row?.vehiculos_vendidos || 0
+      const vehiculos_acc    = row?.vehiculos_con_accesorios || 0
+      const ticket_real      = row?.ticket_real || 0
+      const ticket_parcial   = row?.ticket_parcial || 0
+      const pctMeta          = (ticket_real / META_TICKET) * 100
+      return {
+        sede, neto, vehiculos_vend, vehiculos_acc,
+        facturas: row?.facturas || 0,
+        ticket_real, ticket_parcial, pctMeta,
+      }
     }), [dataSede, filtroMes])
 
   if (loading) return (
@@ -338,28 +348,42 @@ export default function TicketPromedioPage() {
                     style={{ background: COLORES_SEDE[s.sede] }}>Activo</span>
                 )}
               </div>
-              <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket promedio</p>
-              <p className="font-title font-bold text-2xl mb-1" style={{ color: colorTicket(s.ticket) }}>
-                {s.ticket > 0 ? fmtCOP(s.ticket) : '—'}
+
+              {/* TICKET REAL — grande */}
+              <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket real (neto / vehículos vendidos)</p>
+              <p className="font-title font-bold text-2xl mb-1" style={{ color: colorTicket(s.ticket_real) }}>
+                {s.ticket_real > 0 ? fmtCOP(s.ticket_real) : '—'}
               </p>
               {/* Barra vs meta */}
-              <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-2">
+              <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-1">
                 <div className="h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(s.pctMeta, 100)}%`, background: colorTicket(s.ticket) }}/>
+                  style={{ width: `${Math.min(s.pctMeta, 100)}%`, background: colorTicket(s.ticket_real) }}/>
               </div>
-              <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-2">
+              <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-3">
                 <span>{fmtPct(s.pctMeta)} de la meta</span>
                 <span>Meta: {fmtM(META_TICKET)}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-brand-border/50">
+
+              {/* Datos principales */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <div>
                   <p className="font-mono text-[10px] text-brand-muted">Neto</p>
                   <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtM(s.neto)}</p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Vehículos</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{s.vehiculos}</p>
+                  <p className="font-mono text-[10px] text-brand-muted">Vehículos vendidos</p>
+                  <p className="font-mono text-xs text-brand-subtle font-semibold">{s.vehiculos_vend}</p>
                 </div>
+              </div>
+
+              {/* TICKET PARCIAL — pequeño, separador */}
+              <div className="pt-2 border-t border-brand-border/50">
+                <p className="font-mono text-[10px] text-brand-muted mb-0.5">
+                  Ticket c/accesorios ({s.vehiculos_acc} veh.)
+                </p>
+                <p className="font-mono text-xs font-semibold" style={{ color: colorTicket(s.ticket_parcial) }}>
+                  {s.ticket_parcial > 0 ? fmtCOP(s.ticket_parcial) : '—'}
+                </p>
               </div>
             </button>
           ))}
