@@ -268,6 +268,12 @@ export default function TallerPage() {
   const pctPronos  = totalPpto ? (pronostico / totalPpto) * 100 : 0
   const colorAvance = pctPronos >= 95 ? '#68D391' : pctPronos >= 85 ? '#F6AD55' : '#FC8181'
 
+  // ── Tickets promedio ──────────────────────────────────────────────────────
+  const ordenesUnicas   = new Set(lineasFiltradas.map(l => l.referencia)).size
+  const vehiculosUnicos = new Set(lineasFiltradas.map(l => l.cuenta)).size
+  const ticketPorOrden    = ordenesUnicas   > 0 ? totalNeto / ordenesUnicas   : 0
+  const ticketPorVehiculo = vehiculosUnicos > 0 ? totalNeto / vehiculosUnicos : 0
+
   // ── Desglose por tipo ─────────────────────────────────────────────────────
   const porTipo = useMemo(() => {
     return ['Clientes', 'Garantías', 'Interno'].map(t => {
@@ -477,6 +483,28 @@ export default function TallerPage() {
         <KpiCard label="Pronóstico cierre" value={fmtCOP(pronostico)}
           sub={`${fmtPct(pctPronos)} del presupuesto`}
           accent={pctPronos >= 95 ? 'text-green-400' : pctPronos >= 85 ? 'text-yellow-400' : 'text-red-400'} />
+      </div>
+
+      {/* ── Tickets promedio ── */}
+      <div className="grid grid-cols-2 gap-4">
+        <Panel className="border-brand-teal/30">
+          <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">
+            🔧 Ticket promedio por orden facturada
+          </p>
+          <p className="text-2xl font-bold font-title text-brand-teal">{fmtCOP(ticketPorOrden)}</p>
+          <p className="text-xs text-brand-subtle mt-1">
+            {fmtCOP(totalNeto)} ÷ {ordenesUnicas.toLocaleString('es-CO')} órdenes
+          </p>
+        </Panel>
+        <Panel className="border-brand-gold/30">
+          <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">
+            🚗 Ticket promedio por vehículo
+          </p>
+          <p className="text-2xl font-bold font-title text-brand-gold">{fmtCOP(ticketPorVehiculo)}</p>
+          <p className="text-xs text-brand-subtle mt-1">
+            {fmtCOP(totalNeto)} ÷ {vehiculosUnicos.toLocaleString('es-CO')} vehículos únicos
+          </p>
+        </Panel>
       </div>
 
       {/* Cards resumen por sede */}
