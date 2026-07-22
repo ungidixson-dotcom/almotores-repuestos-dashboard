@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, LineChart, Line, Legend, RadarChart,
+  ResponsiveContainer, Cell, AreaChart, Area, Legend, RadarChart,
   PolarGrid, PolarAngleAxis, Radar,
 } from 'recharts'
 import { RefreshCw, User, TrendingUp, CheckCircle, FileCheck, FileClock, Percent } from 'lucide-react'
@@ -378,20 +378,34 @@ export default function AsesoresPage() {
         {/* EVOLUCIÓN MENSUAL */}
         <div className="mb-4">
           <Panel title="Evolución mensual por asesor" sub={`Valor autorizado acumulado — ${filtroAnio}`}>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
+                <defs>
+                  {porAsesor.map((a, i) => (
+                    <linearGradient key={i} id={`grad_asesor_ev_${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={COLORES_ASESORES[i % 4]} stopOpacity={0.35}/>
+                      <stop offset="100%" stopColor={COLORES_ASESORES[i % 4]} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
                   interval={0} angle={-30} textAnchor="end" height={40}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
-                  formatter={(v: number) => [fmtCOP(v), '']}/>
-                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8' }}/>
+                <Tooltip
+                  contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+                  formatter={(v: number) => [fmtCOP(v), '']}
+                  labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
+                <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8', paddingTop: 8 }}/>
                 {porAsesor.map((a, i) => (
-                  <Line key={a.nombre} type="monotone" dataKey={a.nombre} stroke={COLORES_ASESORES[i % 4]}
-                    strokeWidth={2.5} dot={false} connectNulls name={a.nombre.split(' ')[0]}/>
+                  <Area key={a.nombre} type="monotone" dataKey={a.nombre}
+                    stroke={COLORES_ASESORES[i % 4]} strokeWidth={2.5}
+                    fill={`url(#grad_asesor_ev_${i})`}
+                    dot={false}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#0F1419', fill: COLORES_ASESORES[i % 4] }}
+                    connectNulls name={a.nombre.split(' ')[0]}/>
                 ))}
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </Panel>
         </div>
