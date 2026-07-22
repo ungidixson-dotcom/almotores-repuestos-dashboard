@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  AreaChart, Area, ComposedChart, Line, ReferenceLine,
 } from 'recharts'
 import {
   LogOut, TrendingUp, CheckCircle, Clock, Timer,
@@ -790,21 +791,38 @@ export default function Dashboard() {
           <Panel title="Valor autorizado por asesor" sub="Subastas ganadas en el periodo filtrado">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={porAsesor} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="nombre" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+                <defs>
+                  {porAsesor.map((a, i) => (
+                    <linearGradient key={i} id={`bar_asesor_${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4FD1C5" stopOpacity={1}/>
+                      <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.5}/>
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="nombre" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${(v / 1e6).toFixed(0)}M`}/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }} formatter={(v: number) => [fmtCOP(v), 'Valor autorizado']}/>
-                <Bar dataKey="valorAut" radius={[6, 6, 0, 0]} fill="#4FD1C5"/>
+                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} formatter={(v: number) => [fmtCOP(v), 'Valor autorizado']}/>
+                <Bar dataKey="valorAut" radius={[6, 6, 0, 0]} fill="url(#bar_asesor_0)"/>
               </BarChart>
             </ResponsiveContainer>
           </Panel>
+
           <Panel title="Estado de subastas" sub="Distribución del periodo filtrado">
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={3}>
-                  {porEstado.map((e, i) => <Cell key={i} fill={COLORES_ESTADO[e.name] || '#8AA4C8'} stroke="#0F1419" strokeWidth={2}/>)}
+                <defs>
+                  {Object.entries(COLORES_ESTADO).map(([nombre, color], i) => (
+                    <radialGradient key={i} id={`pie_grad_${i}`} cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stopColor={color} stopOpacity={1}/>
+                      <stop offset="100%" stopColor={color} stopOpacity={0.7}/>
+                    </radialGradient>
+                  ))}
+                </defs>
+                <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={4}>
+                  {porEstado.map((e, i) => <Cell key={i} fill={COLORES_ESTADO[e.name] || '#8AA4C8'} stroke="#0F1419" strokeWidth={3}/>)}
                 </Pie>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}/>
+                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
                 <Legend wrapperStyle={{ fontSize: 12, color: '#8AA4C8' }}/>
               </PieChart>
             </ResponsiveContainer>
@@ -815,34 +833,43 @@ export default function Dashboard() {
         <div className="mb-4">
           <Panel
             title={`Valor autorizado por mes — ${filtroAnio}`}
-            sub="Histórico real · punto dorado = proyección mes siguiente"
+            sub="Área = histórico real · punto dorado = proyección mes siguiente"
           >
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
               <div className="lg:col-span-3">
                 <ResponsiveContainer width="100%" height={240}>
-                  <LineChart data={proyeccionMes.serie} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                    <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={{ stroke: '#2A3340' }} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
+                  <ComposedChart data={proyeccionMes.serie} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="grad_proy_real" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/>
+                        <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                    <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
                     <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v ? `$${(v / 1e6).toFixed(0)}M` : ''}/>
                     <Tooltip
-                      contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}
+                      contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
                       formatter={(v: number, _: string, p: { payload?: { esReal?: boolean } }) => [
                         v ? fmtCOP(v) : '—',
                         p.payload?.esReal ? 'Real' : 'Proyectado',
                       ]}
                     />
-                    <Line
+                    <Area
                       type="monotone"
                       dataKey="valorAut"
                       stroke="#4FD1C5"
                       strokeWidth={2.5}
+                      fill="url(#grad_proy_real)"
                       connectNulls={false}
                       dot={(p: { cx: number; cy: number; payload: { esReal: boolean; valorAut: number | null } }) => {
                         if (!p.payload.valorAut) return <circle key={p.cx} cx={0} cy={0} r={0}/>
-                        return <circle key={p.cx} cx={p.cx} cy={p.cy} r={5} fill={p.payload.esReal ? '#4FD1C5' : '#E8A33D'} stroke="#0F1419" strokeWidth={2}/>
+                        return <circle key={p.cx} cx={p.cx} cy={p.cy} r={5}
+                          fill={p.payload.esReal ? '#4FD1C5' : '#E8A33D'}
+                          stroke="#0F1419" strokeWidth={2}/>
                       }}
                     />
-                  </LineChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
               <div className="flex flex-col gap-3 justify-center">
@@ -876,25 +903,32 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <Panel title="Top ciudades destino" sub="Volumen de subastas por ciudad">
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={porCiudad} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" horizontal={false}/>
+              <BarChart data={porCiudad} layout="vertical" margin={{ left: 8, right: 40, top: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" horizontal={false}/>
                 <XAxis type="number" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
                 <YAxis type="category" dataKey="ciudad" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false} width={80}/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}/>
-                <Bar dataKey="total" radius={[0, 4, 4, 0]} name="Total subastas">
+                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
+                <Bar dataKey="total" radius={[0, 6, 6, 0]} name="Total subastas">
                   {porCiudad.map((_, i) => <Cell key={i} fill={COLORES_CIUDADES[i % COLORES_CIUDADES.length]}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </Panel>
+
           <Panel title="Tiempo máximo de suministro" sub="Distribución por rango de días">
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={porTiempo} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A3340" vertical={false}/>
-                <XAxis dataKey="rango" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={{ stroke: '#2A3340' }} tickLine={false}/>
+                <defs>
+                  <linearGradient id="grad_tiempo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8AA4C8" stopOpacity={1}/>
+                    <stop offset="100%" stopColor="#8AA4C8" stopOpacity={0.4}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="rango" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
                 <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
-                <Tooltip contentStyle={{ background: '#1B232D', border: '1px solid #2A3340', borderRadius: 8, fontSize: 12 }}/>
-                <Bar dataKey="cantidad" radius={[6, 6, 0, 0]} fill="#8AA4C8" name="Subastas"/>
+                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
+                <Bar dataKey="cantidad" radius={[6, 6, 0, 0]} fill="url(#grad_tiempo)" name="Subastas"/>
               </BarChart>
             </ResponsiveContainer>
           </Panel>
