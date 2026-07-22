@@ -148,6 +148,7 @@ export default function FacGeneralPage() {
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mes,  setMes]  = useState(hoy.getMonth() + 1)
   const [sedes, setSedes] = useState<Set<string>>(new Set(['Todas']))
+  const [sinColision, setSinColision] = useState(false)
 
   // Lógica de toggle multiselección
   const toggleSede = (s: string) => {
@@ -208,16 +209,20 @@ export default function FacGeneralPage() {
     const mesClave = MESES_KEY[mes - 1]
     return filas.filter(f => {
       if (f.mes !== mesClave) return false
+      if (f.canal === 'Colisión' && sinColision) return false
       if (todasActivo) return true
       if (f.canal === 'Colisión') return false
       return sedes.has(f.sede)
     })
-  }, [filas, mes, sedes, todasActivo])
+  }, [filas, mes, sedes, todasActivo, sinColision])
 
   // ── Datos por canal ───────────────────────────────────────────────────────
   const canalesData = useMemo((): CanalData[] => {
     return CANALES_CONFIG
-      .filter(c => todasActivo || c.canal !== 'Colisión')
+      .filter(c => {
+        if (c.canal === 'Colisión' && sinColision) return false
+        return todasActivo || c.canal !== 'Colisión'
+      })
       .map(c => {
         // Sumar todas las filas que corresponden a este canal (puede haber varias sedes)
         const filasCanal = filasFiltradas.filter(f => f.canal === c.canal)
@@ -238,7 +243,7 @@ export default function FacGeneralPage() {
 
         return { ...c, neto, costo, util, pctUtil, ppto, pct, porDia, neces, pron, pctPron, estado }
       })
-  }, [filasFiltradas, dhTransc, dhRest, todasActivo])
+  }, [filasFiltradas, dhTransc, dhRest, todasActivo, sinColision])
 
   // ── Totales ───────────────────────────────────────────────────────────────
   const totalNeto    = canalesData.reduce((s, c) => s + c.neto, 0)
@@ -289,23 +294,35 @@ export default function FacGeneralPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex rounded-lg border border-brand-border overflow-hidden">
-            {SEDES_LIST.map(s => {
-              const activo = s === 'Todas' ? todasActivo : sedes.has(s)
-              return (
-                <button key={s} onClick={() => toggleSede(s)}
-                  className={`px-3 py-2 text-xs font-mono transition-colors relative ${
-                    activo
-                      ? 'bg-brand-teal text-black font-semibold'
-                      : 'text-brand-subtle hover:text-brand-text hover:bg-brand-surface'
-                  }`}>
-                  {s}
-                  {activo && s !== 'Todas' && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-teal rounded-full border border-black"/>
-                  )}
-                </button>
-              )
-            })}
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-brand-border overflow-hidden">
+              {SEDES_LIST.map(s => {
+                const activo = s === 'Todas' ? todasActivo : sedes.has(s)
+                return (
+                  <button key={s} onClick={() => toggleSede(s)}
+                    className={`px-3 py-2 text-xs font-mono transition-colors relative ${
+                      activo
+                        ? 'bg-brand-teal text-black font-semibold'
+                        : 'text-brand-subtle hover:text-brand-text hover:bg-brand-surface'
+                    }`}>
+                    {s}
+                    {activo && s !== 'Todas' && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-teal rounded-full border border-black"/>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            {/* Divisor + botón Sin Colisión */}
+            <div className="w-px h-6 bg-brand-border"/>
+            <button onClick={() => setSinColision(v => !v)}
+              className={`px-3 py-2 text-xs font-mono rounded-lg border transition-colors ${
+                sinColision
+                  ? 'bg-brand-red/20 border-brand-red/50 text-brand-red font-semibold'
+                  : 'border-brand-border text-brand-subtle hover:text-brand-text'
+              }`}>
+              {sinColision ? '✕ Sin Colisión' : '∅ Sin Colisión'}
+            </button>
           </div>
           <select value={anio} onChange={e => setAnio(Number(e.target.value))}
             className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
