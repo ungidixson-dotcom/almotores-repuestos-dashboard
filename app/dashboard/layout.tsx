@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Receipt, FolderOpen, Calendar, Shield, User,
-  ChevronDown, ChevronRight, LayoutGrid,
+  ChevronDown, ChevronRight, LayoutGrid, Package,
 } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -48,13 +48,21 @@ const NAV: NavSection[] = [
   { label: 'Resumen Mensual', icon: <Calendar size={16} />, href: '/dashboard/resumen-mensual' },
   { label: 'Aseguradoras',    icon: <Shield size={16} />,   href: '/dashboard/aseguradoras' },
   { label: 'Asesores',        icon: <User size={16} />,     href: '/dashboard/asesores' },
+  {
+    label: 'Inventario', icon: <Package size={16} />,
+    children: [
+      { type: 'leaf', label: 'Pedido Sugerido', href: '/dashboard/inventario' },
+    ],
+  },
 ]
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ Facturación: true })
-  const [openGroups,   setOpenGroups]   = useState<Record<string, boolean>>({
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    Facturación: true, Inventario: true,
+  })
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     Accesorios: true, Subastas: true,
   })
 
@@ -102,7 +110,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <li key={section.label}>
                 {section.children ? (
                   <>
-                    {/* Sección con hijos */}
                     <button
                       onClick={() => toggleSection(section.label)}
                       className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors
@@ -133,7 +140,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             )
                           }
 
-                          // Sub-grupo (Accesorios, Subastas)
                           const groupActive = leafIsActive(child.children)
                           return (
                             <li key={child.label}>
@@ -174,7 +180,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     )}
                   </>
                 ) : (
-                  // Ítem directo sin hijos
                   <Link
                     href={section.href!}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
