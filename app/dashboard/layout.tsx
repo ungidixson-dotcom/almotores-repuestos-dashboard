@@ -38,16 +38,22 @@ const NAV: NavSection[] = [
       {
         type: 'group', label: 'Subastas', href: '/dashboard/facturacion/canales/subastas',
         children: [
-          { type: 'leaf', label: 'Facturación',       href: '/dashboard/facturacion/canales/subastas' },
-          { type: 'leaf', label: 'Torre de Control',  href: '/dashboard' },
+          { type: 'leaf', label: 'Facturación',      href: '/dashboard/facturacion/canales/subastas' },
+          { type: 'leaf', label: 'Torre de Control', href: '/dashboard' },
         ],
       },
       { type: 'leaf', label: 'Colisión',  href: '/dashboard/facturacion/canales/colision' },
     ],
   },
-  { label: 'Resumen Mensual', icon: <Calendar size={16} />, href: '/dashboard/resumen-mensual' },
-  { label: 'Aseguradoras',    icon: <Shield size={16} />,   href: '/dashboard/aseguradoras' },
-  { label: 'Asesores',        icon: <User size={16} />,     href: '/dashboard/asesores' },
+  {
+    label: 'Torre de Control', icon: <LayoutGrid size={16} />,
+    children: [
+      { type: 'leaf', label: 'Subastas',       href: '/dashboard' },
+      { type: 'leaf', label: 'Resumen Mensual', href: '/dashboard/resumen-mensual' },
+      { type: 'leaf', label: 'Aseguradoras',    href: '/dashboard/aseguradoras' },
+      { type: 'leaf', label: 'Asesores',        href: '/dashboard/asesores' },
+    ],
+  },
   {
     label: 'Inventario', icon: <Package size={16} />,
     children: [
@@ -60,7 +66,7 @@ const NAV: NavSection[] = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    Facturación: true, Inventario: true,
+    Facturación: true, 'Torre de Control': true, Inventario: true,
   })
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     Accesorios: true, Subastas: true,
