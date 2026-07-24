@@ -1,6 +1,6 @@
 # Almotores KIA · Torre de Control — Repuestos & Accesorios
 ## Contexto para continuar en otro chat
-## Última actualización: 2026-07-18
+## Última actualización: 2026-07-23
 
 ---
 
@@ -18,234 +18,214 @@
 ## Supabase
 - **Project ID:** vvguowdjmayausyicsqs
 - **URL:** https://vvguowdjmayausyicsqs.supabase.co
-- **Región:** us-west-2 (Oregon)
 
 ### Tablas principales
-| Tabla | Descripción |
+| Tabla | Descripcion |
 |---|---|
-| `subastas` | ~17,900 registros — 2024, 2025, 2026 (hasta jul-2026) |
-| `facturas` | ~986 registros — radicación de facturas (enero-julio 2026) |
-| `aseguradoras` | 13 registros — catálogo maestro |
-| `asesores` | 4 registros — Diego Aguirre, Jhon Miguel Garces, Carolina Quintana, Leonardo Mejia |
-| `aseguradoras_variantes` | Mapeo de variantes de nombre → aseguradora normalizada |
-| `facturas_taller` | Facturas del canal Taller |
-| `facturas_mostrador` | Facturas del canal Mostrador |
-| `facturas_credito` | Facturas a crédito |
-| `presupuesto` | Presupuesto mensual por canal/sede/año |
-| `tipo_clientes` | Clasificación Mayoristas |
-| `user_profiles` | Perfiles de usuario (nombre, rol, activo) |
-| `user_dashboards` | Dashboards asignados por usuario |
+| subastas | ~18,000 registros 2024-2026 |
+| facturas | Radicacion facturas canal subastas |
+| aseguradoras | Catalogo maestro |
+| asesores | 4 asesores de subastas |
+| comisiones_acc_detalle | Ventas accesorios desde Dropbox (~7,673 registros) |
+| comisiones_acc_vehiculos | Vehiculos vendidos por asesor/mes/sede |
+| comisiones_acc_mapeo_asesores | Mapeo nombres Dropbox vs Sheet vehiculos |
+| comisiones_acc_sync_log | Log de sincronizaciones Dropbox |
+| user_profiles | Perfiles de usuario (nombre, rol, activo) |
+| user_dashboards | Dashboards asignados por usuario |
+| presupuesto | Presupuesto mensual por canal/sede/anio |
 
-### Columnas clave de subastas
-```
-id, placa, marca, aseguradora_id, asesor_id, estado_subasta,
-fecha_subasta, valor_subastado, descuento_otorgado,
-tiempo_max_suministro_dias, ciudad_destino, estado_autorizacion,
-fecha_autorizacion, estado_pedido, valor_autorizado, pct_autorizado,
-motivo_no_ganada, estado_facturacion_oc, fecha_factura, numero_factura,
-estado_desc_repuestos, estado_radicacion_factura, fecha_radicacion_factura,
-mes_subasta, anio, fila_sheet (llave única para upsert desde Apps Script)
-```
+### Vistas Subastas
+- v_kpis_subastas — agregado por anio/mes/marca/asesor/aseguradora/estado
+- v_resumen_mensual — totales por anio/mes + max_fecha_subasta
+- v_meses_disponibles — lista anio/mes para filtros
+- v_subastas_pipeline — pipeline de conversion
+- v_subastas_por_aseguradora — KPIs por aseguradora
+- v_subastas_por_asesor — KPIs por asesor con descuento_prom
+- v_subastas_por_mes — evolucion mensual completa
 
-### Columnas clave de facturas
-```
-id, fila_excel (llave única para upsert), almacen, referencia, fecha, mes,
-cuenta, aseguradora_id, prefijo, numero, factura_texto, base_imp,
-asesor_id, placa, marca, est_radicacion, fecha_radicado, numero_radicacion,
-estado_radicacion_rocio, fecha_notificacion, estado_factura,
-estado_refacturacion, motivo
-```
+### Vistas Facturacion
+- v_facturacion_general — todos los canales
+- v_accesorios_facturas — canal Accesorios
+- v_taller_facturas — canal Taller
+- v_colision_facturas — canal Colision
+- v_mayoristas_det — canal Mayoristas
 
-### Vistas — Subastas
-| Vista | Descripción |
-|---|---|
-| `v_kpis_subastas` | Subastas agregadas por **anio**/mes/marca/asesor/aseguradora/estado |
-| `v_resumen_mensual` | Totales por **anio**/mes — incluye `max_fecha_subasta` para ritmo dinámico |
-| `v_meses_disponibles` | Lista de **anio**/mes con datos — usada para filtros del dashboard |
-| `v_subastas_pipeline` | Pipeline anual: total → pend_auth → en_pedido → por_facturar → por_radicar → completadas |
-| `v_subastas_por_aseguradora` | Subastas + autorizadas + facturadas + radicadas por aseguradora/mes/año |
-| `v_subastas_por_asesor` | Ídem por asesor — incluye descuento_prom |
-| `v_subastas_por_mes` | Evolución mensual completa con todos los estados |
-| `v_subastas_facturacion` | Cruce subastas ↔ facturas por placa |
-| `v_detalle_subastas` | Detalle registro a registro (sin aggregar) |
+### Vistas Comisiones Accesorios
+- v_comisiones_acc_sede — KPIs por sede/mes
+- v_comisiones_acc_asesor — KPIs por asesor con ticket promedio
+- v_comisiones_acc_diario — seguimiento diario
+- v_ticket_real_sede — ticket real = neto / vehiculos vendidos
+- v_ticket_promedio — ticket por asesor cruzando accesorios y vehiculos
+- v_comisiones_acc_con_asesor — detalle con nombre normalizado
 
-### Vistas — Facturación
-| Vista | Descripción |
-|---|---|
-| `v_facturacion_general` | Neto + costo + beneficio + presupuesto + % avance — todos los canales |
-| `v_accesorios_facturas` | Canal Accesorios (taller + mostrador) |
-| `v_colision_facturas` | Canal Colisión |
-| `v_mayoristas_det` | Canal Mayoristas |
-| `v_mostrador_facturas` / `v_mostrador_det` | Canal Mostrador |
-| `v_taller_facturas` | Canal Taller |
-| `v_credito_facturas` | Facturas a crédito |
-
-### ⚠️ Regla crítica sobre las vistas de subastas
-Todas las vistas de subastas filtran `WHERE anio IS NOT NULL`. Los ~564 registros
-con `anio = NULL` son placas sin subasta asignada aún — se excluyen de todo análisis.
-Los 2 registros con `fecha_subasta` pero `anio = NULL` fueron corregidos el 2026-07-18.
-
-### Índices únicos
-- `subastas.fila_sheet` — para upsert desde Google Apps Script
-- `facturas.fila_excel` — para upsert desde Office Script
+### Reglas criticas
+- Todas las vistas de subastas filtran WHERE anio IS NOT NULL
+- Meta ticket promedio accesorios: $2.200.000 por vehiculo
 
 ---
 
 ## Estructura del proyecto
 ```
-almotores-repuestos-dashboard/
-├── app/
-│   ├── globals.css
-│   ├── layout.tsx                    ← fuentes, metadata (sin sidebar)
-│   ├── page.tsx                      ← redirige a /login
-│   ├── login/
-│   │   └── page.tsx                  ← login con Supabase Auth
-│   └── dashboard/
-│       ├── layout.tsx                ← sidebar de navegación
-│       ├── page.tsx                  ← Torre de Control · Subastas (v23)
-│       ├── aseguradoras/
-│       │   └── page.tsx              ← ⬜ pendiente construir
-│       ├── asesores/
-│       │   └── page.tsx              ⬜ pendiente construir
-│       ├── resumen-mensual/
-│       │   └── page.tsx              ⬜ pendiente construir
-│       └── facturacion/
-│           ├── general/              ← Facturación General (existente)
-│           └── canales/
-│               ├── accesorios/
-│               ├── taller/
-│               ├── mostrador/
-│               ├── mayoristas/
-│               ├── subastas/         ← Dashboard Facturación Subastas (existente)
-│               └── colision/
-├── lib/
-│   └── supabase.ts                   ← cliente Supabase browser
-├── component/ y components/          ← componentes compartidos
-├── next.config.js
-├── package.json
-├── tailwind.config.js
-└── tsconfig.json
+dashboard/
+  layout.tsx                     sidebar 2 niveles
+  page.tsx                       Torre de Control Subastas v24
+  aseguradoras/page.tsx          construido
+  asesores/page.tsx              construido
+  resumen-mensual/page.tsx       construido
+  facturacion/
+    general/page.tsx             construido - multiseleccion sedes + Sin Colision
+    canales/
+      accesorios/
+        page.tsx                 construido
+        comisiones/page.tsx      construido
+        ventas-asesor/page.tsx   construido
+        ticket-promedio/page.tsx construido
+      taller/page.tsx            construido - ticket por OT y por vehiculo
+      mostrador/page.tsx         construido
+      mayoristas/page.tsx        construido
+      subastas/page.tsx          construido
+      colision/page.tsx          construido
 ```
 
 ---
 
-## Navegación del sidebar (app/dashboard/layout.tsx)
+## Sidebar layout.tsx
 ```
-▼ Facturación
-    Facturación General       → /dashboard/facturacion/general
-    Accesorios                → /dashboard/facturacion/canales/accesorios
-    Taller                    → /dashboard/facturacion/canales/taller
-    Mostrador                 → /dashboard/facturacion/canales/mostrador
-    Mayoristas                → /dashboard/facturacion/canales/mayoristas
-    Subastas                  → /dashboard/facturacion/canales/subastas
-    ↳ Torre de Control        → /dashboard
-    Colisión                  → /dashboard/facturacion/canales/colision
-  Resumen Mensual             → /dashboard/resumen-mensual
-  Aseguradoras                → /dashboard/aseguradoras
-  Asesores                    → /dashboard/asesores
+Facturacion
+  Facturacion General
+  > Accesorios
+      Facturacion
+      Comisiones
+      Ventas por asesor
+      Ticket promedio
+  Taller
+  Mostrador
+  Mayoristas
+  > Subastas
+      Facturacion
+      Torre de Control
+  Colision
+Resumen Mensual
+Aseguradoras
+Asesores
 ```
 
 ---
 
-## Torre de Control · Subastas — /dashboard/page.tsx (v23)
-
-### Qué hace
-Dashboard operativo de subastas con filtros multi-año. Muestra:
-- Mes en curso: días hábiles, avance, proyección basada en ritmo real
-- KPIs: total, ganadas, tasa autorización, efectividad, sin respuesta, tiempo promedio
-- Valores: subastado, autorizado, conversión en $
-- Facturas: radicadas, pendientes, anuladas
-- **Pipeline de conversión** (nuevo v23): Total → Autorizadas → En pedido → Por facturar → Por radicar → Radicadas
-- Gráficas: valor por asesor, estado (pie), proyección mensual, ciudades, tiempos
-- Tablas: efectividad por asesor, ranking por aseguradora
-
-### Fuentes de datos (todas con filtro por anio)
-- `v_kpis_subastas` — filas del dashboard filtradas
-- `v_resumen_mensual` — gráfica mensual + proyección + ritmo mes en curso
-- `v_meses_disponibles` — opciones del selector de mes
-- `v_subastas_pipeline` — pipeline de conversión
-- `facturas` — KPIs de radicación
-
-### Lógica de KPIs
-- **Tasa autorización** = ganadas / (ganadas + NO Autorizadas) — excluye pendientes y no aplicadas
-- **Efectividad** = ganadas / total subastas
-- **Ganadas** = Autorizada Completa + Autorizada parcial
-- **diasConDatos** = días hábiles desde el 1 del mes hasta `max_fecha_subasta` (dinámico, no hardcodeado)
-
-### Fetch centralizado
-Función `fetchTodosDatos()` con un solo `Promise.all` de 7 consultas.
-`cargarDatos(verificarAuth)` con `useCallback` — usada en carga inicial, auto-refresh y botón manual.
-Auto-refresh cada 30 minutos con countdown visible.
+## Torre de Control Subastas v24
+- Filtros: anio, asesor, aseguradora, mes, marca
+- Pipeline: Total > Autorizadas > En pedido > Por facturar > Por radicar > Radicadas
+- Graficas: AreaChart con gradientes SVG
+- diasTranscurridos dinamico desde max_fecha_subasta
+- Tasa autorizacion = ganadas / (ganadas + NO Autorizadas)
+- Efectividad = ganadas / total
 
 ---
 
-## Sincronización de datos
-
-### Subastas → Supabase (Google Apps Script)
-- **Fuente:** Google Sheets (Hoja 2)
-  https://docs.google.com/spreadsheets/d/1ihvYD0-DRtOQeqHerJrdWtwZHFW3ygnRK2vxY2VvHho
-- **Trigger automático:** onEdit (cada vez que un asesor edita)
-- **Trigger programado:** todos los días a las 7am Colombia
-- **Archivo:** sync_subastas_v2.gs
-- **Llave upsert:** fila_sheet
-
-### Facturas → Supabase (Office Script)
-- **Fuente:** Excel Online en OneDrive
-  `Informe_Radicacion_Facturas_2026.xlsx`
-  Ruta: `/Documentos/MIS DOCUMENTOS/Informes/Canal de Subastas/Gestion Subastas/`
-- **Trigger:** manual (colaborador ejecuta desde Excel → Automatizar)
-- **Archivo:** sync_facturas_v2.ts
-- **Llave upsert:** fila_excel
-- **Pendiente:** automatizar con Power Automate
+## Facturacion General
+- Multiseleccion sedes: [Todas][Norte][Pasoancho][Sede 39]
+- Boton Sin Colision excluye canal Colision
+- Tabla: Canal | Presupuesto | Neto | % Avance | Costo | Utilidad | % Util | $/Dia | Necesario/dia | Pronostico | Estado
 
 ---
 
-## Estados de autorización en subastas
-- `Autorizada Completa`
-- `Autorizada parcial`
-- `NO Autorizada`
-- `Subasta no aplicada`
-- `NULL` (sin respuesta aún)
-- `41` (error de captura — 1 registro, no corregir por ahora)
+## Ticket Promedio Accesorios
+- Ticket real = neto sede / vehiculos vendidos (PRINCIPAL)
+- Ticket parcial = neto / vehiculos con accesorio (referencia)
+- Meta $2.200.000 - semaforo verde/naranja/rojo
+- Graficas AreaChart + linea roja de meta
 
 ---
 
-## Tailwind — colores del tema oscuro
-```js
-brand: {
-  bg:      '#0F1419',  // fondo principal
-  surface: '#1B232D',  // tarjetas/paneles
-  border:  '#2A3340',  // bordes
-  muted:   '#5B6472',  // texto muy sutil
-  subtle:  '#8AA4C8',  // texto secundario
-  text:    '#EAF0F6',  // texto principal
-  gold:    '#E8A33D',  // acento dorado (efectividad, proyecciones)
-  teal:    '#4FD1C5',  // acento teal (métricas positivas)
-  red:     '#E5484D',  // alertas/errores
-}
-```
+## Taller
+- Ticket por orden (neto / OTs unicas)
+- Ticket por vehiculo (neto / cuentas unicas)
+
+---
+
+## Sincronizacion
+
+### Subastas > Supabase
+- Google Sheets: https://docs.google.com/spreadsheets/d/1ihvYD0-DRtOQeqHerJrdWtwZHFW3ygnRK2vxY2VvHho
+- Trigger: onEdit + diario 7am Colombia
+- Llave: fila_sheet
+
+### Facturas subastas > Supabase
+- Excel OneDrive: Informe_Radicacion_Facturas_2026.xlsx
+- Trigger: manual desde Excel
+- Pendiente: Power Automate
+
+### Comisiones Accesorios > Supabase
+- 3 archivos Dropbox:
+  - /Accesorios Norte/Comisiones Norte 2026 FO-PKIA-19 V00.xlsm
+  - /Accesorios 80/Comisiones Pasoancho 2026 FO-PKIA-19 V00.xlsm
+  - /Accesorios 39/Comisiones Calle 9 2026 FO-PKIA-19 V00.xlsm
+- Script: C:\AlmotoresSync\sync.py
+- Token: Refresh token OAuth2 permanente en .env
+- Automatico: tarea Windows todos los dias 9:00 AM
+- Manual: cd C:\AlmotoresSync && python sync.py
+- App Dropbox: "Accesorios" - App key: 2tkiekz0zek8n3q
+- Llave: fila_key (MD5)
+
+### Vehiculos vendidos > Supabase
+- Google Sheets: https://docs.google.com/spreadsheets/d/1fs779BGplnVfzkkI247kx30clyQ5lxwMUgzSdPbpyRI
+- Proceso: Claude lee el Sheet y ejecuta SQL
+- Pendiente: automatizar
+
+---
+
+## Diseno gerencial
+- AreaChart + gradientes SVG (stopOpacity 0.35 > 0)
+- Grid: #1E2A36
+- Tooltips: background #0F1419 + boxShadow
+- ReferenceLine para metas en rojo punteado
+
+### Colores
+- bg: #0F1419
+- surface: #1B232D
+- border: #2A3340
+- muted: #5B6472
+- subtle: #8AA4C8
+- text: #EAF0F6
+- gold: #E8A33D
+- teal: #4FD1C5
+- red: #E5484D
+
+---
+
+## Usuarios pendientes de invitar
+URL: https://supabase.com/dashboard/project/vvguowdjmayausyicsqs/auth/users
+
+| Nombre | Correo | Rol | Dashboards |
+|---|---|---|---|
+| Dixson Ibarguen | coordinadorrepuestos@almotores.com | admin | Todo |
+| Jhon Miguel Garces | ventasrepaseguradoras@almotores.com | asesor | Fac General, Torre Control, Subastas, Aseguradoras, Asesores |
+| Jefferson Mosquera | repuestos80@almotores.com | asesor | Fac General, Taller, Mostrador, Mayoristas |
+| Eric Valencia | coordinadorrepuestoscol@almotores.com | asesor | Fac General, Colision |
+| Maria Isabel Cucunhame | accesoriossur@almotores.com | viewer | Fac General, Accesorios, Ticket Promedio, Comisiones |
+| Carlos Cuellar | accesoriosnorte@almotores.com | viewer | Fac General, Accesorios, Ticket Promedio, Comisiones |
+| Mario Rodriguez | repuestos39@almotores.com | asesor | Fac General, Taller, Mostrador, Mayoristas |
+| Hernan Pena | almacen@almotores.com | viewer | Fac General |
+| Victor Zapata | accesorios39@almotores.com | viewer | Fac General, Accesorios, Ticket Promedio |
+| Giovanni Perafan | aux5repuestos@almotores.com | viewer | Fac General, Mayoristas |
+| Diego Aguirre | analistarepuestoscol@almotores.com | asesor | Fac General, Torre Control, Subastas, Aseguradoras |
+| Leonardo Mejia | ventasrepaseguradoras2@almotores.com | asesor | Fac General, Torre Control, Subastas, Aseguradoras, Asesores |
+| Invitado Subastas | invitado.subastas@almotores.com | viewer | Torre Control, Subastas, Aseguradoras, Asesores |
 
 ---
 
 ## Pendientes
-1. ✅ Auto-refresh cada 30 minutos + botón manual
-2. ✅ Sección días hábiles mes en curso — dinámica, basada en fecha real
-3. ✅ Proyección mes en curso basada en ritmo diario real (no hardcodeado)
-4. ✅ Vistas multi-año — `anio` como dimensión en todas las vistas de subastas
-5. ✅ Filtro de año en el dashboard (default 2026)
-6. ✅ Sidebar con navegación correcta — "↳ Torre de Control" → `/dashboard`
-7. ✅ Pipeline de conversión en Torre de Control (v23)
-8. ⬜ Página `aseguradoras/` — usar `v_subastas_por_aseguradora`
-9. ⬜ Página `asesores/` — usar `v_subastas_por_asesor`
-10. ⬜ Página `resumen-mensual/` — usar `v_subastas_por_mes`
-11. ⬜ Automatizar facturas con Power Automate
-12. ⬜ Agregar usuarios del equipo (Supabase Auth → invite users)
-13. ⬜ Dominio personalizado en Vercel
+1. Invitar usuarios (cuando el equipo este disponible)
+2. Dominio personalizado en Vercel (pendiente comprar dominio)
+3. Automatizar facturas subastas con Power Automate
+4. Automatizar vehiculos vendidos desde Google Sheets
+5. Resumen mensual de accesorios
 
 ---
 
-## Links útiles
-- **Editar dashboard:** https://github.com/ungidixson-dotcom/almotores-repuestos-dashboard/edit/main/app/dashboard/page.tsx
-- **Editar sidebar:** https://github.com/ungidixson-dotcom/almotores-repuestos-dashboard/edit/main/app/dashboard/layout.tsx
-- **SQL Supabase:** https://supabase.com/dashboard/project/vvguowdjmayausyicsqs/sql/new
-- **App en producción:** https://almotores-repuestos-dashboard.vercel.app
+## Links utiles
+- App: https://almotores-repuestos-dashboard.vercel.app
+- GitHub: https://github.com/ungidixson-dotcom/almotores-repuestos-dashboard
+- Supabase SQL: https://supabase.com/dashboard/project/vvguowdjmayausyicsqs/sql/new
+- Supabase Auth: https://supabase.com/dashboard/project/vvguowdjmayausyicsqs/auth/users
+- Dropbox Apps: https://www.dropbox.com/developers/apps
