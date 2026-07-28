@@ -39,7 +39,7 @@ interface FilaAsesor {
   vehiculos_vendidos: number; ticket_promedio: number | null; pct_vs_meta: number | null
 }
 interface FilaPance {
-  neto: number; cuenta: string | null
+  neto: number; cuenta: string | null; placa: string | null
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ async function fetchDatos(anio: number, mes: number | null) {
       .select('anio,mes_num,mes,sede,asesor,neto_accesorios,facturas_accesorios,vehiculos_vendidos,ticket_promedio,pct_vs_meta')
       .eq('anio', anio),
     supabase.from('comisiones_acc_detalle')
-      .select('neto,cuenta')
+      .select('neto,cuenta,placa')
       .eq('anio', anio)
       .eq('vitrina', 'Pance')
       .eq('mes_num', mes ?? new Date().getMonth() + 1),
@@ -160,7 +160,7 @@ export default function TicketPromedioPage() {
   const kpisPance = useMemo(() => {
     const neto      = dataPance.reduce((s, r) => s + (r.neto || 0), 0)
     const facturas  = dataPance.length
-    const vehiculos = new Set(dataPance.map(r => r.cuenta).filter(Boolean)).size
+    const vehiculos = new Set(dataPance.map(r => r.placa).filter(Boolean)).size
     const ticket    = vehiculos > 0 ? neto / vehiculos : 0
     return { neto, facturas, vehiculos, ticket }
   }, [dataPance])
@@ -423,28 +423,35 @@ export default function TicketPromedioPage() {
                 )}
               </div>
 
-              <p className="font-mono text-[10px] text-brand-muted mb-0.5">Neto accesorios</p>
-              <p className="font-title font-bold text-2xl mb-1" style={{ color: COLORES_SEDE['Pance'] }}>
-                {fmtCOP(kpisPance.neto)}
+              {/* TICKET — grande, igual que las otras sedes */}
+              <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket promedio (neto / vehículos)</p>
+              <p className="font-title font-bold text-2xl mb-1" style={{ color: colorTicket(kpisPance.ticket) }}>
+                {kpisPance.ticket > 0 ? fmtCOP(kpisPance.ticket) : '—'}
               </p>
+              {/* Barra vs meta */}
+              <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-1">
+                <div className="h-full rounded-full transition-all"
+                  style={{ width: `${Math.min((kpisPance.ticket / META_TICKET) * 100, 100)}%`, background: colorTicket(kpisPance.ticket) }}/>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-3">
+                <span>{fmtPct((kpisPance.ticket / META_TICKET) * 100)} de la meta</span>
+                <span>Meta: {fmtM(META_TICKET)}</span>
+              </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-3 pt-2 border-t border-brand-border/50">
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Facturas</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{kpisPance.facturas}</p>
+                  <p className="font-mono text-[10px] text-brand-muted">Neto</p>
+                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtM(kpisPance.neto)}</p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Clientes únicos</p>
+                  <p className="font-mono text-[10px] text-brand-muted">Vehículos</p>
                   <p className="font-mono text-xs text-brand-subtle font-semibold">{kpisPance.vehiculos}</p>
                 </div>
               </div>
 
-              <div className="mt-3 pt-2 border-t border-brand-border/50">
-                <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket promedio</p>
-                <p className="font-mono text-xs font-semibold" style={{ color: COLORES_SEDE['Pance'] }}>
-                  {kpisPance.ticket > 0 ? fmtCOP(kpisPance.ticket) : '—'}
-                </p>
-                <p className="font-mono text-[9px] text-brand-muted mt-0.5">neto / clientes únicos</p>
+              <div className="pt-2 border-t border-brand-border/50">
+                <p className="font-mono text-[10px] text-brand-muted mb-0.5">Facturas</p>
+                <p className="font-mono text-xs font-semibold text-brand-subtle">{kpisPance.facturas}</p>
               </div>
             </button>
           )}
