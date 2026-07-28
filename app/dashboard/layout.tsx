@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Receipt, FolderOpen, ChevronDown, ChevronRight,
-  LayoutGrid, Package,
+  LayoutGrid, Package, RefreshCw,
 } from 'lucide-react'
 
 // ── Tipos (3 niveles) ─────────────────────────────────────────────────────────
@@ -90,6 +90,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [openSubGroups, setOpenSubGroups] = useState<Record<string, boolean>>({
     'Torre de Control': true,
   })
+
+  const [syncing,    setSyncing]    = useState(false)
+  const [syncMsg,    setSyncMsg]    = useState('')
+
+  const sincronizarDropbox = async () => {
+    setSyncing(true)
+    setSyncMsg('')
+    try {
+      const res = await fetch('/api/sync-dropbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json()
+      if (data.ok) setSyncMsg('✅ Sync iniciado')
+      else setSyncMsg('❌ Error')
+    } catch { setSyncMsg('❌ Error') }
+    setSyncing(false)
+    setTimeout(() => setSyncMsg(''), 4000)
+  }
 
   const toggle = (map: Record<string, boolean>, set: (v: Record<string, boolean>) => void, key: string) =>
     set({ ...map, [key]: !map[key] })
@@ -241,7 +257,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-brand-border shrink-0">
+        <div className="p-4 border-t border-brand-border shrink-0 space-y-2">
+          <button onClick={sincronizarDropbox} disabled={syncing}
+            className={`w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-mono transition-colors border ${
+              syncing
+                ? 'border-brand-border text-brand-muted cursor-not-allowed'
+                : 'border-brand-teal/40 text-brand-teal hover:bg-brand-teal/10'
+            }`}>
+            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''}/>
+            {syncing ? 'Sincronizando...' : 'Sincronizar Dropbox'}
+          </button>
+          {syncMsg && (
+            <p className="text-center text-[10px] font-mono text-brand-subtle">{syncMsg}</p>
+          )}
           <div className="flex items-center gap-2">
             <FolderOpen size={13} className="text-brand-muted" />
             <p className="text-[10px] text-brand-muted font-mono">Repuestos & Accesorios</p>
