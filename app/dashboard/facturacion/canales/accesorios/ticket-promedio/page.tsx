@@ -379,12 +379,12 @@ export default function TicketPromedioPage() {
               </div>
               <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-3">
                 <span>{fmtPct(s.pctMeta)} de la meta</span>
-                <span>Meta: {fmtM(META_TICKET)}</span>
+                <span>Meta: {fmtCOP(META_TICKET)}</span>
               </div>
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <div>
                   <p className="font-mono text-[10px] text-brand-muted">Neto</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtM(s.neto)}</p>
+                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtCOP(s.neto)}</p>
                 </div>
                 <div>
                   <p className="font-mono text-[10px] text-brand-muted">Vehículos vendidos</p>
@@ -435,13 +435,13 @@ export default function TicketPromedioPage() {
               </div>
               <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-3">
                 <span>{fmtPct((kpisPance.ticket / META_TICKET) * 100)} de la meta</span>
-                <span>Meta: {fmtM(META_TICKET)}</span>
+                <span>Meta: {fmtCOP(META_TICKET)}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <div>
                   <p className="font-mono text-[10px] text-brand-muted">Neto</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtM(kpisPance.neto)}</p>
+                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtCOP(kpisPance.neto)}</p>
                 </div>
                 <div>
                   <p className="font-mono text-[10px] text-brand-muted">Vehículos</p>
