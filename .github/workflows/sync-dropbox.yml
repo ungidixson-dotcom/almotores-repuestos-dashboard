@@ -1,0 +1,57 @@
+name: Sync Dropbox → Supabase
+
+on:
+  # Disparo manual desde el dashboard via API
+  workflow_dispatch:
+    inputs:
+      sede:
+        description: 'Sede a sincronizar (vacío = todas)'
+        required: false
+        default: ''
+      mes:
+        description: 'Mes a sincronizar (vacío = todos)'
+        required: false
+        default: ''
+
+  # También corre automáticamente todos los días a las 9am Colombia (UTC-5 = 14:00 UTC)
+  schedule:
+    - cron: '0 14 * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          pip install openpyxl requests supabase python-dotenv
+
+      - name: Ejecutar sync
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DROPBOX_TOKEN:        ${{ secrets.DROPBOX_TOKEN }}
+          DROPBOX_APP_KEY:      ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET:   ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_PATH_NORTE:   ${{ secrets.DROPBOX_PATH_NORTE }}
+          DROPBOX_PATH_PASOANCHO: ${{ secrets.DROPBOX_PATH_PASOANCHO }}
+          DROPBOX_PATH_CALLE9:  ${{ secrets.DROPBOX_PATH_CALLE9 }}
+        run: |
+          cd .github/scripts
+          python sync.py \
+            ${{ github.event.inputs.sede != '' && format('--sede "{0}"', github.event.inputs.sede) || '' }} \
+            ${{ github.event.inputs.mes != '' && format('--mes "{0}"', github.event.inputs.mes) || '' }}
+
+      - name: Notificar resultado
+        if: always()
+        run: |
+          echo "Sync completado — $(date '+%Y-%m-%d %H:%M:%S UTC')"
