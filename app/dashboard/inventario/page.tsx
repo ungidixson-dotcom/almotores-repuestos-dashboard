@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { RefreshCw, Download, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { RefreshCw, Download, Search, ChevronUp, ChevronDown, ShoppingCart, X } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface FilaPedido {
@@ -36,6 +36,7 @@ type OrdenCol = 'referencia' | 'descripcion' | 'stock_real' | 'promedio_9m' | 'p
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
 const SEDES    = ['Todas', 'Norte', 'Pasoancho', 'Sede 39']
+const ALMACENES = ['Todos', '11', '11J', '12', '13', '15']
 const CLASES   = ['Todas', 'A', 'B', 'C']
 const ACCIONES: Accion[] = ['Concretar', 'Recomendar', 'Observar', 'Descartar']
 
@@ -55,6 +56,7 @@ const BG_ACCION: Record<string, string> = {
 // ── Utilidades ─────────────────────────────────────────────────────────────────
 const fmtCOP = (v: number) => `$${Math.round(v).toLocaleString('es-CO')}`
 const fmtPct = (v: number) => `${(v * 100).toFixed(0)}%`
+const rowKey  = (f: FilaPedido) => `${f.almacen}||${f.referencia}`
 
 // ── Componentes base ───────────────────────────────────────────────────────────
 function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -91,24 +93,28 @@ function Cond({ ok }: { ok: boolean }) {
 
 // ── Página principal ───────────────────────────────────────────────────────────
 export default function InventarioPage() {
-  const [filas,      setFilas]      = useState<FilaPedido[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [error,      setError]      = useState('')
-  const [ultimaAct,  setUltimaAct]  = useState<Date | null>(null)
+  const [filas,     setFilas]     = useState<FilaPedido[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState('')
+  const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
 
   // Filtros
-  const [sede,       setSede]       = useState('Todas')
-  const [clase,      setClase]      = useState('Todas')
-  const [accionesSel, setAccionesSel] = useState<Set<Accion>>(new Set(['Concretar','Recomendar','Observar']))
-  const [buscar,     setBuscar]     = useState('')
-  const [soloStock,  setSoloStock]  = useState(false)
-  const [soloObsoletos, setSoloObsoletos] = useState(false)
+  const [sede,         setSede]         = useState('Todas')
+  const [almacen,      setAlmacen]      = useState('Todos')
+  const [clase,        setClase]        = useState('Todas')
+  const [accionesSel,  setAccionesSel]  = useState<Set<Accion>>(new Set(['Concretar','Recomendar','Observar']))
+  const [buscar,       setBuscar]       = useState('')
+  const [soloStock,    setSoloStock]    = useState(false)
+  const [soloObsoletos,setSoloObsoletos]= useState(false)
 
   // Tabla
-  const [orden,      setOrden]      = useState<OrdenCol>('cantidad_sugerida')
-  const [desc,       setDesc]       = useState(true)
-  const [pagina,     setPagina]     = useState(1)
+  const [orden,  setOrden] = useState<OrdenCol>('cantidad_sugerida')
+  const [desc,   setDesc]  = useState(true)
+  const [pagina, setPagina]= useState(1)
   const POR_PAGINA = 50
+
+  // Selección múltiple
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
 
   // Override modal
   const [overrideRef,    setOverrideRef]    = useState<FilaPedido | null>(null)
@@ -120,9 +126,7 @@ export default function InventarioPage() {
   const cargar = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const { data, error: err } = await supabase
-        .from('v_pedido_sugerido')
-        .select('*')
+      const { data, error: err } = await supabase.from('v_pedido_sugerido').select('*')
       if (err) throw err
       setFilas((data ?? []) as FilaPedido[])
       setUltimaAct(new Date())
@@ -148,15 +152,16 @@ export default function InventarioPage() {
   const filasFiltradas = useMemo(() => {
     const q = buscar.toLowerCase()
     return filas.filter(f => {
-      if (sede   !== 'Todas' && f.sede  !== sede)   return false
-      if (clase  !== 'Todas' && f.clase !== clase)  return false
+      if (sede    !== 'Todas' && f.sede    !== sede)    return false
+      if (almacen !== 'Todos' && f.almacen !== almacen) return false
+      if (clase   !== 'Todas' && f.clase   !== clase)   return false
       if (!accionesSel.has(f.accion_sugerida as Accion)) return false
-      if (soloStock     && f.stock_real > 0)         return false
-      if (soloObsoletos && !f.es_obsoleto)            return false
+      if (soloStock     && f.stock_real > 0)  return false
+      if (soloObsoletos && !f.es_obsoleto)    return false
       if (q && !f.referencia.toLowerCase().includes(q) && !f.descripcion.toLowerCase().includes(q)) return false
       return true
     })
-  }, [filas, sede, clase, accionesSel, buscar, soloStock, soloObsoletos])
+  }, [filas, sede, almacen, clase, accionesSel, buscar, soloStock, soloObsoletos])
 
   // ── Ordenar ────────────────────────────────────────────────────────────────
   const filasOrdenadas = useMemo(() => {
@@ -172,21 +177,51 @@ export default function InventarioPage() {
   const totalPaginas = Math.ceil(filasOrdenadas.length / POR_PAGINA)
   const filasPagina  = filasOrdenadas.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
 
+  // ── Selección ──────────────────────────────────────────────────────────────
+  const toggleSeleccion = (f: FilaPedido) => {
+    const k = rowKey(f)
+    setSeleccion(prev => {
+      const next = new Set(prev)
+      next.has(k) ? next.delete(k) : next.add(k)
+      return next
+    })
+  }
+
+  const togglePagina = () => {
+    const keys = filasPagina.map(rowKey)
+    const todasSel = keys.every(k => seleccion.has(k))
+    setSeleccion(prev => {
+      const next = new Set(prev)
+      keys.forEach(k => todasSel ? next.delete(k) : next.add(k))
+      return next
+    })
+  }
+
+  const limpiarSeleccion = () => setSeleccion(new Set())
+
+  // Filas seleccionadas con datos completos
+  const filasSeleccionadas = useMemo(() =>
+    filas.filter(f => seleccion.has(rowKey(f)))
+  , [filas, seleccion])
+
+  // Resumen del pedido seleccionado
+  const resumenPedido = useMemo(() => ({
+    refs:      filasSeleccionadas.length,
+    unidades:  filasSeleccionadas.reduce((s, f) => s + (f.cantidad_sugerida || 1), 0),
+    valor:     filasSeleccionadas.reduce((s, f) => s + (f.cantidad_sugerida || 1) * f.costo_medio, 0),
+  }), [filasSeleccionadas])
+
   // ── KPIs resumen ───────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const concretar  = filas.filter(f => f.accion_sugerida === 'Concretar')
-    const recomendar = filas.filter(f => f.accion_sugerida === 'Recomendar')
-    const observar   = filas.filter(f => f.accion_sugerida === 'Observar')
-    const obsoletos  = filas.filter(f => f.es_obsoleto)
-    const a_pedir    = filas.filter(f => ['Concretar','Recomendar'].includes(f.accion_sugerida))
+    const a_pedir = filas.filter(f => ['Concretar','Recomendar'].includes(f.accion_sugerida))
     return {
-      concretar:  concretar.length,
-      recomendar: recomendar.length,
-      observar:   observar.length,
-      obsoletos:  obsoletos.length,
+      concretar:  filas.filter(f => f.accion_sugerida === 'Concretar').length,
+      recomendar: filas.filter(f => f.accion_sugerida === 'Recomendar').length,
+      observar:   filas.filter(f => f.accion_sugerida === 'Observar').length,
+      obsoletos:  filas.filter(f => f.es_obsoleto).length,
       refs_pedir: a_pedir.length,
       uds_pedir:  a_pedir.reduce((s, f) => s + f.cantidad_sugerida, 0),
-      valor_pedir: a_pedir.reduce((s, f) => s + f.cantidad_sugerida * f.costo_medio, 0),
+      valor_pedir:a_pedir.reduce((s, f) => s + f.cantidad_sugerida * f.costo_medio, 0),
     }
   }, [filas])
 
@@ -196,39 +231,68 @@ export default function InventarioPage() {
     setGuardando(true)
     try {
       await supabase.from('inventario_override').upsert({
-        almacen:       overrideRef.almacen,
-        referencia:    overrideRef.referencia,
-        accion_manual: overrideAccion,
-        motivo:        overrideMotivo || null,
-        usuario:       'jefe_repuestos',
-        actualizado_en: new Date().toISOString(),
+        almacen: overrideRef.almacen, referencia: overrideRef.referencia,
+        accion_manual: overrideAccion, motivo: overrideMotivo || null,
+        usuario: 'jefe_repuestos', actualizado_en: new Date().toISOString(),
       }, { onConflict: 'almacen,referencia' })
-      setOverrideRef(null)
-      setOverrideMotivo('')
+      setOverrideRef(null); setOverrideMotivo('')
       await cargar()
-    } catch (e: any) {
-      alert(`Error guardando: ${e?.message}`)
-    }
+    } catch (e: any) { alert(`Error guardando: ${e?.message}`) }
     setGuardando(false)
   }
 
-  // ── Descargar Excel (CSV) ──────────────────────────────────────────────────
-  const descargar = () => {
-    const cols = ['Almacen','Sede','Referencia','Descripcion','Clase','Stock','Prom9M','Movil','Prom4M','Frecuencia','Moda','Cond1','Cond2','Cond3','Cond4','Condiciones','Accion','Cantidad','Override','Motivo']
-    const rows = filasOrdenadas.filter(f => ['Concretar','Recomendar'].includes(f.accion_sugerida))
-    const csv  = [cols.join(','), ...rows.map(f =>
-      [f.almacen, f.sede, f.referencia, `"${f.descripcion}"`, f.clase,
-       f.stock_real, f.promedio_9m, f.movil_ponderado, f.promedio_4m,
-       f.frecuencia, f.moda,
-       f.cond1_considerar?1:0, f.cond2_reforzar?1:0, f.cond3_pedir?1:0, f.cond4_solicitar?1:0,
-       f.condiciones_cumplidas, f.accion_sugerida, f.cantidad_sugerida,
-       f.accion_manual ?? '', `"${f.motivo_override ?? ''}"`].join(',')
-    )].join('\n')
+  // ── Descargar pedido ───────────────────────────────────────────────────────
+  const descargar = (soloSeleccion = false) => {
+    const cols = [
+      'Almacen','Sede','Referencia','Descripcion','Clase',
+      'Stock_Real','Prom_9M','Movil_Ponderado','Prom_4M','Frecuencia',
+      'Cond1','Cond2','Cond3','Cond4','Condiciones',
+      'Accion_Sugerida','Cantidad_Sugerida','Costo_Medio','Valor_Estimado',
+      'Override','Motivo'
+    ]
+
+    // Fuente: selección manual O todas las Concretar+Recomendar (sin filtros de UI)
+    const base = soloSeleccion
+      ? filasSeleccionadas
+      : filas.filter(f => ['Concretar','Recomendar'].includes(f.accion_sugerida))
+
+    if (base.length === 0) {
+      alert('No hay referencias para descargar.')
+      return
+    }
+
+    const escCSV = (v: string) => `"${(v ?? '').toString().replace(/"/g, '""')}"`
+
+    const rows = base.map(f => [
+      f.almacen,
+      f.sede,
+      f.referencia,
+      escCSV(f.descripcion),
+      f.clase,
+      f.stock_real,
+      f.promedio_9m,
+      f.movil_ponderado,
+      f.promedio_4m,
+      f.frecuencia,
+      f.cond1_considerar ? 1 : 0,
+      f.cond2_reforzar   ? 1 : 0,
+      f.cond3_pedir      ? 1 : 0,
+      f.cond4_solicitar  ? 1 : 0,
+      f.condiciones_cumplidas,
+      f.accion_sugerida,
+      f.cantidad_sugerida || 1,
+      Math.round(f.costo_medio),
+      Math.round((f.cantidad_sugerida || 1) * f.costo_medio),
+      f.accion_manual ?? '',
+      escCSV(f.motivo_override ?? ''),
+    ].join(','))
+
+    const csv  = [cols.join(','), ...rows].join('\n')
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href     = url
-    a.download = `pedido_sugerido_${new Date().toISOString().slice(0,10)}.csv`
+    a.download = `pedido_${soloSeleccion ? 'seleccion' : 'sugerido'}_${new Date().toISOString().slice(0,10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -273,7 +337,7 @@ export default function InventarioPage() {
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>
             Actualizar
           </button>
-          <button onClick={descargar}
+          <button onClick={() => descargar(false)}
             className="flex items-center gap-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/40 text-green-400 rounded-lg px-4 py-2 text-sm font-mono transition-colors">
             <Download size={14}/>
             Descargar pedido
@@ -292,14 +356,62 @@ export default function InventarioPage() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <KpiCard label="Concretar"  value={kpis.concretar}  color="text-brand-teal"  sub="pedir urgente"/>
-        <KpiCard label="Recomendar" value={kpis.recomendar} color="text-green-400"   sub="pedir pronto"/>
-        <KpiCard label="Observar"   value={kpis.observar}   color="text-yellow-400"  sub="vigilar"/>
-        <KpiCard label="Obsoletos"  value={kpis.obsoletos}  color="text-red-400"     sub="+12 meses sin salida"/>
-        <KpiCard label="Refs a pedir" value={kpis.refs_pedir} color="text-brand-teal"/>
+        <KpiCard label="Concretar"        value={kpis.concretar}  color="text-brand-teal" sub="pedir urgente"/>
+        <KpiCard label="Recomendar"       value={kpis.recomendar} color="text-green-400"  sub="pedir pronto"/>
+        <KpiCard label="Observar"         value={kpis.observar}   color="text-yellow-400" sub="vigilar"/>
+        <KpiCard label="Obsoletos"        value={kpis.obsoletos}  color="text-red-400"    sub="+12 meses sin salida"/>
+        <KpiCard label="Refs a pedir"     value={kpis.refs_pedir} color="text-brand-teal"/>
         <KpiCard label="Unidades a pedir" value={kpis.uds_pedir.toLocaleString('es-CO')} color="text-green-400"/>
-        <KpiCard label="Valor estimado" value={`$${(kpis.valor_pedir/1e6).toFixed(1)}M`} color="text-brand-gold" sub="a costo medio"/>
+        <KpiCard label="Valor estimado"   value={`$${(kpis.valor_pedir/1e6).toFixed(1)}M`} color="text-brand-gold" sub="a costo medio"/>
       </div>
+
+      {/* ── Panel resumen pedido seleccionado ── */}
+      {seleccion.size > 0 && (
+        <Panel className="border-brand-teal/40 bg-brand-teal/5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <ShoppingCart size={18} className="text-brand-teal"/>
+              <div>
+                <p className="text-xs font-mono uppercase tracking-wider text-brand-teal mb-0.5">Pedido seleccionado</p>
+                <p className="text-sm font-mono text-brand-text">
+                  <span className="font-bold text-brand-teal">{resumenPedido.refs}</span> referencias ·{' '}
+                  <span className="font-bold text-green-400">{resumenPedido.unidades.toLocaleString('es-CO')}</span> unidades ·{' '}
+                  <span className="font-bold text-brand-gold">{fmtCOP(resumenPedido.valor)}</span> valor estimado
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => descargar(true)}
+                className="flex items-center gap-2 bg-brand-teal text-black rounded-lg px-4 py-2 text-sm font-mono font-semibold hover:bg-brand-teal/80 transition-colors">
+                <Download size={14}/>
+                Descargar selección
+              </button>
+              <button onClick={limpiarSeleccion}
+                className="flex items-center gap-2 border border-brand-border text-brand-subtle hover:text-brand-text rounded-lg px-3 py-2 text-sm font-mono transition-colors">
+                <X size={14}/>
+                Limpiar
+              </button>
+            </div>
+          </div>
+          {/* Lista compacta de referencias seleccionadas */}
+          <div className="mt-3 pt-3 border-t border-brand-teal/20">
+            <div className="flex flex-wrap gap-2">
+              {filasSeleccionadas.slice(0,20).map(f => (
+                <span key={rowKey(f)}
+                  className="inline-flex items-center gap-1.5 bg-brand-bg border border-brand-border rounded-lg px-2 py-1 text-xs font-mono text-brand-text">
+                  <span className="text-brand-muted">Alm{f.almacen}</span>
+                  <span className="font-semibold">{f.referencia}</span>
+                  <span className="text-brand-teal">{f.cantidad_sugerida || 1} uds</span>
+                  <button onClick={() => toggleSeleccion(f)} className="text-brand-muted hover:text-red-400 ml-1">×</button>
+                </span>
+              ))}
+              {filasSeleccionadas.length > 20 && (
+                <span className="text-xs font-mono text-brand-muted py-1">+{filasSeleccionadas.length - 20} más...</span>
+              )}
+            </div>
+          </div>
+        </Panel>
+      )}
 
       {/* ── Filtros ── */}
       <Panel>
@@ -310,9 +422,7 @@ export default function InventarioPage() {
             {ACCIONES.map(a => (
               <button key={a} onClick={() => toggleAccion(a)}
                 className={`px-3 py-1.5 text-xs font-mono rounded-lg border transition-colors ${
-                  accionesSel.has(a)
-                    ? `border-current font-semibold`
-                    : 'border-brand-border text-brand-muted'
+                  accionesSel.has(a) ? 'border-current font-semibold' : 'border-brand-border text-brand-muted'
                 }`}
                 style={accionesSel.has(a) ? { color: COLOR_ACCION[a], borderColor: COLOR_ACCION[a] + '60', background: COLOR_ACCION[a] + '15' } : {}}>
                 {a}
@@ -325,10 +435,20 @@ export default function InventarioPage() {
           {/* Sede */}
           <div className="flex rounded-lg border border-brand-border overflow-hidden">
             {SEDES.map(s => (
-              <button key={s} onClick={() => { setSede(s); setPagina(1) }}
+              <button key={s} onClick={() => { setSede(s); setAlmacen('Todos'); setPagina(1) }}
                 className={`px-3 py-1.5 text-xs font-mono transition-colors ${
                   sede === s ? 'bg-brand-teal text-black font-semibold' : 'text-brand-subtle hover:text-brand-text'
                 }`}>{s}</button>
+            ))}
+          </div>
+
+          {/* Almacén */}
+          <div className="flex rounded-lg border border-brand-border overflow-hidden">
+            {ALMACENES.map(a => (
+              <button key={a} onClick={() => { setAlmacen(a); setSede('Todas'); setPagina(1) }}
+                className={`px-3 py-1.5 text-xs font-mono transition-colors ${
+                  almacen === a ? 'bg-brand-gold text-black font-semibold' : 'text-brand-subtle hover:text-brand-text'
+                }`}>{a === 'Todos' ? 'Todos' : `Alm ${a}`}</button>
             ))}
           </div>
 
@@ -337,7 +457,7 @@ export default function InventarioPage() {
             {CLASES.map(c => (
               <button key={c} onClick={() => { setClase(c); setPagina(1) }}
                 className={`px-3 py-1.5 text-xs font-mono transition-colors ${
-                  clase === c ? 'bg-brand-gold text-black font-semibold' : 'text-brand-subtle hover:text-brand-text'
+                  clase === c ? 'bg-brand-subtle text-black font-semibold' : 'text-brand-subtle hover:text-brand-text'
                 }`}>{c}</button>
             ))}
           </div>
@@ -367,6 +487,7 @@ export default function InventarioPage() {
 
         <div className="mt-3 text-xs font-mono text-brand-subtle">
           Mostrando {filasFiltradas.length.toLocaleString('es-CO')} de {filas.length.toLocaleString('es-CO')} referencias
+          {seleccion.size > 0 && <span className="ml-3 text-brand-teal">· {seleccion.size} seleccionadas</span>}
         </div>
       </Panel>
 
@@ -376,7 +497,14 @@ export default function InventarioPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-border">
-                <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider py-3 pl-5 pr-3 whitespace-nowrap">Sede/Alm</th>
+                {/* Checkbox seleccionar todo en página */}
+                <th className="py-3 pl-4 pr-2 w-8">
+                  <input type="checkbox"
+                    checked={filasPagina.length > 0 && filasPagina.every(f => seleccion.has(rowKey(f)))}
+                    onChange={togglePagina}
+                    className="w-3.5 h-3.5 accent-brand-teal"/>
+                </th>
+                <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider py-3 pr-3 whitespace-nowrap">Sede/Alm</th>
                 <ColHeader col="referencia"        label="Referencia"/>
                 <ColHeader col="descripcion"       label="Descripción"/>
                 <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-3 whitespace-nowrap">Clase</th>
@@ -387,64 +515,78 @@ export default function InventarioPage() {
                 <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-3 whitespace-nowrap">C1 C2 C3 C4</th>
                 <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-3 whitespace-nowrap">Acción</th>
                 <ColHeader col="cantidad_sugerida" label="Pedir"/>
+                <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-3 whitespace-nowrap">Valor</th>
                 <th className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-5 whitespace-nowrap">Override</th>
               </tr>
             </thead>
             <tbody>
-              {filasPagina.map((f, i) => (
-                <tr key={`${f.almacen}-${f.referencia}-${i}`}
-                  className={`border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors ${f.es_obsoleto ? 'opacity-60' : ''}`}>
-                  <td className="py-2.5 pl-5 pr-3 font-mono text-xs text-brand-subtle whitespace-nowrap">
-                    {f.sede}<br/><span className="text-brand-muted">Alm {f.almacen}</span>
-                  </td>
-                  <td className="py-2.5 pr-3 font-mono text-xs text-brand-text font-semibold whitespace-nowrap">{f.referencia}</td>
-                  <td className="py-2.5 pr-3 text-xs text-brand-subtle max-w-[220px] truncate" title={f.descripcion}>{f.descripcion}</td>
-                  <td className="py-2.5 pr-3">
-                    <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${
-                      f.clase === 'A' ? 'bg-brand-teal/20 text-brand-teal' :
-                      f.clase === 'B' ? 'bg-brand-gold/20 text-brand-gold' :
-                      'bg-brand-border text-brand-muted'
-                    }`}>{f.clase}</span>
-                  </td>
-                  <td className="py-2.5 pr-3 font-mono text-xs">
-                    <span className={f.stock_real === 0 ? 'text-red-400 font-semibold' : 'text-brand-text'}>
-                      {f.stock_real}
-                    </span>
-                  </td>
-                  <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">{f.promedio_9m}</td>
-                  <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">{f.promedio_4m}</td>
-                  <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">{fmtPct(f.frecuencia)}</td>
-                  <td className="py-2.5 pr-3 font-mono text-xs">
-                    <span className="flex gap-1.5">
-                      <Cond ok={f.cond1_considerar}/>
-                      <Cond ok={f.cond2_reforzar}/>
-                      <Cond ok={f.cond3_pedir}/>
-                      <Cond ok={f.cond4_solicitar}/>
-                    </span>
-                  </td>
-                  <td className="py-2.5 pr-3"><Badge accion={f.accion_sugerida}/></td>
-                  <td className="py-2.5 pr-3 font-mono text-xs">
-                    {f.cantidad_sugerida > 0
-                      ? <span className="text-brand-teal font-semibold">{f.cantidad_sugerida}</span>
-                      : <span className="text-brand-muted">—</span>}
-                  </td>
-                  <td className="py-2.5 pr-5">
-                    {f.accion_manual ? (
-                      <button onClick={() => { setOverrideRef(f); setOverrideAccion(f.accion_manual as any); setOverrideMotivo(f.motivo_override ?? '') }}
-                        className={`text-xs font-mono px-2 py-0.5 rounded border ${
-                          f.accion_manual === 'Pedir' ? 'border-green-500/40 text-green-400' : 'border-red-500/40 text-red-400'
-                        }`}>
-                        {f.accion_manual}
-                      </button>
-                    ) : (
-                      <button onClick={() => { setOverrideRef(f); setOverrideAccion('Pedir'); setOverrideMotivo('') }}
-                        className="text-xs font-mono text-brand-muted hover:text-brand-subtle border border-transparent hover:border-brand-border rounded px-2 py-0.5 transition-colors">
-                        + marcar
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filasPagina.map((f, i) => {
+                const sel = seleccion.has(rowKey(f))
+                return (
+                  <tr key={`${f.almacen}-${f.referencia}-${i}`}
+                    className={`border-b border-brand-border/40 transition-colors cursor-pointer ${
+                      sel ? 'bg-brand-teal/5 border-brand-teal/20' : 'hover:bg-brand-surface/50'
+                    } ${f.es_obsoleto ? 'opacity-60' : ''}`}
+                    onClick={() => toggleSeleccion(f)}>
+                    <td className="py-2.5 pl-4 pr-2" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={sel} onChange={() => toggleSeleccion(f)}
+                        className="w-3.5 h-3.5 accent-brand-teal"/>
+                    </td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle whitespace-nowrap">
+                      {f.sede}<br/><span className="text-brand-muted">Alm {f.almacen}</span>
+                    </td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-brand-text font-semibold whitespace-nowrap">{f.referencia}</td>
+                    <td className="py-2.5 pr-3 text-xs text-brand-subtle max-w-[200px] truncate" title={f.descripcion}>{f.descripcion}</td>
+                    <td className="py-2.5 pr-3">
+                      <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${
+                        f.clase === 'A' ? 'bg-brand-teal/20 text-brand-teal' :
+                        f.clase === 'B' ? 'bg-brand-gold/20 text-brand-gold' :
+                        'bg-brand-border text-brand-muted'
+                      }`}>{f.clase}</span>
+                    </td>
+                    <td className="py-2.5 pr-3 font-mono text-xs">
+                      <span className={f.stock_real === 0 ? 'text-red-400 font-semibold' : 'text-brand-text'}>{f.stock_real}</span>
+                    </td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">{f.promedio_9m}</td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">{f.promedio_4m}</td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">{fmtPct(f.frecuencia)}</td>
+                    <td className="py-2.5 pr-3 font-mono text-xs">
+                      <span className="flex gap-1.5">
+                        <Cond ok={f.cond1_considerar}/>
+                        <Cond ok={f.cond2_reforzar}/>
+                        <Cond ok={f.cond3_pedir}/>
+                        <Cond ok={f.cond4_solicitar}/>
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-3"><Badge accion={f.accion_sugerida}/></td>
+                    <td className="py-2.5 pr-3 font-mono text-xs">
+                      {f.cantidad_sugerida > 0
+                        ? <span className="text-brand-teal font-semibold">{f.cantidad_sugerida}</span>
+                        : <span className="text-brand-muted">—</span>}
+                    </td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-brand-subtle">
+                      {f.costo_medio > 0 && f.cantidad_sugerida > 0
+                        ? fmtCOP(f.cantidad_sugerida * f.costo_medio)
+                        : '—'}
+                    </td>
+                    <td className="py-2.5 pr-5" onClick={e => e.stopPropagation()}>
+                      {f.accion_manual ? (
+                        <button onClick={() => { setOverrideRef(f); setOverrideAccion(f.accion_manual as any); setOverrideMotivo(f.motivo_override ?? '') }}
+                          className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                            f.accion_manual === 'Pedir' ? 'border-green-500/40 text-green-400' : 'border-red-500/40 text-red-400'
+                          }`}>
+                          {f.accion_manual}
+                        </button>
+                      ) : (
+                        <button onClick={() => { setOverrideRef(f); setOverrideAccion('Pedir'); setOverrideMotivo('') }}
+                          className="text-xs font-mono text-brand-muted hover:text-brand-subtle border border-transparent hover:border-brand-border rounded px-2 py-0.5 transition-colors">
+                          + marcar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -477,7 +619,6 @@ export default function InventarioPage() {
             <p className="text-xs font-mono text-brand-subtle mb-4">
               {overrideRef.referencia} · {overrideRef.descripcion.slice(0,50)}
             </p>
-
             <div className="flex gap-3 mb-4">
               {(['Pedir','No Pedir'] as const).map(op => (
                 <button key={op} onClick={() => setOverrideAccion(op)}
@@ -490,13 +631,10 @@ export default function InventarioPage() {
                   }`}>{op}</button>
               ))}
             </div>
-
-            <textarea
-              placeholder="Motivo (opcional): campaña garantía, vehículo nuevo, sobrestock..."
+            <textarea placeholder="Motivo (opcional)..."
               value={overrideMotivo} onChange={e => setOverrideMotivo(e.target.value)}
               rows={3}
               className="w-full bg-brand-bg border border-brand-border rounded-lg px-3 py-2 text-xs font-mono text-brand-text focus:outline-none focus:border-brand-teal resize-none mb-4"/>
-
             <div className="flex gap-3">
               <button onClick={() => setOverrideRef(null)}
                 className="flex-1 py-2 rounded-lg text-sm font-mono border border-brand-border text-brand-subtle hover:text-brand-text transition-colors">
