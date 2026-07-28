@@ -6,33 +6,19 @@ import {
   ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
 
-// ── Tipos ─────────────────────────────────────────────────────────────────────
 interface FacturaAcc {
-  referencia:      number
-  prefijo_num:     string
-  nombre_cliente:  string
-  nombre_vendedor: string
-  cuenta:          number
-  fecha:           string
-  prefijo:         string
-  taller:          string
-  sede:            string
-  fuente:          string
-  canal:           string
-  mes:             string
-  anio:            number
-  neto:            number
-  costo:           number
-  beneficio:       number
-  lineas:          number
+  referencia: number; prefijo_num: string; nombre_cliente: string
+  nombre_vendedor: string; cuenta: number; fecha: string
+  prefijo: string; taller: string; sede: string; fuente: string
+  canal: string; mes: string; anio: number
+  neto: number; costo: number; beneficio: number; lineas: number
 }
-
 interface ResumenVista {
   canal: string; sede: string; mes: string; anio: number
   neto: number; costo: number; beneficio: number; presupuesto: number
 }
+interface FilaPance { neto: number; costo: number }
 
-// ── Constantes ────────────────────────────────────────────────────────────────
 const MESES_KEY = ['enero','febrero','marzo','abril','mayo','junio',
   'julio','agosto','septiembre','octubre','noviembre','diciembre']
 const MESES_LABEL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -104,7 +90,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-const COLORES_SEDE: Record<string,string> = { 'Norte':'#4FD1C5','Pasoancho':'#68D391','Sede 39':'#F6AD55' }
+const COLORES_SEDE: Record<string,string> = {
+  'Norte':'#4FD1C5', 'Pasoancho':'#68D391', 'Sede 39':'#F6AD55', 'Pance':'#A78BFA'
+}
 
 export default function AccesoriosPage() {
   const hoy = new Date()
@@ -114,30 +102,38 @@ export default function AccesoriosPage() {
   const [fuente, setFuente] = useState('Todas')
   const [buscar, setBuscar] = useState('')
 
-  const [facturas,  setFacturas]  = useState<FacturaAcc[]>([])
-  const [resumen,   setResumen]   = useState<ResumenVista[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState('')
-  const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
+  const [facturas,   setFacturas]   = useState<FacturaAcc[]>([])
+  const [resumen,    setResumen]    = useState<ResumenVista[]>([])
+  const [dataPance,  setDataPance]  = useState<FilaPance[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
+  const [ultimaAct,  setUltimaAct]  = useState<Date|null>(null)
 
   const cargar = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [{ data: dataFact }, { data: dataRes }] = await Promise.all([
+      const [{ data: dataFact }, { data: dataRes }, { data: dataPanceRaw }] = await Promise.all([
         supabase
           .from('v_accesorios_facturas')
-          .select('referencia, prefijo_num, nombre_cliente, nombre_vendedor, cuenta, fecha, prefijo, taller, sede, fuente, canal, mes, anio, neto, costo, beneficio, lineas')
+          .select('referencia,prefijo_num,nombre_cliente,nombre_vendedor,cuenta,fecha,prefijo,taller,sede,fuente,canal,mes,anio,neto,costo,beneficio,lineas')
           .eq('anio', anio)
           .eq('mes', MESES_KEY[mes-1])
           .limit(5000),
         supabase
           .from('v_facturacion_general')
-          .select('canal, sede, mes, anio, neto, costo, beneficio, presupuesto')
+          .select('canal,sede,mes,anio,neto,costo,beneficio,presupuesto')
           .eq('canal', 'Accesorios')
           .eq('anio', anio),
+        supabase
+          .from('comisiones_acc_detalle')
+          .select('neto,costo')
+          .eq('anio', anio)
+          .eq('mes_num', mes)
+          .eq('vitrina', 'Pance'),
       ])
       setFacturas((dataFact ?? []) as FacturaAcc[])
       setResumen((dataRes ?? []) as ResumenVista[])
+      setDataPance((dataPanceRaw ?? []) as FilaPance[])
       setUltimaAct(new Date())
     } catch(e: any) { setError(`Error: ${e?.message}`) }
     setLoading(false)
@@ -154,10 +150,18 @@ export default function AccesoriosPage() {
   const dhRest  = totalDH - dhTransc
   const pctDias = totalDH ? (dhTransc/totalDH)*100 : 0
 
-  // Presupuesto
   const mesClave = MESES_KEY[mes-1]
-  const filasMes = resumen.filter(r => r.mes===mesClave && (sede==='Todas'||r.sede===sede))
+
+  // Presupuesto
+  const filasMes  = resumen.filter(r => r.mes===mesClave && (sede==='Todas'||r.sede===sede))
   const totalPpto = filasMes.reduce((s,r)=>s+Number(r.presupuesto),0)
+
+  // Pance KPIs
+  const kpisPance = useMemo(() => {
+    const neto  = dataPance.reduce((s,r) => s + (r.neto  || 0), 0)
+    const costo = dataPance.reduce((s,r) => s + (r.costo || 0), 0)
+    return { neto, costo, util: neto - costo, facturas: dataPance.length }
+  }, [dataPance])
 
   // Filtrado
   const factFiltradas = useMemo(() => {
@@ -168,7 +172,7 @@ export default function AccesoriosPage() {
     })
   }, [facturas, sede, fuente])
 
-  // Totales
+  // Totales (sin Pance — Pance es vitrina separada)
   const totalNeto  = factFiltradas.reduce((s,f)=>s+Number(f.neto),0)
   const totalCosto = factFiltradas.reduce((s,f)=>s+Number(f.costo),0)
   const totalUtil  = totalNeto - totalCosto
@@ -183,7 +187,7 @@ export default function AccesoriosPage() {
 
   // Por sede
   const porSede = useMemo(() => ['Norte','Pasoancho','Sede 39'].map(s => {
-    const fs = facturas.filter(f => f.sede===s && (fuente==='Todas'||f.fuente===fuente))
+    const fs   = facturas.filter(f => f.sede===s && (fuente==='Todas'||f.fuente===fuente))
     const neto  = fs.reduce((sum,f)=>sum+Number(f.neto),0)
     const costo = fs.reduce((sum,f)=>sum+Number(f.costo),0)
     const ppto  = resumen.filter(r=>r.mes===mesClave&&r.sede===s).reduce((sum,r)=>sum+Number(r.presupuesto),0)
@@ -192,7 +196,7 @@ export default function AccesoriosPage() {
 
   // Por fuente
   const porFuente = useMemo(() => ['Taller','Mostrador'].map(f => {
-    const fs = factFiltradas.filter(x=>x.fuente===f)
+    const fs    = factFiltradas.filter(x=>x.fuente===f)
     const neto  = fs.reduce((s,x)=>s+Number(x.neto),0)
     const costo = fs.reduce((s,x)=>s+Number(x.costo),0)
     return { fuente:f, neto, costo, util:neto-costo, facturas:fs.length }
@@ -338,8 +342,8 @@ export default function AccesoriosPage() {
           accent={pctPronos>=95?'text-green-400':pctPronos>=85?'text-yellow-400':'text-red-400'}/>
       </div>
 
-      {/* Cards por sede */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Cards por sede — 3 sedes + Pance */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {porSede.map(s=>(
           <button key={s.sede} onClick={()=>setSede(sede===s.sede?'Todas':s.sede)}
             className={`rounded-xl border p-5 text-left transition-all ${sede===s.sede?'border-brand-teal bg-brand-teal/10':'border-brand-border bg-brand-surface hover:border-brand-teal/50'}`}>
@@ -354,12 +358,25 @@ export default function AccesoriosPage() {
             </p>
           </button>
         ))}
+
+        {/* ── TARJETA PANCE ── */}
+        <div className="rounded-xl border p-5 text-left"
+          style={{ borderColor: '#A78BFA40', background: '#A78BFA08' }}>
+          <div className="flex justify-between items-start mb-2">
+            <p className="text-sm font-semibold text-brand-text">Accesorios Pance</p>
+            <span className="text-[9px] px-1.5 py-0.5 rounded font-mono border border-brand-border text-brand-muted">Vitrina</span>
+          </div>
+          <p className="text-xs font-mono text-brand-subtle mb-2">{kpisPance.facturas} facturas</p>
+          <p className="text-2xl font-bold font-title" style={{color:'#A78BFA'}}>{fmtCOP(kpisPance.neto)}</p>
+          <p className={`text-xs font-mono mt-1 ${kpisPance.util>=0?'text-green-400':'text-red-400'}`}>
+            Utilidad: {fmtCOP(kpisPance.util)} ({kpisPance.neto?fmtPct((kpisPance.util/kpisPance.neto)*100):'0%'})
+          </p>
+        </div>
       </div>
 
       {/* Gráficas y tablas */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
-        {/* Por fuente: Taller vs Mostrador */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Por fuente — {MESES_LABEL[mes-1]} {anio}</h2>
           <table className="w-full text-sm">
@@ -397,7 +414,6 @@ export default function AccesoriosPage() {
           </table>
         </Panel>
 
-        {/* Por asesor */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Por asesor — {MESES_LABEL[mes-1]} {anio}</h2>
           <table className="w-full text-sm">
@@ -422,7 +438,6 @@ export default function AccesoriosPage() {
           </table>
         </Panel>
 
-        {/* Evolución mensual */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Evolución mensual {anio}</h2>
           <ResponsiveContainer width="100%" height={260}>
@@ -438,7 +453,6 @@ export default function AccesoriosPage() {
           </ResponsiveContainer>
         </Panel>
 
-        {/* Por sede detalle */}
         <Panel>
           <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">Por sede — {MESES_LABEL[mes-1]} {anio}</h2>
           <table className="w-full text-sm">
@@ -475,6 +489,22 @@ export default function AccesoriosPage() {
                   </td>
                 </tr>
               ))}
+              {/* Fila Pance */}
+              <tr className="border-b border-brand-border/40">
+                <td className="py-2 pr-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{background:'#A78BFA'}}/>
+                    <span className="text-brand-text text-xs font-medium">Pance</span>
+                    <span className="text-[9px] font-mono text-brand-muted border border-brand-border rounded px-1">Vitrina</span>
+                  </div>
+                </td>
+                <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{kpisPance.facturas}</td>
+                <td className="py-2 pr-4 font-mono text-xs font-semibold" style={{color:'#A78BFA'}}>{fmtCOP(kpisPance.neto)}</td>
+                <td className="py-2 pr-4 font-mono text-xs text-green-400">{fmtCOP(kpisPance.util)}</td>
+                <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{kpisPance.neto?fmtPct((kpisPance.util/kpisPance.neto)*100):'0%'}</td>
+                <td className="py-2 pr-4 font-mono text-xs text-brand-muted">—</td>
+                <td className="py-2 font-mono text-xs text-brand-muted">—</td>
+              </tr>
             </tbody>
           </table>
         </Panel>
