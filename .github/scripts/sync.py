@@ -169,8 +169,27 @@ def leer_mes(ws, sede, mes, anio_actual, filtro_mes):
     return registros
 
 #  Upsert Supabase --------------------------------------------------------
+def limpiar_sin_vitrina(sb, sede, mes_num):
+    """Elimina registros sin vitrina de un mes/sede antes de reinsertar.
+    Esto evita duplicados cuando el CSV manual ya cargó datos con vitrina."""
+    try:
+        sb.table('comisiones_acc_detalle').delete()\
+            .eq('sede', sede)\
+            .eq('mes_num', mes_num)\
+            .is_('vitrina', 'null')\
+            .execute()
+    except Exception as e:
+        log(f"   Aviso limpieza previa: {e}")
+
 def upsert(sb, registros, sede, mes):
     if not registros: return 0
+
+    mes_num = MESES_MAP.get(mes)
+    if mes_num:
+        # Limpiar registros sin vitrina del mes antes de reinsertar
+        # para evitar duplicados con datos cargados manualmente con vitrina
+        limpiar_sin_vitrina(sb, sede, mes_num)
+
     total = 0
     for i in range(0, len(registros), 500):
         lote = registros[i:i+500]
