@@ -245,13 +245,13 @@ export default function TallerPage() {
 
   // ── Búsqueda en tabla ─────────────────────────────────────────────────────
   const facturasBuscar = useMemo(() => {
-    if (!buscar.trim()) return lineasFiltradas
+    if (!buscar.trim()) return facturas
     const b = buscar.toLowerCase()
-    return lineasFiltradas.filter(f =>
-      f.cliente.toLowerCase().includes(b) ||
+    return facturas.filter(f =>
+      (f.cliente || '').toLowerCase().includes(b) ||
       String(f.referencia).includes(b) ||
-      f.asesor.toLowerCase().includes(b) ||
-      f.taller.includes(b)
+      (f.asesor || '').toLowerCase().includes(b) ||
+      (f.taller || '').includes(b)
     )
   }, [facturas, buscar])
 
