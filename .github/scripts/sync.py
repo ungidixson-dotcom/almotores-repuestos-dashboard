@@ -73,8 +73,9 @@ def fecha_iso(v):
         except: pass
     return None
 
-def fila_key(sede, anio, mes_num, registro, articulo, idx):
-    raw = f"{sede}|{anio}|{mes_num}|{registro or ''}|{articulo or ''}|{idx}"
+def fila_key(sede, anio, mes_num, registro, articulo, prefijo_num):
+    # Usar prefijo_num en lugar de idx para hacer la key determinista entre syncs
+    raw = f"{sede}|{anio}|{mes_num}|{registro or ''}|{articulo or ''}|{prefijo_num or ''}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 #  Obtener access token desde refresh token 
@@ -139,11 +140,12 @@ def leer_mes(ws, sede, mes, anio_actual, filtro_mes):
         if not row or row[0] is None: continue
         f_str     = fecha_iso(row[COL['fecha']])
         anio_real = int(f_str[:4]) if f_str else anio_actual
-        reg = txt(row[COL['registro']])
-        art = txt(row[COL['articulo']])
+        reg        = txt(row[COL['registro']])
+        art        = txt(row[COL['articulo']])
+        pref_num   = txt(row[COL['prefijo_num']])
         idx += 1
         registros.append({
-            'fila_key':      fila_key(sede, anio_real, mes_num, reg, art, idx),
+            'fila_key':      fila_key(sede, anio_real, mes_num, reg, art, pref_num),
             'sede':          sede,
             'anio':          anio_real,
             'mes_num':       mes_num,
@@ -162,8 +164,9 @@ def leer_mes(ws, sede, mes, anio_actual, filtro_mes):
             'asesor':        txt(row[COL['asesor']]),
             'cedula_asesor': txt(row[COL['cedula_asesor']]),
             'area_venta':    txt(row[COL['area_venta']]),
-            'prefijo_num':   txt(row[COL['prefijo_num']]),
+            'prefijo_num':   pref_num,
             'registro':      reg,
+            'vitrina':       sede,  # vitrina = sede por defecto desde Dropbox
             'actualizado_en': datetime.now().isoformat(),
         })
     return registros
