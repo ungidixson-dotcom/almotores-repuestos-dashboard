@@ -115,8 +115,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [syncing,    setSyncing]    = useState(false)
   const [syncMsg,    setSyncMsg]    = useState('')
-  const [dashboards, setDashboards] = useState<string[]>([])
-  const [esAdmin,    setEsAdmin]    = useState(false)
+  const [dashboards,    setDashboards]    = useState<string[]>([])
+  const [esAdmin,      setEsAdmin]      = useState(false)
+  const [permisosListos, setPermisosListos] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -132,6 +133,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       if (perfil?.rol === 'admin') {
         setEsAdmin(true)
+        setPermisosListos(true)
         return
       }
 
@@ -141,11 +143,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .eq('user_id', user.id)
 
       setDashboards((dashes ?? []).map((d: any) => d.dashboard))
+      setPermisosListos(true)
     }
     cargarPermisos()
   }, [router])
 
   const tieneAcceso = (ruta: string): boolean => {
+    if (!permisosListos) return false  // ocultar todo mientras carga
     if (esAdmin) return true
     const key = ROUTE_DASHBOARD[ruta]
     if (!key) return true  // rutas no mapeadas son accesibles
