@@ -217,7 +217,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                           {section.children.map(child => {
 
                             // Nivel 2 — leaf
-                            if (child.type === 'leaf') return (
+                            if (child.type === 'leaf') {
+                              if (!tieneAcceso(child.href)) return null
+                              return (
                               <li key={child.href}>
                                 <Link href={child.href}
                                   className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
@@ -227,7 +229,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                   {child.label}
                                 </Link>
                               </li>
-                            )
+                              )
+                            }
 
                             // Nivel 2 — group
                             const grpActive = hasActivePath(child.children as any, pathname)
@@ -247,7 +250,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                     {child.children.map(item => {
 
                                       // Nivel 3 — leaf dentro de group
-                                      if (item.type === 'leaf') return (
+                                      if (item.type === 'leaf') {
+                                        if (!tieneAcceso(item.href)) return null
+                                        return (
                                         <li key={item.href}>
                                           <Link href={item.href}
                                             className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
@@ -257,7 +262,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                             {item.label}
                                           </Link>
                                         </li>
-                                      )
+                                        )
+                                      }
 
                                       // Nivel 3 — subgroup (Torre de Control)
                                       const subActive = item.children.some(c => pathname === c.href)
@@ -274,7 +280,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                                           {openSubGroups[item.label] && (
                                             <ul className="mt-0.5 ml-3 pl-3 border-l border-brand-border/30 space-y-0.5">
-                                              {item.children.map(leaf => (
+                                              {item.children.filter(leaf => tieneAcceso(leaf.href)).map(leaf => (
                                                 <li key={leaf.href}>
                                                   <Link href={leaf.href}
                                                     className={`block px-3 py-1.5 rounded-lg text-[11px] font-mono transition-colors
