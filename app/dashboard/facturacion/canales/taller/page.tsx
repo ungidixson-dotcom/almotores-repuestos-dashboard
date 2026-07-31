@@ -245,9 +245,9 @@ export default function TallerPage() {
 
   // ── Búsqueda en tabla ─────────────────────────────────────────────────────
   const facturasBuscar = useMemo(() => {
-    if (!buscar.trim()) return facturas
+    if (!buscar.trim()) return lineasFiltradas
     const b = buscar.toLowerCase()
-    return facturas.filter(f =>
+    return lineasFiltradas.filter(f =>
       f.cliente.toLowerCase().includes(b) ||
       String(f.referencia).includes(b) ||
       f.asesor.toLowerCase().includes(b) ||
@@ -256,8 +256,8 @@ export default function TallerPage() {
   }, [facturas, buscar])
 
   // ── Totales ───────────────────────────────────────────────────────────────
-  const totalNeto  = facturas.reduce((s, f) => s + f.neto,  0)
-  const totalCosto = facturas.reduce((s, f) => s + f.costo, 0)
+  const totalNeto  = lineasFiltradas.reduce((s, f) => s + f.neto,  0)
+  const totalCosto = lineasFiltradas.reduce((s, f) => s + f.costo, 0)
   const totalUtil  = totalNeto - totalCosto
   const totalPpto  = getPpto(sede, tipo)
   const pctAvance  = totalPpto ? (totalNeto / totalPpto) * 100 : 0
