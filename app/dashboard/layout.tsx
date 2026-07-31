@@ -1,11 +1,33 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Receipt, FolderOpen, ChevronDown, ChevronRight,
   LayoutGrid, Package, RefreshCw,
 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
+
+// Mapeo ruta → dashboard key en user_dashboards
+const ROUTE_DASHBOARD: Record<string, string> = {
+  '/dashboard':                                                          'subastas',
+  '/dashboard/resumen-mensual':                                          'resumen_mensual',
+  '/dashboard/aseguradoras':                                             'aseguradoras',
+  '/dashboard/asesores':                                                 'asesores',
+  '/dashboard/facturacion/general':                                      'facturacion_general',
+  '/dashboard/facturacion/canales/accesorios':                           'facturacion_accesorios',
+  '/dashboard/facturacion/canales/accesorios/comisiones':                'facturacion_accesorios',
+  '/dashboard/facturacion/canales/accesorios/ventas-asesor':             'facturacion_accesorios',
+  '/dashboard/facturacion/canales/accesorios/ticket-promedio':           'facturacion_accesorios',
+  '/dashboard/facturacion/canales/taller':                               'facturacion_taller',
+  '/dashboard/facturacion/canales/mostrador':                            'facturacion_mostrador',
+  '/dashboard/facturacion/canales/mayoristas':                           'facturacion_mayoristas',
+  '/dashboard/facturacion/canales/subastas':                             'subastas',
+  '/dashboard/facturacion/canales/colision':                             'facturacion_colision',
+  '/dashboard/inventario':                                               'facturacion_general',
+}
+
 
 // ── Tipos (3 niveles) ─────────────────────────────────────────────────────────
 interface NavLeaf  { type: 'leaf';  label: string; href: string }
@@ -93,6 +115,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [syncing,    setSyncing]    = useState(false)
   const [syncMsg,    setSyncMsg]    = useState('')
+  const [dashboards, setDashboards] = useState<string[]>([])
+  const [esAdmin,    setEsAdmin]    = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    const cargarPermisos = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+
+      const { data: perfil } = await supabase
+        .from('user_profiles')
+        .select('rol')
+        .eq('id', user.id)
+        .single()
+
+      if (perfil?.rol === 'admin') {
+        setEsAdmin(true)
+        return
+      }
+
+      const { data: dashes } = await supabase
+        .from('user_dashboards')
+        .select('dashboard')
+        .eq('user_id', user.id)
+
+      setDashboards((dashes ?? []).map((d: any) => d.dashboard))
+    }
+    cargarPermisos()
+  }, [router])
+
+  const tieneAcceso = (ruta: string): boolean => {
+    if (esAdmin) return true
+    const key = ROUTE_DASHBOARD[ruta]
+    if (!key) return true  // rutas no mapeadas son accesibles
+    return dashboards.includes(key)
+  }
 
   const sincronizarDropbox = async () => {
     setSyncing(true)
