@@ -217,7 +217,8 @@ export default function TallerPage() {
   const lineasFiltradas = useMemo(() => {
     return lineas.filter(l => {
       if (sede !== 'Todas' && l.sede !== sede) return false
-      if (tipo !== 'Todos' && l.tipo_taller !== tipo) return false
+      if (tipo !== 'Todos' && tipo !== 'Sin clasificar' && l.tipo_taller !== tipo) return false
+      if (tipo === 'Sin clasificar' && l.tipo_taller) return false
       return true
     })
   }, [lineas, sede, tipo])
@@ -276,10 +277,10 @@ export default function TallerPage() {
 
   // ── Desglose por tipo ─────────────────────────────────────────────────────
   const porTipo = useMemo(() => {
-    return ['Clientes', 'Garantías', 'Interno'].map(t => {
+    return ['Clientes', 'Garantías', 'Interno', 'Sin clasificar'].map(t => {
       const lineasT = lineas.filter(l => {
         const matchSede = sede === 'Todas' || l.sede === sede
-        return matchSede && l.tipo_taller === t
+        return matchSede && (t === 'Sin clasificar' ? !l.tipo_taller : l.tipo_taller === t)
       })
       const neto  = lineasT.reduce((s, l) => s + Number(l.neto), 0)
       const costo = lineasT.reduce((s, l) => s + Number(l.costo), 0)
@@ -353,7 +354,7 @@ export default function TallerPage() {
     'Norte': '#4FD1C5', 'Pasoancho': '#68D391', 'Sede 39': '#F6AD55'
   }
   const COLORES_TIPO: Record<string, string> = {
-    'Clientes': '#4FD1C5', 'Garantías': '#F6AD55', 'Interno': '#63B3ED'
+    'Clientes': '#4FD1C5', 'Garantías': '#F6AD55', 'Interno': '#63B3ED', 'Sin clasificar': '#5B6472'
   }
 
   return (
