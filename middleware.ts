@@ -18,7 +18,7 @@ const ROUTE_DASHBOARD: Record<string, string> = {
   '/dashboard/facturacion/canales/mayoristas':               'facturacion_mayoristas',
   '/dashboard/facturacion/canales/subastas':                 'subastas',
   '/dashboard/facturacion/canales/colision':                 'facturacion_colision',
-  '/dashboard/inventario':                                   'facturacion_general',
+  '/dashboard/inventario':                                   'inventario',
 }
 
 export async function middleware(request: NextRequest) {
