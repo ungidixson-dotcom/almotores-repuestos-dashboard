@@ -25,7 +25,7 @@ const ROUTE_DASHBOARD: Record<string, string> = {
   '/dashboard/facturacion/canales/mayoristas':                           'facturacion_mayoristas',
   '/dashboard/facturacion/canales/subastas':                             'subastas',
   '/dashboard/facturacion/canales/colision':                             'facturacion_colision',
-  '/dashboard/inventario':                                               'facturacion_general',
+  '/dashboard/inventario':                                          'inventario',
 }
 
 
@@ -84,7 +84,7 @@ const NAV: NavSection[] = [
   {
     label: 'Inventario', icon: <Package size={16} />,
     children: [
-      { type: 'leaf', label: 'Pedido Sugerido', href: '/dashboard/inventario' },
+  '/dashboard/inventario':                                          'inventario',
     ],
   },
 ]
