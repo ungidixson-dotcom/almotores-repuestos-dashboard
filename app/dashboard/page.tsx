@@ -281,13 +281,14 @@ export default function Dashboard() {
   }, [kpiRows, filtroAnio])
 
   // ── Rows filtrados ───────────────────────────────────────────────────────
-  const sf = useMemo(() => kpiRows.filter(r =>
+  // sf calculado directamente — sin useMemo para garantizar reactividad
+  const sf = kpiRows.filter(r =>
     Number(r.anio) === Number(filtroAnio) &&
     (filtroAsesor      === 0       || r.asesor_id      === filtroAsesor)      &&
     (filtroAseguradora === 0       || r.aseguradora_id === filtroAseguradora) &&
     (filtroMes         === 'todos' || (r.mes_subasta || '').toLowerCase() === filtroMes.toLowerCase()) &&
     (filtroMarca       === 'todas' || (r.marca || '').toLowerCase() === filtroMarca.toLowerCase())
-  ), [kpiRows, filtroAnio, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
+  )
 
   const ff = useMemo(() => facturas.filter(f =>
     (filtroAsesor      === 0       || f.asesor_id      === filtroAsesor)      &&
