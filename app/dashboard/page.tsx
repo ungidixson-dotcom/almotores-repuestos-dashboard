@@ -696,7 +696,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── KPIs PRINCIPALES ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+        <div key={`kpis-${filtroMarca}-${filtroMes}-${filtroAnio}`} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
           <KpiCard icon={<TrendingUp size={15}/>}  label="Subastas"            value={kpis.total}               accent="teal"/>
           <KpiCard icon={<CheckCircle size={15}/>} label="Ganadas"             value={kpis.ganadas}             accent="teal"/>
           <KpiCard icon={<Target size={15}/>}      label="Tasa autorización"   value={fmtPct(kpis.tasaAuth)}    accent="teal" hint="ganadas / resueltas"/>
