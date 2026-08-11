@@ -290,12 +290,12 @@ export default function Dashboard() {
     (filtroMarca       === 'todas' || (r.marca || '').toLowerCase() === filtroMarca.toLowerCase())
   )
 
-  const ff = useMemo(() => facturas.filter(f =>
+  const ff = facturas.filter(f =>
     (filtroAsesor      === 0       || f.asesor_id      === filtroAsesor)      &&
     (filtroAseguradora === 0       || f.aseguradora_id === filtroAseguradora) &&
     (filtroMes         === 'todos' || f.mes            === filtroMes)         &&
-    (filtroMarca       === 'todas' || f.marca          === filtroMarca)
-  ), [facturas, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
+    (filtroMarca       === 'todas' || (f.marca || '').toLowerCase() === filtroMarca.toLowerCase())
+  )
 
   // ── KPIs agregados ───────────────────────────────────────────────────────
   const kpis = useMemo(() => {
