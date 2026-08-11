@@ -179,7 +179,7 @@ export default function TorreControlSubastasPage() {
       tasaFact:  autorizadas>0?facturadas/autorizadas:0,
       convTotal: subastadas>0?facturadas/subastadas:0,
     }
-  },[datosMes, filtroMes])
+  },[datosMes, filtroMes, filtroMarca])
 
   // ── Evolución mensual ─────────────────────────────────────────────────────
   const evolucion = useMemo(()=>{
