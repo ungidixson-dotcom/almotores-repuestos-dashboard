@@ -282,11 +282,11 @@ export default function Dashboard() {
 
   // ── Rows filtrados ───────────────────────────────────────────────────────
   const sf = useMemo(() => kpiRows.filter(r =>
-    r.anio === filtroAnio &&
+    Number(r.anio) === Number(filtroAnio) &&
     (filtroAsesor      === 0       || r.asesor_id      === filtroAsesor)      &&
     (filtroAseguradora === 0       || r.aseguradora_id === filtroAseguradora) &&
-    (filtroMes         === 'todos' || r.mes_subasta    === filtroMes)         &&
-    (filtroMarca       === 'todas' || r.marca          === filtroMarca)
+    (filtroMes         === 'todos' || (r.mes_subasta || '').toLowerCase() === filtroMes.toLowerCase()) &&
+    (filtroMarca       === 'todas' || (r.marca || '').toLowerCase() === filtroMarca.toLowerCase())
   ), [kpiRows, filtroAnio, filtroAsesor, filtroAseguradora, filtroMes, filtroMarca])
 
   const ff = useMemo(() => facturas.filter(f =>
