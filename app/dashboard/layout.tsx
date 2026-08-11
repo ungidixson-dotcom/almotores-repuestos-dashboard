@@ -84,7 +84,7 @@ const NAV: NavSection[] = [
   {
     label: 'Inventario', icon: <Package size={16} />,
     children: [
-  '/dashboard/inventario':                                          'inventario',
+      { type: 'leaf', label: 'Pedido Sugerido', href: '/dashboard/inventario' },
     ],
   },
 ]
