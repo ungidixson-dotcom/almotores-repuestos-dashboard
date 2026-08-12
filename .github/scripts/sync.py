@@ -48,7 +48,7 @@ COL = {
     'fecha':0,'cliente':1,'cuenta':2,'placa':3,'bastidor':4,
     'articulo':5,'denominacion':6,'cantidad':7,'neto':8,
     'prefijo_num':9,'registro':10,'asesor':11,'cedula_asesor':12,
-    'comision':13,'area_venta':14,'semana':15,
+    'comision':13,'area_venta':14,'semana':15,'vitrina':16,
 }
 
 #  Utilidades --------------------------------------------------------
@@ -167,7 +167,7 @@ def leer_mes(ws, sede, mes, anio_actual, filtro_mes):
             'area_venta':    txt(row[COL['area_venta']]),
             'prefijo_num':   pref_num,
             'registro':      reg,
-            'vitrina':       sede,  # vitrina = sede por defecto desde Dropbox
+            'vitrina':       txt(row[COL['vitrina']]) if len(row) > COL['vitrina'] and txt(row[COL['vitrina']]) and txt(row[COL['vitrina']]) != '#N/D' else sede,
             'actualizado_en': datetime.now().isoformat(),
         })
     return registros
