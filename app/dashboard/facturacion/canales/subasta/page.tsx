@@ -231,6 +231,55 @@ export default function TorreControlSubastasPage() {
     })).sort((a:any,b:any)=>b.total-a.total)
   },[datosAsesor, filtroMes, filtroAseg, filtroMarca, kpi.total, asesores])
 
+  // ── Participación por marca ──────────────────────────────────────────────
+  const participacionMarca = useMemo(()=>{
+    const mapa:Record<string,{sub:number;gan:number;valSub:number;valAut:number}> = {}
+    datosMes.filter(mesFiltro).filter(asegFiltro as any).filter(asrFiltro as any).forEach(d=>{
+      const m = d.marca||'Sin marca'
+      if(!mapa[m]) mapa[m]={sub:0,gan:0,valSub:0,valAut:0}
+      mapa[m].sub    += Number(d.subastadas||0)
+      mapa[m].gan    += Number(d.auth_completa||0)+Number(d.auth_parcial||0)
+      mapa[m].valSub += Number(d.valor_subastado||0)
+      mapa[m].valAut += Number(d.valor_autorizado||0)
+    })
+    const totSub = Object.values(mapa).reduce((s,m)=>s+m.sub,0)
+    const totVal = Object.values(mapa).reduce((s,m)=>s+m.valSub,0)
+    return Object.entries(mapa).map(([marca,d])=>({
+      marca, subastas:d.sub, ganadas:d.gan,
+      valorSub:d.valSub, valorAut:d.valAut,
+      pctSub: totSub>0?(d.sub/totSub)*100:0,
+      pctVal: totVal>0?(d.valSub/totVal)*100:0,
+      tasaAut: d.sub>0?(d.gan/d.sub)*100:0,
+    })).sort((a,b)=>b.subastas-a.subastas)
+  },[datosMes, filtroMes, filtroAseg, filtroAsesor, filtroMarca])
+
+  // ── Proyección valor autorizado ────────────────────────────────────────────
+  const proyeccionValAut = useMemo(()=>{
+    const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    const hoy = new Date()
+    const mesActualIdx = hoy.getMonth() // 0-based
+    const serie = MESES_ORD.map((m,i)=>{
+      const rows = datosMes.filter(d=>d.mes_subasta===m&&asegFiltro(d as any)&&asrFiltro(d as any)&&mrcFiltro(d as any))
+      const val = rows.reduce((s,d)=>s+Number(d.valor_autorizado||0),0)
+      const gan = rows.reduce((s,d)=>s+Number(d.auth_completa||0)+Number(d.auth_parcial||0),0)
+      return { mes:MESES_NOMBRES[i], valorAut:val>0?val:null, ganadas:gan, esReal:val>0, idx:i }
+    })
+    // Proyección lineal del mes siguiente al último con datos
+    const conDatos = serie.filter(s=>s.valorAut)
+    let proyeccion = null
+    let mesProy = ''
+    if(conDatos.length>=2){
+      const n = conDatos.length
+      const sum = conDatos.reduce((s,d)=>s+(d.valorAut||0),0)
+      const avgRecent = conDatos.slice(-3).reduce((s,d)=>s+(d.valorAut||0),0)/Math.min(3,n)
+      proyeccion = Math.round(avgRecent)
+      const sigIdx = (conDatos[conDatos.length-1].idx+1)
+      mesProy = sigIdx<12?MESES_NOMBRES[sigIdx]:''
+      if(mesProy) serie[sigIdx] = {...serie[sigIdx], valorAut:proyeccion, esReal:false}
+    }
+    return { serie, proyeccion, mesProy, mesActual:conDatos[conDatos.length-1], mesAnterior:conDatos[conDatos.length-2]||null }
+  },[datosMes, filtroAseg, filtroAsesor, filtroMarca])
+
   // ── Evolución mensual por asesor ─────────────────────────────────────────
   const evolucionPorAsesorTC = useMemo(()=>{
     return MESES_ORD.map((m,i)=>{
@@ -521,6 +570,132 @@ export default function TorreControlSubastasPage() {
                   <Bar yAxisId="left" dataKey="Facturadas"  fill="#4FD1C5"  radius={[4,4,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
+            </Panel>
+
+            {/* ── PARTICIPACIÓN POR MARCA ── */}
+            <Panel className="xl:col-span-2">
+              <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+                Participación por marca — {filtroMes!=='todos'?filtroMes:`año completo ${anio}`}
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-brand-border">
+                      {['Marca','Subastas','% Subastas','Valor subastado','% Valor','Ganadas','Tasa aut.','Valor autorizado'].map(h=>(
+                        <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {participacionMarca.map((m,i)=>(
+                      <tr key={m.marca} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{background:COLORES[i%12]}}/>
+                            <span className="font-medium text-brand-text">{m.marca}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{m.subastas.toLocaleString('es-CO')}</td>
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{width:`${Math.min(m.pctSub,100)}%`,background:COLORES[i%12]}}/>
+                            </div>
+                            <span className="font-mono text-xs text-brand-subtle">{m.pctSub.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(m.valorSub)}</td>
+                        <td className="py-3 pr-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{width:`${Math.min(m.pctVal,100)}%`,background:COLORES[i%12]}}/>
+                            </div>
+                            <span className="font-mono text-xs text-brand-subtle">{m.pctVal.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-xs text-green-400">{m.ganadas}</td>
+                        <td className="py-3 pr-4 font-mono text-xs" style={{color:m.tasaAut>=30?'#4FD1C5':m.tasaAut>=20?'#E8A33D':'#E5484D'}}>
+                          {m.tasaAut.toFixed(1)}%
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-gold font-semibold">{fmtCOP(m.valorAut)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-brand-border">
+                      <td className="pt-3 font-mono text-xs text-brand-text font-bold uppercase">Total</td>
+                      <td className="pt-3 font-mono text-xs text-brand-teal font-bold">{participacionMarca.reduce((s,m)=>s+m.subastas,0).toLocaleString('es-CO')}</td>
+                      <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
+                      <td className="pt-3 font-mono text-xs text-brand-subtle font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorSub,0))}</td>
+                      <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
+                      <td className="pt-3 font-mono text-xs text-green-400 font-bold">{participacionMarca.reduce((s,m)=>s+m.ganadas,0)}</td>
+                      <td className="pt-3 font-mono text-xs text-brand-subtle">—</td>
+                      <td className="pt-3 font-mono text-xs text-brand-gold font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorAut,0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Panel>
+
+            {/* ── VALOR AUTORIZADO POR MES CON PROYECCIÓN ── */}
+            <Panel className="xl:col-span-2">
+              <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-1">
+                Valor autorizado por mes — {anio}
+              </h2>
+              <p className="text-xs text-brand-muted mb-4">Área = histórico real · punto dorado = proyección mes siguiente</p>
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                <div className="lg:col-span-3">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <AreaChart data={proyeccionValAut.serie} margin={{left:0,right:16,top:8,bottom:0}}>
+                      <defs>
+                        <linearGradient id="grad_proy_sub" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/>
+                          <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                      <XAxis dataKey="mes" tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
+                      <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={(v:number)=>v?`$${(v/1e6).toFixed(0)}M`:''}/>
+                      <Tooltip
+                        contentStyle={{background:'#0F1419',border:'1px solid #2A3340',borderRadius:10,fontSize:12}}
+                        formatter={(v:number,_:string,p:any)=>[v?fmtCOP(v):'—', p.payload?.esReal?'Real':'Proyectado']}
+                      />
+                      <Area type="monotone" dataKey="valorAut" stroke="#4FD1C5" strokeWidth={2.5}
+                        fill="url(#grad_proy_sub)" connectNulls={false}
+                        dot={(p:any)=>{
+                          if(!p.payload.valorAut) return <circle key={p.cx} cx={0} cy={0} r={0}/>
+                          return <circle key={p.cx} cx={p.cx} cy={p.cy} r={5}
+                            fill={p.payload.esReal?'#4FD1C5':'#E8A33D'}
+                            stroke="#0F1419" strokeWidth={2}/>
+                        }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-3">
+                  {proyeccionValAut.proyeccion&&proyeccionValAut.mesProy&&(
+                    <div className="bg-brand-bg border border-brand-gold/40 rounded-xl p-4">
+                      <p className="font-mono text-[10px] text-brand-gold uppercase tracking-wider mb-1">Proyección {proyeccionValAut.mesProy}</p>
+                      <p className="text-xl font-bold font-title text-brand-gold">{fmtCOP(proyeccionValAut.proyeccion)}</p>
+                      <p className="text-[10px] text-brand-muted mt-1 font-mono">Tendencia lineal</p>
+                    </div>
+                  )}
+                  {proyeccionValAut.mesActual&&(
+                    <div className="bg-brand-surface border border-brand-border rounded-xl p-4">
+                      <p className="font-mono text-[10px] text-brand-subtle uppercase tracking-wider mb-1">{proyeccionValAut.mesActual.mes}</p>
+                      <p className="text-lg font-bold font-title text-brand-text">{fmtCOP(proyeccionValAut.mesActual.valorAut||0)}</p>
+                      <p className="text-[10px] text-brand-muted mt-1 font-mono">{proyeccionValAut.mesActual.ganadas} ganadas</p>
+                    </div>
+                  )}
+                  {proyeccionValAut.mesAnterior&&(
+                    <div className="bg-brand-surface border border-brand-border rounded-xl p-4">
+                      <p className="font-mono text-[10px] text-brand-subtle uppercase tracking-wider mb-1">{proyeccionValAut.mesAnterior.mes}</p>
+                      <p className="text-base font-bold font-title text-brand-subtle">{fmtCOP(proyeccionValAut.mesAnterior.valorAut||0)}</p>
+                      <p className="text-[10px] text-brand-muted mt-1 font-mono">{proyeccionValAut.mesAnterior.ganadas} ganadas</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </Panel>
 
             {/* Efectividad por asesor en Evolución */}
