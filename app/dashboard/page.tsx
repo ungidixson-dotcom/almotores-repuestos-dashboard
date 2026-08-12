@@ -452,6 +452,36 @@ export default function Dashboard() {
     return Object.entries(rangos).map(([rango, cantidad]) => ({ rango, cantidad }))
   }, [sf])
 
+  // ── Participación por marca ──────────────────────────────────────────────
+  const participacionMarca = useMemo(() => {
+    const mapa: Record<string, { subastas: number; ganadas: number; valorSub: number; valorAut: number }> = {}
+    sf.forEach(r => {
+      const marca = r.marca || 'Sin marca'
+      if (!mapa[marca]) mapa[marca] = { subastas: 0, ganadas: 0, valorSub: 0, valorAut: 0 }
+      mapa[marca].subastas  += r.total || 0
+      mapa[marca].valorSub  += r.valor_subastado || 0
+      mapa[marca].valorAut  += r.valor_autorizado || 0
+      if (ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number])) {
+        mapa[marca].ganadas += r.total || 0
+      }
+    })
+    const totalSub = Object.values(mapa).reduce((s, m) => s + m.subastas, 0)
+    const totalVal = Object.values(mapa).reduce((s, m) => s + m.valorSub, 0)
+    return Object.entries(mapa)
+      .map(([marca, d]) => ({
+        marca,
+        subastas:  d.subastas,
+        ganadas:   d.ganadas,
+        valorSub:  d.valorSub,
+        valorAut:  d.valorAut,
+        pctSub:    totalSub > 0 ? (d.subastas / totalSub) * 100 : 0,
+        pctVal:    totalVal > 0 ? (d.valorSub / totalVal) * 100 : 0,
+        tasaAut:   d.ganadas > 0 || d.subastas > 0
+          ? (d.ganadas / Math.max(d.subastas, 1)) * 100 : 0,
+      }))
+      .sort((a, b) => b.subastas - a.subastas)
+  }, [sf])
+
   // ── Pipeline del año filtrado ────────────────────────────────────────────
   const pipeline = useMemo(() => {
     const row = pipelineData.find(p => p.anio === filtroAnio)
@@ -827,6 +857,70 @@ export default function Dashboard() {
                 <Legend wrapperStyle={{ fontSize: 12, color: '#8AA4C8' }}/>
               </PieChart>
             </ResponsiveContainer>
+          </Panel>
+        </div>
+
+        {/* ── PARTICIPACIÓN POR MARCA ──────────────────────────────────────── */}
+        <div className="mb-4">
+          <Panel title="Participación por marca" sub={`Distribución del periodo filtrado · ${sf.reduce((a,r)=>a+(r.total||0),0).toLocaleString('es-CO')} subastas totales`}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-brand-border">
+                    {['Marca','Subastas','% Subastas','Valor subastado','% Valor','Ganadas','Tasa aut.','Valor autorizado'].map(h => (
+                      <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {participacionMarca.map((m, i) => (
+                    <tr key={m.marca} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: `hsl(${i * 47 % 360}, 65%, 55%)` }}/>
+                          <span className="font-medium text-brand-text">{m.marca}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{m.subastas.toLocaleString('es-CO')}</td>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(m.pctSub, 100)}%`, background: `hsl(${i * 47 % 360}, 65%, 55%)` }}/>
+                          </div>
+                          <span className="font-mono text-xs text-brand-subtle">{m.pctSub.toFixed(1)}%</span>
+                        </div>
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(m.valorSub)}</td>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(m.pctVal, 100)}%`, background: `hsl(${i * 47 % 360}, 65%, 55%)` }}/>
+                          </div>
+                          <span className="font-mono text-xs text-brand-subtle">{m.pctVal.toFixed(1)}%</span>
+                        </div>
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-xs text-green-400">{m.ganadas}</td>
+                      <td className="py-3 pr-4 font-mono text-xs" style={{ color: m.tasaAut >= 30 ? '#4FD1C5' : m.tasaAut >= 20 ? '#E8A33D' : '#E5484D' }}>
+                        {m.tasaAut.toFixed(1)}%
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-gold font-semibold">{fmtCOP(m.valorAut)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-brand-border">
+                    <td className="pt-3 font-mono text-xs text-brand-text font-bold uppercase">Total</td>
+                    <td className="pt-3 font-mono text-xs text-brand-teal font-bold">{participacionMarca.reduce((s,m)=>s+m.subastas,0).toLocaleString('es-CO')}</td>
+                    <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
+                    <td className="pt-3 font-mono text-xs text-brand-subtle font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorSub,0))}</td>
+                    <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
+                    <td className="pt-3 font-mono text-xs text-green-400 font-bold">{participacionMarca.reduce((s,m)=>s+m.ganadas,0)}</td>
+                    <td className="pt-3 font-mono text-xs text-brand-subtle">—</td>
+                    <td className="pt-3 font-mono text-xs text-brand-gold font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorAut,0))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </Panel>
         </div>
 
