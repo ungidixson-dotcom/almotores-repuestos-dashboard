@@ -52,6 +52,11 @@ const fmtCOP = (v: number) => {
   if (abs >= 1e6) return `${sign}$${(abs/1e6).toFixed(1)}M`
   return `${sign}$${abs.toLocaleString('es-CO',{maximumFractionDigits:0})}`
 }
+const fmtCOPFull = (v: number) => {
+  if (!v && v !== 0) return '—'
+  const abs = Math.abs(v), sign = v < 0 ? '-' : ''
+  return `${sign}$${abs.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`
+}
 const fmtPct = (v: number) => `${(v*100).toFixed(1)}%`
 
 function Panel({children,className=''}:{children:React.ReactNode;className?:string}){
@@ -604,7 +609,7 @@ export default function TorreControlSubastasPage() {
                             <span className="font-mono text-xs text-brand-subtle">{m.pctSub.toFixed(1)}%</span>
                           </div>
                         </td>
-                        <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(m.valorSub)}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOPFull(m.valorSub)}</td>
                         <td className="py-3 pr-4">
                           <div className="flex items-center gap-2">
                             <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
@@ -617,7 +622,7 @@ export default function TorreControlSubastasPage() {
                         <td className="py-3 pr-4 font-mono text-xs" style={{color:m.tasaAut>=30?'#4FD1C5':m.tasaAut>=20?'#E8A33D':'#E5484D'}}>
                           {m.tasaAut.toFixed(1)}%
                         </td>
-                        <td className="py-3 pr-4 font-mono text-xs text-brand-gold font-semibold">{fmtCOP(m.valorAut)}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-gold font-semibold">{fmtCOPFull(m.valorAut)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -626,11 +631,11 @@ export default function TorreControlSubastasPage() {
                       <td className="pt-3 font-mono text-xs text-brand-text font-bold uppercase">Total</td>
                       <td className="pt-3 font-mono text-xs text-brand-teal font-bold">{participacionMarca.reduce((s,m)=>s+m.subastas,0).toLocaleString('es-CO')}</td>
                       <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
-                      <td className="pt-3 font-mono text-xs text-brand-subtle font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorSub,0))}</td>
+                      <td className="pt-3 font-mono text-xs text-brand-subtle font-bold">{fmtCOPFull(participacionMarca.reduce((s,m)=>s+m.valorSub,0))}</td>
                       <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
                       <td className="pt-3 font-mono text-xs text-green-400 font-bold">{participacionMarca.reduce((s,m)=>s+m.ganadas,0)}</td>
                       <td className="pt-3 font-mono text-xs text-brand-subtle">—</td>
-                      <td className="pt-3 font-mono text-xs text-brand-gold font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorAut,0))}</td>
+                      <td className="pt-3 font-mono text-xs text-brand-gold font-bold">{fmtCOPFull(participacionMarca.reduce((s,m)=>s+m.valorAut,0))}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -676,21 +681,21 @@ export default function TorreControlSubastasPage() {
                   {proyeccionValAut.proyeccion&&proyeccionValAut.mesProy&&(
                     <div className="bg-brand-bg border border-brand-gold/40 rounded-xl p-4">
                       <p className="font-mono text-[10px] text-brand-gold uppercase tracking-wider mb-1">Proyección {proyeccionValAut.mesProy}</p>
-                      <p className="text-xl font-bold font-title text-brand-gold">{fmtCOP(proyeccionValAut.proyeccion)}</p>
+                      <p className="text-xl font-bold font-title text-brand-gold">{fmtCOPFull(proyeccionValAut.proyeccion)}</p>
                       <p className="text-[10px] text-brand-muted mt-1 font-mono">Tendencia lineal</p>
                     </div>
                   )}
                   {proyeccionValAut.mesActual&&(
                     <div className="bg-brand-surface border border-brand-border rounded-xl p-4">
                       <p className="font-mono text-[10px] text-brand-subtle uppercase tracking-wider mb-1">{proyeccionValAut.mesActual.mes}</p>
-                      <p className="text-lg font-bold font-title text-brand-text">{fmtCOP(proyeccionValAut.mesActual.valorAut||0)}</p>
+                      <p className="text-lg font-bold font-title text-brand-text">{fmtCOPFull(proyeccionValAut.mesActual.valorAut||0)}</p>
                       <p className="text-[10px] text-brand-muted mt-1 font-mono">{proyeccionValAut.mesActual.ganadas} ganadas</p>
                     </div>
                   )}
                   {proyeccionValAut.mesAnterior&&(
                     <div className="bg-brand-surface border border-brand-border rounded-xl p-4">
                       <p className="font-mono text-[10px] text-brand-subtle uppercase tracking-wider mb-1">{proyeccionValAut.mesAnterior.mes}</p>
-                      <p className="text-base font-bold font-title text-brand-subtle">{fmtCOP(proyeccionValAut.mesAnterior.valorAut||0)}</p>
+                      <p className="text-base font-bold font-title text-brand-subtle">{fmtCOPFull(proyeccionValAut.mesAnterior.valorAut||0)}</p>
                       <p className="text-[10px] text-brand-muted mt-1 font-mono">{proyeccionValAut.mesAnterior.ganadas} ganadas</p>
                     </div>
                   )}
