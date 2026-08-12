@@ -173,37 +173,33 @@ def leer_mes(ws, sede, mes, anio_actual, filtro_mes):
     return registros
 
 #  Upsert Supabase --------------------------------------------------------
-def limpiar_sin_vitrina(sb, sede, mes_num):
-    """Elimina registros sin vitrina de un mes/sede antes de reinsertar.
-    Esto evita duplicados cuando el CSV manual ya cargó datos con vitrina."""
+def upsert(sb, registros, sede, mes):
+    """Borra el mes/sede completo y reinserta — garantiza datos limpios sin duplicados."""
+    if not registros: return 0
+
+    mes_num = MESES_MAP.get(mes)
+    if not mes_num: return 0
+
+    # 1. Borrar todos los registros del mes/sede (excepto los de otras vitrinas cargados manualmente)
     try:
         sb.table('comisiones_acc_detalle').delete()\
             .eq('sede', sede)\
+            .eq('anio', registros[0]['anio'])\
             .eq('mes_num', mes_num)\
-            .is_('vitrina', 'null')\
+            .eq('vitrina', sede)\
             .execute()
     except Exception as e:
         log(f"   Aviso limpieza previa: {e}")
 
-def upsert(sb, registros, sede, mes):
-    if not registros: return 0
-
-    mes_num = MESES_MAP.get(mes)
-    if mes_num:
-        # Limpiar registros sin vitrina del mes antes de reinsertar
-        # para evitar duplicados con datos cargados manualmente con vitrina
-        limpiar_sin_vitrina(sb, sede, mes_num)
-
+    # 2. Insertar registros nuevos en lotes
     total = 0
-    for i in range(0, len(registros), 500):
-        lote = registros[i:i+500]
+    for i in range(0, len(registros), 400):
+        lote = registros[i:i+400]
         try:
-            sb.table('comisiones_acc_detalle').upsert(
-                lote, on_conflict='fila_key'
-            ).execute()
+            sb.table('comisiones_acc_detalle').insert(lote).execute()
             total += len(lote)
         except Exception as e:
-            log(f"   Error lote {i//500+1}: {e}")
+            log(f"   Error lote {i//400+1}: {e}")
     return total
 
 def log_sync(sb, sede, mes, total, error=None):
