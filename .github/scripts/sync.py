@@ -73,9 +73,10 @@ def fecha_iso(v):
         except: pass
     return None
 
-def fila_key(sede, anio, mes_num, registro, articulo, prefijo_num):
-    # Usar prefijo_num en lugar de idx para hacer la key determinista entre syncs
-    raw = f"{sede}|{anio}|{mes_num}|{registro or ''}|{articulo or ''}|{prefijo_num or ''}"
+def fila_key(sede, anio, mes_num, registro, articulo, prefijo_num, idx=0):
+    # Key determinista: sede+anio+mes+prefijo_num+articulo+registro
+    # idx solo como fallback para garantizar unicidad dentro del mismo lote
+    raw = f"{sede}|{anio}|{mes_num}|{prefijo_num or ''}|{articulo or ''}|{registro or ''}|{idx}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 #  Obtener access token desde refresh token 
@@ -145,7 +146,7 @@ def leer_mes(ws, sede, mes, anio_actual, filtro_mes):
         pref_num   = txt(row[COL['prefijo_num']])
         idx += 1
         registros.append({
-            'fila_key':      fila_key(sede, anio_real, mes_num, reg, art, pref_num),
+            'fila_key':      fila_key(sede, anio_real, mes_num, reg, art, pref_num, idx),
             'sede':          sede,
             'anio':          anio_real,
             'mes_num':       mes_num,
