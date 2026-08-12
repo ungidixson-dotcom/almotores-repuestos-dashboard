@@ -655,7 +655,7 @@ export default function TorreControlSubastasPage() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
                       <XAxis dataKey="mes" tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
-                      <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={(v:number)=>v?`$${(v/1e6).toFixed(0)}M`:''}/>
+                      <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false} tickFormatter={(v:number)=>v?fmtCOP(v):''} width={120}/>
                       <Tooltip
                         contentStyle={{background:'#0F1419',border:'1px solid #2A3340',borderRadius:10,fontSize:12}}
                         formatter={(v:number,_:string,p:any)=>[v?fmtCOP(v):'—', p.payload?.esReal?'Real':'Proyectado']}
