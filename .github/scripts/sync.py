@@ -186,7 +186,6 @@ def upsert(sb, registros, sede, mes):
             .eq('sede', sede)\
             .eq('anio', registros[0]['anio'])\
             .eq('mes_num', mes_num)\
-
             .execute()
     except Exception as e:
         log(f"   Aviso limpieza previa: {e}")
