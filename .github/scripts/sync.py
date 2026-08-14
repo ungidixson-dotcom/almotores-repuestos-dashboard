@@ -191,10 +191,18 @@ def upsert(sb, registros, sede, mes):
     except Exception as e:
         log(f"   Aviso limpieza previa: {e}")
 
-    # 2. Insertar registros nuevos en lotes
+    # 2. Deduplicar por fila_key antes de insertar
+    seen = {}
+    for r in registros:
+        seen[r['fila_key']] = r
+    registros_dedup = list(seen.values())
+    if len(registros_dedup) < len(registros):
+        log(f"   Deduplicados: {len(registros)-len(registros_dedup)} registros eliminados")
+
+    # 3. Insertar en lotes
     total = 0
-    for i in range(0, len(registros), 400):
-        lote = registros[i:i+400]
+    for i in range(0, len(registros_dedup), 400):
+        lote = registros_dedup[i:i+400]
         try:
             sb.table('comisiones_acc_detalle').insert(lote).execute()
             total += len(lote)
