@@ -2,6 +2,15 @@ name: Sync Dropbox y Vehiculos
 
 on:
   workflow_dispatch:
+    inputs:
+      sede:
+        description: 'Sede'
+        required: false
+        default: ''
+      mes:
+        description: 'Mes'
+        required: false
+        default: ''
   schedule:
     - cron: '0 14 * * *'
 
