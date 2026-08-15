@@ -196,7 +196,7 @@ export default function TicketPromedioPage() {
     const mesStr = String(filtroMes).padStart(2,'0')
     const filtrado = dataDiario.filter(r =>
       r.fecha.startsWith(`${filtroAnio}-${mesStr}`) &&
-      (filtroSede==='Todas' || r.sede===filtroSede)
+      (filtroSede==='Todas' || r.sede===filtroSede || (filtroSede==='Pance' && r.sede==='Calle 9'))
     )
     const porFecha: Record<string, {neto:number;vehs:number}> = {}
     filtrado.forEach(r => {
@@ -520,7 +520,7 @@ export default function TicketPromedioPage() {
         )}
 
         {/* TABLA ASESORES */}
-        {asesoresF.length > 0 && (
+        {asesoresF.length > 0 && filtroSede !== 'Pance' && (
           <Panel>
             <h3 className="font-title text-base font-semibold text-brand-text mb-1">Seguimiento por asesor</h3>
             <p className="text-xs text-brand-subtle mb-4">Meta asesor: {fmtCOP(metas[0]?.meta_asesor||11500000)}</p>
