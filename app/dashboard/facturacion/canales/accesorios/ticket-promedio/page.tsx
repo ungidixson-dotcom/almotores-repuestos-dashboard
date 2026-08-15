@@ -3,233 +3,238 @@ import { useCallback, useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, AreaChart, Area, Legend,
-  ReferenceLine, ComposedChart, Line,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine, ComposedChart, Line,
 } from 'recharts'
-import { RefreshCw, Target, TrendingUp, TrendingDown, Car, ShoppingBag, AlertTriangle } from 'lucide-react'
+import {
+  RefreshCw, Target, TrendingUp, Car, ShoppingBag,
+  AlertTriangle, Trophy, Medal, Award,
+} from 'lucide-react'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-const META_TICKET = 2_200_000
 const COLORES_SEDE: Record<string, string> = {
-  'Norte':     '#4FD1C5',
-  'Pasoancho': '#E8A33D',
-  'Calle 9':   '#60A5FA',
-  'Pance':     '#A78BFA',
+  'Norte': '#4FD1C5', 'Pasoancho': '#E8A33D',
+  'Calle 9': '#60A5FA', 'Pance': '#A78BFA',
 }
 const MESES_SHORT = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-
-// ── Tipos ─────────────────────────────────────────────────────────────────────
-interface FilaSede {
-  sede: string; mes_num: number; mes: string
-  vehiculos_con_accesorios: number; facturas: number
-  neto_accesorios: number; asesores_activos: number
-  vehiculos_vendidos: number
-  ticket_real: number | null
-  ticket_parcial: number | null
-  pct_vs_meta: number | null
-}
-interface FilaDiario {
-  fecha: string; sede: string
-  vehiculos_dia: number; facturas_dia: number; neto_dia: number
-}
-interface FilaAsesor {
-  anio: number; mes_num: number; mes: string; sede: string
-  asesor: string; neto_accesorios: number; facturas_accesorios: number
-  vehiculos_vendidos: number; ticket_promedio: number | null; pct_vs_meta: number | null
-}
-interface FilaPance {
-  neto: number; cuenta: string | null; placa: string | null
-}
+const FESTIVOS_CO = new Set([
+  '2026-01-01','2026-01-12','2026-03-23','2026-04-02','2026-04-03',
+  '2026-05-01','2026-05-18','2026-06-08','2026-06-29','2026-07-20',
+  '2026-08-07','2026-08-17','2026-10-12','2026-11-02','2026-11-16',
+  '2026-12-08','2026-12-25',
+])
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 const fmtCOP = (n: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
 const fmtM = (n: number) =>
-  n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(0)}M` : `$${(n / 1e3).toFixed(0)}K`
-const fmtPct = (n: number) => `${(n || 0).toFixed(1)}%`
+  n >= 1e9 ? `$${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n/1e6).toFixed(0)}M` : `$${(n/1e3).toFixed(0)}K`
+const fmtPct = (n: number) => `${(n||0).toFixed(1)}%`
 
-const colorTicket = (ticket: number | null): string => {
-  if (!ticket) return '#5B6472'
-  if (ticket >= META_TICKET) return '#4FD1C5'
-  if (ticket >= META_TICKET * 0.8) return '#E8A33D'
-  return '#E5484D'
+const esDiaHabil = (d: Date) => {
+  const iso = d.toISOString().slice(0,10)
+  return d.getDay() !== 0 && d.getDay() !== 6 && !FESTIVOS_CO.has(iso)
+}
+const diasHabilesEnMes = (a: number, m: number) => {
+  const d = new Date(a, m-1, 1); let c = 0
+  while (d.getMonth()===m-1) { if(esDiaHabil(d)) c++; d.setDate(d.getDate()+1) }
+  return c
+}
+const diasHabilesHasta = (a: number, m: number, dia: number) => {
+  const d = new Date(a, m-1, 1); let c = 0
+  while (d.getDate()<=dia && d.getMonth()===m-1) { if(esDiaHabil(d)) c++; d.setDate(d.getDate()+1) }
+  return c
 }
 
-// ── Fetch ─────────────────────────────────────────────────────────────────────
-async function fetchDatos(anio: number, mes: number | null) {
-  const [{ data: sede }, { data: diario }, { data: asesor }, { data: pance }] = await Promise.all([
-    supabase.from('v_ticket_real_sede')
-      .select('sede,mes_num,mes,vehiculos_con_accesorios,facturas,neto_accesorios,asesores_activos,vehiculos_vendidos,ticket_real,ticket_parcial,pct_vs_meta')
-      .eq('anio', anio),
-    supabase.from('v_comisiones_acc_diario')
-      .select('fecha,sede,vehiculos_dia,facturas_dia,neto_dia')
-      .gte('fecha', `${anio}-01-01`)
-      .lte('fecha', `${anio}-12-31`)
-      .order('fecha'),
-    supabase.from('v_ticket_promedio')
-      .select('anio,mes_num,mes,sede,asesor,neto_accesorios,facturas_accesorios,vehiculos_vendidos,ticket_promedio,pct_vs_meta')
-      .eq('anio', anio),
-    supabase.from('comisiones_acc_detalle')
-      .select('neto,cuenta,placa')
-      .eq('anio', anio)
-      .eq('vitrina', 'Pance')
-      .eq('mes_num', mes ?? new Date().getMonth() + 1),
-  ])
-  return {
-    sede:   (sede   as FilaSede[]   ) || [],
-    diario: (diario as FilaDiario[] ) || [],
-    asesor: (asesor as FilaAsesor[] ) || [],
-    pance:  (pance  as FilaPance[]  ) || [],
-  }
+const semaforo = (pct: number) =>
+  pct >= 100 ? { color: '#4FD1C5', label: 'Óptimo' } :
+  pct >= 80  ? { color: '#E8A33D', label: 'Aceptable' } :
+               { color: '#E5484D', label: 'Deficiente' }
+
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+interface Meta { sede: string; meta_vehiculos: number; ticket_promedio: number; meta_asesor: number; meta_neta: number }
+interface FilaSede {
+  sede: string; mes_num: number; neto_accesorios: number
+  vehiculos_vendidos: number; vehiculos_con_accesorios: number
+  ticket_real: number | null
+}
+interface FilaAsesor {
+  sede: string; asesor: string; neto_accesorios: number
+  vehiculos_vendidos: number; ticket_promedio: number | null
+}
+interface FilaDiario { fecha: string; sede: string; neto_dia: number; vehiculos_dia: number }
+interface FilaPance { neto: number; placa: string | null }
+
+// ── Componentes helper ────────────────────────────────────────────────────────
+function Panel({ children, className='' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`bg-brand-surface border border-brand-border rounded-xl p-5 ${className}`}>{children}</div>
+}
+function KpiCard({ icon, label, value, hint, color='#4FD1C5', small=false }: {
+  icon: React.ReactNode; label: string; value: string; hint?: string; color?: string; small?: boolean
+}) {
+  return (
+    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 relative overflow-hidden">
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:color }}/>
+      <div className="flex items-center gap-2 text-brand-subtle mb-2">{icon}<span className="text-xs">{label}</span></div>
+      <div className={`font-title font-bold ${small?'text-lg':'text-2xl'}`} style={{ color }}>{value}</div>
+      {hint && <p className="text-brand-muted text-xs mt-1 font-mono">{hint}</p>}
+    </div>
+  )
 }
 
-// ── Componente ────────────────────────────────────────────────────────────────
+// ── Componente principal ──────────────────────────────────────────────────────
 export default function TicketPromedioPage() {
   const router = useRouter()
-
-  const [dataSede,   setDataSede]   = useState<FilaSede[]>([])
-  const [dataDiario, setDataDiario] = useState<FilaDiario[]>([])
-  const [dataAsesor, setDataAsesor] = useState<FilaAsesor[]>([])
-  const [dataPance,  setDataPance]  = useState<FilaPance[]>([])
-
-  const [loading,   setLoading]   = useState(true)
-  const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
-  const [countdown, setCountdown] = useState(1800)
-
   const hoy = new Date()
+
   const [filtroAnio, setFiltroAnio] = useState(hoy.getFullYear())
-  const [filtroMes,  setFiltroMes]  = useState<number>(hoy.getMonth() + 1)
+  const [filtroMes,  setFiltroMes]  = useState(hoy.getMonth()+1)
   const [filtroSede, setFiltroSede] = useState('Todas')
 
-  const cargarDatos = useCallback(async (verificarAuth = false) => {
+  const [metas,     setMetas]     = useState<Meta[]>([])
+  const [dataSede,  setDataSede]  = useState<FilaSede[]>([])
+  const [dataAsesor,setDataAsesor]= useState<FilaAsesor[]>([])
+  const [dataDiario,setDataDiario]= useState<FilaDiario[]>([])
+  const [dataPance, setDataPance] = useState<FilaPance[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
+  const [countdown, setCountdown] = useState(1800)
+
+  const cargar = useCallback(async (verificarAuth=false) => {
     if (verificarAuth) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
     }
-    const datos = await fetchDatos(filtroAnio, filtroMes)
-    setDataSede(datos.sede)
-    setDataDiario(datos.diario)
-    setDataAsesor(datos.asesor)
-    setDataPance(datos.pance)
+    const [rMetas, rSede, rAsesor, rDiario, rPance] = await Promise.all([
+      supabase.from('metas_accesorios')
+        .select('sede,meta_vehiculos,ticket_promedio,meta_asesor')
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes),
+      supabase.from('v_ticket_real_sede')
+        .select('sede,mes_num,neto_accesorios,vehiculos_vendidos,vehiculos_con_accesorios,ticket_real,ticket_parcial,pct_vs_meta')
+        .eq('anio', filtroAnio),
+      supabase.from('v_ticket_promedio')
+        .select('sede,asesor,neto_accesorios,vehiculos_vendidos,ticket_promedio,pct_vs_meta')
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes),
+      supabase.from('v_comisiones_acc_diario')
+        .select('fecha,sede,neto_dia,vehiculos_dia')
+        .gte('fecha', `${filtroAnio}-01-01`).lte('fecha', `${filtroAnio}-12-31`),
+      supabase.from('comisiones_acc_detalle')
+        .select('neto,placa')
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance').gt('neto',0),
+    ])
+    const rawMetas = (rMetas.data || []) as any[]
+    setMetas(rawMetas.map(m => ({
+      ...m,
+      meta_neta: m.meta_vehiculos * m.ticket_promedio,
+    })))
+    setDataSede((rSede.data || []) as FilaSede[])
+    setDataAsesor((rAsesor.data || []) as FilaAsesor[])
+    setDataDiario((rDiario.data || []) as FilaDiario[])
+    setDataPance((rPance.data || []) as FilaPance[])
     setUltimaAct(new Date())
     setLoading(false)
   }, [filtroAnio, filtroMes, router])
 
-  useEffect(() => { cargarDatos(true) }, [cargarDatos])
-
+  useEffect(() => { cargar(true) }, [cargar])
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCountdown(c => {
-        if (c <= 1) { cargarDatos(false); return 1800 }
-        return c - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [cargarDatos])
+    const iv = setInterval(() => setCountdown(c => { if(c<=1){cargar(false);return 1800} return c-1 }), 1000)
+    return () => clearInterval(iv)
+  }, [cargar])
 
-  // ── Meses disponibles ────────────────────────────────────────────────────
-  const mesesDisponibles = useMemo(() => {
-    const nums = Array.from(new Set(dataSede.map(r => r.mes_num))).sort((a, b) => a - b)
-    return nums
-  }, [dataSede])
+  // ── Días hábiles ─────────────────────────────────────────────────────────
+  const totalDH  = useMemo(() => diasHabilesEnMes(filtroAnio, filtroMes), [filtroAnio, filtroMes])
+  const dhTransc = useMemo(() => {
+    if (filtroAnio === hoy.getFullYear() && filtroMes === hoy.getMonth()+1)
+      return diasHabilesHasta(filtroAnio, filtroMes, hoy.getDate())
+    return totalDH
+  }, [filtroAnio, filtroMes, totalDH])
+  const dhRest = totalDH - dhTransc
 
-  // ── Filtrado ─────────────────────────────────────────────────────────────
-  const sedeF = useMemo(() =>
-    dataSede.filter(r =>
-      r.mes_num === filtroMes &&
-      (filtroSede === 'Todas' || filtroSede === 'Pance' || r.sede === filtroSede)
-    ), [dataSede, filtroMes, filtroSede])
+  // ── Meta del mes activo ───────────────────────────────────────────────────
+  const getMeta = (sede: string): Meta | null =>
+    metas.find(m => m.sede === sede) || null
 
-  const diarioF = useMemo(() => {
-    const mesStr = String(filtroMes).padStart(2, '0')
-    return dataDiario.filter(r =>
+  // ── Datos filtrados por sede ──────────────────────────────────────────────
+  const sedeActual = useMemo(() =>
+    dataSede.filter(r => r.mes_num === filtroMes && (filtroSede==='Todas' || r.sede===filtroSede))
+  , [dataSede, filtroMes, filtroSede])
+
+  const asesoresF = useMemo(() =>
+    dataAsesor.filter(r => filtroSede==='Todas' || filtroSede==='Pance' || r.sede===filtroSede)
+  , [dataAsesor, filtroSede])
+
+  // ── KPIs Pance ────────────────────────────────────────────────────────────
+  const kpiPance = useMemo(() => {
+    const neto = dataPance.reduce((s,r) => s+(r.neto||0), 0)
+    const vehs = new Set(dataPance.map(r=>r.placa).filter(Boolean)).size
+    const metaPance = getMeta('Pance')
+    return {
+      neto, vehs,
+      ticket: vehs > 0 ? neto/vehs : 0,
+      metaNeta: metaPance?.meta_neta || 0,
+      metaVeh:  metaPance?.meta_vehiculos || 0,
+      ticketMeta: metaPance?.ticket_promedio || 0,
+    }
+  }, [dataPance, metas])
+
+  // ── Proyección por sede ───────────────────────────────────────────────────
+  const calcProyeccion = (neto: number, vehs: number, meta: Meta | null) => {
+    if (!dhTransc || !meta) return null
+    const ritmoNeto = neto / dhTransc
+    const ritmoVeh  = vehs / dhTransc
+    const proyNeto = neto + ritmoNeto * dhRest
+    const proyVeh  = Math.round(vehs + ritmoVeh * dhRest)
+    const proyTicket = proyVeh > 0 ? proyNeto / proyVeh : 0
+    return {
+      proyNeto, proyVeh, proyTicket,
+      pctProy: meta.meta_neta > 0 ? (proyNeto/meta.meta_neta)*100 : 0,
+    }
+  }
+
+  // ── Acumulado diario mes activo ───────────────────────────────────────────
+  const acumDiario = useMemo(() => {
+    const mesStr = String(filtroMes).padStart(2,'0')
+    const filtrado = dataDiario.filter(r =>
       r.fecha.startsWith(`${filtroAnio}-${mesStr}`) &&
-      (filtroSede === 'Todas' || filtroSede === 'Pance' || r.sede === filtroSede)
+      (filtroSede==='Todas' || r.sede===filtroSede)
     )
+    const porFecha: Record<string, {neto:number;vehs:number}> = {}
+    filtrado.forEach(r => {
+      if (!porFecha[r.fecha]) porFecha[r.fecha] = {neto:0,vehs:0}
+      porFecha[r.fecha].neto += r.neto_dia||0
+      porFecha[r.fecha].vehs += r.vehiculos_dia||0
+    })
+    let acumNeto=0, acumVehs=0
+    return Object.entries(porFecha).sort(([a],[b])=>a.localeCompare(b)).map(([fecha,v]) => {
+      acumNeto += v.neto; acumVehs += v.vehs
+      return {
+        dia: parseInt(fecha.split('-')[2]),
+        neto_dia: v.neto,
+        ticket_acum: acumVehs>0 ? Math.round(acumNeto/acumVehs) : 0,
+        ticket_dia:  v.vehs>0   ? Math.round(v.neto/v.vehs)    : 0,
+      }
+    })
   }, [dataDiario, filtroAnio, filtroMes, filtroSede])
 
-  const asesorF = useMemo(() =>
-    dataAsesor.filter(r =>
-      r.mes_num === filtroMes &&
-      (filtroSede === 'Todas' || filtroSede === 'Pance' || r.sede === filtroSede)
-    ).sort((a, b) => (b.ticket_promedio || 0) - (a.ticket_promedio || 0)),
-  [dataAsesor, filtroMes, filtroSede])
-
-  // ── KPIs Pance ───────────────────────────────────────────────────────────
-  const kpisPance = useMemo(() => {
-    const neto      = dataPance.reduce((s, r) => s + (r.neto || 0), 0)
-    const facturas  = dataPance.length
-    const vehiculos = new Set(dataPance.map(r => r.placa).filter(Boolean)).size
-    const ticket    = vehiculos > 0 ? neto / vehiculos : 0
-    return { neto, facturas, vehiculos, ticket }
-  }, [dataPance])
-
-  // ── KPIs globales del mes ────────────────────────────────────────────────
-  const kpis = useMemo(() => {
-    const neto               = sedeF.reduce((a, r) => a + (r.neto_accesorios || 0), 0)
-    const vehiculos          = sedeF.reduce((a, r) => a + (r.vehiculos_con_accesorios || 0), 0)
-    const facturas           = sedeF.reduce((a, r) => a + (r.facturas || 0), 0)
-    const vehiculos_vendidos = asesorF.reduce((a, r) => a + (r.vehiculos_vendidos || 0), 0)
-    const ticket = vehiculos_vendidos > 0
-      ? neto / vehiculos_vendidos
-      : vehiculos > 0 ? neto / vehiculos : 0
-    return { neto, vehiculos, facturas, vehiculos_vendidos, ticket }
-  }, [sedeF, asesorF])
-
-  // ── Evolución mensual por sede ───────────────────────────────────────────
-  const evolucionMensual = useMemo(() => {
-    return mesesDisponibles.map(mesNum => {
-      const entry: Record<string, number | string> = { mes: MESES_SHORT[mesNum] }
-      const sedes = filtroSede === 'Todas' ? ['Norte', 'Pasoancho', 'Calle 9'] : filtroSede === 'Pance' ? [] : [filtroSede]
-      sedes.forEach(sede => {
-        const row = dataSede.find(r => r.mes_num === mesNum && r.sede === sede)
-        const neto      = row?.neto_accesorios || 0
-        const vehiculos = row?.vehiculos_vendidos || 0
-        entry[sede] = vehiculos > 0 ? Math.round(neto / vehiculos) : 0
-      })
-      return entry
+  // ── Rankings ──────────────────────────────────────────────────────────────
+  const rankingNeto   = useMemo(() => [...asesoresF].sort((a,b)=>(b.neto_accesorios||0)-(a.neto_accesorios||0)).slice(0,5), [asesoresF])
+  const rankingTicket = useMemo(() => [...asesoresF].filter(a=>(a.vehiculos_vendidos||0)>0).sort((a,b)=>(b.ticket_promedio||0)-(a.ticket_promedio||0)).slice(0,5), [asesoresF])
+  const rankingNetoPorSede = useMemo(() => {
+    const sedes = ['Norte','Pasoancho','Calle 9']
+    const res: Record<string, FilaAsesor[]> = {}
+    sedes.forEach(s => {
+      res[s] = [...dataAsesor.filter(a=>a.sede===s)].sort((a,b)=>(b.neto_accesorios||0)-(a.neto_accesorios||0)).slice(0,5)
     })
-  }, [dataSede, mesesDisponibles, filtroSede])
-
-  // ── Acumulado diario del mes ─────────────────────────────────────────────
-  const acumuladoDiario = useMemo(() => {
-    const porFecha: Record<string, { neto: number; vehiculos: number }> = {}
-    diarioF.forEach(r => {
-      if (!porFecha[r.fecha]) porFecha[r.fecha] = { neto: 0, vehiculos: 0 }
-      porFecha[r.fecha].neto      += r.neto_dia || 0
-      porFecha[r.fecha].vehiculos += r.vehiculos_dia || 0
+    return res
+  }, [dataAsesor])
+  const rankingTicketPorSede = useMemo(() => {
+    const sedes = ['Norte','Pasoancho','Calle 9']
+    const res: Record<string, FilaAsesor[]> = {}
+    sedes.forEach(s => {
+      res[s] = [...dataAsesor.filter(a=>a.sede===s&&(a.vehiculos_vendidos||0)>0)].sort((a,b)=>(b.ticket_promedio||0)-(a.ticket_promedio||0)).slice(0,5)
     })
-    let netoAcum = 0; let vehAcum = 0
-    return Object.entries(porFecha).sort(([a], [b]) => a.localeCompare(b)).map(([fecha, v]) => {
-      netoAcum += v.neto; vehAcum += v.vehiculos
-      return {
-        dia:      parseInt(fecha.split('-')[2]),
-        neto_dia: v.neto,
-        ticket_dia:  v.vehiculos > 0 ? Math.round(v.neto / v.vehiculos) : 0,
-        ticket_acum: vehAcum > 0 ? Math.round(netoAcum / vehAcum) : 0,
-      }
-    })
-  }, [diarioF])
-
-  // ── Por sede (mes seleccionado) ──────────────────────────────────────────
-  const porSede = useMemo(() =>
-    ['Norte', 'Pasoancho', 'Calle 9'].map(sede => {
-      const row = dataSede.find(r => r.mes_num === filtroMes && r.sede === sede)
-      const vehiculos_vend = dataAsesor
-        .filter(r => r.mes_num === filtroMes && r.sede === sede)
-        .reduce((a, r) => a + (r.vehiculos_vendidos || 0), 0)
-      const neto           = row?.neto_accesorios || 0
-      const vehiculos_acc  = row?.vehiculos_con_accesorios || 0
-      const ticket_real    = vehiculos_vend > 0 ? neto / vehiculos_vend : 0
-      const ticket_parcial = vehiculos_acc  > 0 ? neto / vehiculos_acc  : 0
-      const pctMeta        = (ticket_real / META_TICKET) * 100
-      return {
-        sede, neto, vehiculos_vend, vehiculos_acc,
-        facturas: row?.facturas || 0,
-        ticket_real, ticket_parcial, pctMeta,
-      }
-    }), [dataSede, dataAsesor, filtroMes])
+    return res
+  }, [dataAsesor])
 
   if (loading) return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center flex-col gap-3">
@@ -238,402 +243,385 @@ export default function TicketPromedioPage() {
     </div>
   )
 
-  const mesNombre = MESES_SHORT[filtroMes] || ''
-  const sedes = filtroSede === 'Todas' ? ['Norte', 'Pasoancho', 'Calle 9'] : filtroSede === 'Pance' ? [] : [filtroSede]
+  const mesNombre = MESES_SHORT[filtroMes]
+  const ticketMetaGlobal = metas.length > 0 ? metas[0].ticket_promedio : 2200000
+
+  const iconoRanking = (i: number) =>
+    i===0 ? <Trophy size={14} className="text-yellow-400"/> :
+    i===1 ? <Medal size={14} className="text-gray-400"/> :
+    i===2 ? <Award size={14} className="text-amber-600"/> :
+            <span className="text-brand-muted font-mono text-xs w-3.5 text-center">{i+1}</span>
 
   return (
     <div className="min-h-screen bg-brand-bg">
-
       {/* TOP BAR */}
       <div className="border-b border-brand-border bg-brand-surface/50 px-6 py-3 flex items-center justify-between sticky top-0 z-10 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-brand-teal animate-pulse"/>
-          <span className="font-mono text-xs text-brand-subtle uppercase tracking-widest">
-            Almotores KIA · Ticket Promedio Accesorios
-          </span>
+          <span className="font-mono text-xs text-brand-subtle uppercase tracking-widest">Ticket Promedio Accesorios</span>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => { cargarDatos(false); setCountdown(1800) }}
+          <button onClick={() => { cargar(false); setCountdown(1800) }}
             className="flex items-center gap-1.5 text-xs font-mono text-brand-subtle hover:text-brand-teal transition-colors border border-brand-border rounded-lg px-2.5 py-1">
             <RefreshCw size={12}/> Actualizar
           </button>
-          <div className="flex items-center gap-1.5 text-xs font-mono text-brand-muted">
-            <div className="w-1.5 h-1.5 rounded-full bg-brand-teal animate-pulse"/>
-            {`Auto en ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}`}
-          </div>
-          {ultimaAct && (
-            <span className="text-brand-muted font-mono text-xs hidden md:block">
-              {ultimaAct.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
+          <span className="text-brand-muted font-mono text-xs">
+            Auto en {Math.floor(countdown/60)}:{String(countdown%60).padStart(2,'0')}
+          </span>
+          {ultimaAct && <span className="text-brand-muted font-mono text-xs hidden md:block">{ultimaAct.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</span>}
         </div>
       </div>
 
-      <div className="p-6">
-
+      <div className="p-6 space-y-6">
         {/* TÍTULO */}
-        <div className="mb-6">
+        <div>
           <h1 className="font-title text-2xl font-bold text-brand-text">Ticket Promedio · Accesorios</h1>
           <p className="text-brand-subtle text-sm mt-1">
-            Meta: {fmtCOP(META_TICKET)} por vehículo · {filtroAnio}
+            Meta: {fmtCOP(ticketMetaGlobal)} por vehículo · Meta asesor: {fmtCOP(metas[0]?.meta_asesor||11500000)} · {filtroAnio}
+            {metas.length === 0 && <span className="text-brand-red ml-2">⚠ Sin metas configuradas para este mes</span>}
           </p>
         </div>
 
         {/* FILTROS */}
-        <div className="flex flex-wrap gap-2 mb-6 p-4 bg-brand-surface border border-brand-border rounded-xl">
-          <span className="font-mono text-xs text-brand-muted self-center mr-2 uppercase tracking-wider">Ver</span>
-
+        <div className="flex flex-wrap gap-2 p-4 bg-brand-surface border border-brand-border rounded-xl">
           <label className="flex items-center gap-2">
             <span className="text-xs text-brand-subtle">Sede</span>
             <div className="flex rounded-lg border border-brand-border overflow-hidden">
-              {['Todas', 'Norte', 'Pasoancho', 'Calle 9', 'Pance'].map(s => (
+              {['Todas','Norte','Pasoancho','Calle 9','Pance'].map(s => (
                 <button key={s} onClick={() => setFiltroSede(s)}
-                  className={`px-3 py-1.5 text-xs font-mono transition-colors
-                    ${filtroSede === s ? 'text-black font-semibold' : 'text-brand-subtle hover:text-brand-text'}`}
-                  style={filtroSede === s && s !== 'Todas'
-                    ? { background: COLORES_SEDE[s] }
-                    : filtroSede === s ? { background: '#4FD1C5' } : {}}>
+                  className={`px-3 py-1.5 text-xs font-mono transition-colors ${filtroSede===s?'text-black font-semibold':'text-brand-subtle hover:text-brand-text'}`}
+                  style={filtroSede===s ? { background: s==='Todas'?'#4FD1C5':(COLORES_SEDE[s]||'#4FD1C5') } : {}}>
                   {s}
                 </button>
               ))}
             </div>
           </label>
-
           <label className="flex items-center gap-2">
             <span className="text-xs text-brand-subtle">Mes</span>
-            <select value={filtroMes} onChange={e => setFiltroMes(Number(e.target.value))}
+            <select value={filtroMes} onChange={e=>setFiltroMes(Number(e.target.value))}
               className="bg-brand-bg border border-brand-teal/50 rounded-lg px-3 py-1.5 text-brand-teal text-sm font-mono font-semibold outline-none">
-              {mesesDisponibles.map(m => (
+              {Array.from({length:12},(_,i)=>i+1).map(m => (
                 <option key={m} value={m}>{MESES_SHORT[m]}</option>
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-brand-subtle">Año</span>
+            <select value={filtroAnio} onChange={e=>setFiltroAnio(Number(e.target.value))}
+              className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm font-mono outline-none">
+              {[2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </label>
+          <div className="ml-auto flex items-center gap-3 text-xs font-mono text-brand-subtle">
+            <span>📅 {dhTransc}/{totalDH} días hábiles</span>
+            <span className="text-brand-muted">({dhRest} restantes)</span>
+          </div>
         </div>
 
-        {/* ALERTA META */}
-        {kpis.ticket > 0 && kpis.ticket < META_TICKET && filtroSede !== 'Pance' && (
-          <div className="mb-4 p-4 bg-brand-red/5 border border-brand-red/30 rounded-xl flex items-center gap-3">
-            <AlertTriangle size={16} className="text-brand-red shrink-0"/>
-            <p className="text-sm text-brand-red font-mono">
-              Ticket promedio actual <strong>{fmtCOP(kpis.ticket)}</strong> está{' '}
-              <strong>{fmtPct(((META_TICKET - kpis.ticket) / META_TICKET) * 100)}</strong> por debajo de la meta.
-              Se necesitan <strong>{fmtCOP(META_TICKET - kpis.ticket)}</strong> más por vehículo.
-            </p>
-          </div>
-        )}
-        {kpis.ticket >= META_TICKET && kpis.ticket > 0 && filtroSede !== 'Pance' && (
-          <div className="mb-4 p-4 bg-brand-teal/5 border border-brand-teal/30 rounded-xl flex items-center gap-3">
-            <Target size={16} className="text-brand-teal shrink-0"/>
-            <p className="text-sm text-brand-teal font-mono">
-              ✅ Meta superada — ticket promedio <strong>{fmtCOP(kpis.ticket)}</strong> ({fmtPct(((kpis.ticket - META_TICKET) / META_TICKET) * 100)} sobre la meta)
-            </p>
-          </div>
-        )}
-
-        {/* KPIs GLOBALES */}
+        {/* TARJETAS POR SEDE */}
         {filtroSede !== 'Pance' && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
-            <KpiCard icon={<ShoppingBag size={15}/>} label={`Neto accesorios ${mesNombre}`}
-              value={fmtCOP(kpis.neto)} accent="teal" small/>
-            <KpiCard icon={<Car size={15}/>} label="Vehículos vendidos"
-              value={kpis.vehiculos_vendidos.toString()} accent="blue"
-              hint="según facturación de vehículos"/>
-            <KpiCard icon={<Car size={15}/>} label="Vehículos con accesorios"
-              value={kpis.vehiculos.toString()} accent="subtle"
-              hint="placas únicas con factura acc."/>
-            <KpiCard icon={<Target size={15}/>} label="Ticket promedio"
-              value={fmtCOP(kpis.ticket)}
-              accent={kpis.ticket >= META_TICKET ? 'teal' : kpis.ticket >= META_TICKET * 0.8 ? 'gold' : 'red'}
-              hint={`Meta: ${fmtCOP(META_TICKET)}`}/>
-            <KpiCard icon={<TrendingUp size={15}/>} label="% vs Meta"
-              value={fmtPct((kpis.ticket / META_TICKET) * 100)}
-              accent={kpis.ticket >= META_TICKET ? 'teal' : 'red'}/>
+          <div className={`grid gap-4 ${filtroSede==='Todas' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'}`}>
+            {(['Norte','Pasoancho','Calle 9'] as const).filter(s => filtroSede==='Todas' || filtroSede===s).map(sede => {
+              const row = sedeActual.find(r => r.sede===sede)
+              const meta = getMeta(sede)
+              const neto = row?.neto_accesorios||0
+              const vehs = row?.vehiculos_vendidos||0
+              const ticket = vehs>0 ? neto/vehs : 0
+              const pctMeta = meta ? (ticket/meta.ticket_promedio)*100 : 0
+              const pctVeh  = meta ? (vehs/meta.meta_vehiculos)*100 : 0
+              const pctNeto = meta ? (neto/meta.meta_neta)*100 : 0
+              const sem = semaforo(pctMeta)
+              const proy = calcProyeccion(neto, vehs, meta)
+              const necesarioDia = meta && dhRest>0 ? (meta.meta_neta - neto)/dhRest : 0
+              return (
+                <button key={sede} onClick={() => setFiltroSede(filtroSede===sede?'Todas':sede)}
+                  className="rounded-xl border p-5 text-left transition-all hover:border-opacity-60"
+                  style={filtroSede===sede
+                    ? { borderColor: COLORES_SEDE[sede], background: `${COLORES_SEDE[sede]}10` }
+                    : { borderColor: '#2A3340', background: '#0F1A24' }}>
+
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ background: COLORES_SEDE[sede] }}/>
+                      <p className="font-title font-semibold text-brand-text">{sede}</p>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono text-white"
+                      style={{ background: sem.color }}>{sem.label}</span>
+                  </div>
+
+                  {/* Ticket principal */}
+                  <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket real</p>
+                  <p className="font-title font-bold text-2xl mb-1" style={{ color: sem.color }}>
+                    {ticket>0 ? fmtCOP(ticket) : '—'}
+                  </p>
+                  {meta && (
+                    <>
+                      <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-1">
+                        <div className="h-full rounded-full" style={{ width:`${Math.min(pctMeta,100)}%`, background:sem.color }}/>
+                      </div>
+                      <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-4">
+                        <span>{fmtPct(pctMeta)} de {fmtCOP(meta.ticket_promedio)}</span>
+                        <span style={{color:sem.color}}>{sem.label}</span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Grid métricas */}
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-brand-bg/50 rounded-lg p-2">
+                      <p className="font-mono text-[9px] text-brand-muted">Vehículos</p>
+                      <p className="font-mono text-sm font-bold text-brand-text">{vehs} / {meta?.meta_vehiculos||'—'}</p>
+                      {meta && <p className="font-mono text-[9px]" style={{color:semaforo(pctVeh).color}}>{fmtPct(pctVeh)}</p>}
+                    </div>
+                    <div className="bg-brand-bg/50 rounded-lg p-2">
+                      <p className="font-mono text-[9px] text-brand-muted">Neto</p>
+                      <p className="font-mono text-xs font-bold" style={{color:COLORES_SEDE[sede]}}>{fmtM(neto)}</p>
+                      {meta && <p className="font-mono text-[9px]" style={{color:semaforo(pctNeto).color}}>{fmtPct(pctNeto)}</p>}
+                    </div>
+                  </div>
+
+                  {/* Meta neta */}
+                  {meta && (
+                    <div className="pt-3 border-t border-brand-border/50 space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-mono">
+                        <span className="text-brand-muted">Meta neta</span>
+                        <span className="text-brand-subtle">{fmtCOP(meta.meta_neta)}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px] font-mono">
+                        <span className="text-brand-muted">Falta</span>
+                        <span className={meta.meta_neta-neto>0?'text-brand-red':'text-brand-teal'}>
+                          {fmtCOP(Math.abs(meta.meta_neta-neto))} {meta.meta_neta-neto>0?'↓':'↑ SUPERADO'}
+                        </span>
+                      </div>
+                      {dhRest>0 && necesarioDia>0 && (
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span className="text-brand-muted">Necesario/día</span>
+                          <span className="text-brand-gold">{fmtCOP(necesarioDia)}</span>
+                        </div>
+                      )}
+                      {proy && (
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span className="text-brand-muted">Proyección cierre</span>
+                          <span style={{color:semaforo(proy.pctProy).color}}>{fmtPct(proy.pctProy)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+
+            {/* Tarjeta Pance */}
+            {(filtroSede==='Todas') && (() => {
+              const metaPance = getMeta('Pance')
+              const pctVeh  = metaPance ? (kpiPance.vehs/metaPance.meta_vehiculos)*100 : 0
+              const pctNeto = metaPance ? (kpiPance.neto/metaPance.meta_neta)*100 : 0
+              const pctTick = metaPance ? (kpiPance.ticket/metaPance.ticket_promedio)*100 : 0
+              const sem = semaforo(pctTick)
+              return (
+                <button onClick={() => setFiltroSede('Pance')}
+                  className="rounded-xl border p-5 text-left transition-all"
+                  style={{ borderColor:'#7C3AED40', background:'#A78BFA08' }}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ background: '#A78BFA' }}/>
+                      <p className="font-title font-semibold text-brand-text">Pance</p>
+                      <span className="text-[9px] font-mono border border-brand-border text-brand-muted px-1 rounded">Vitrina</span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-mono text-white" style={{background:sem.color}}>{sem.label}</span>
+                  </div>
+                  <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket promedio</p>
+                  <p className="font-title font-bold text-2xl mb-1" style={{color:sem.color}}>
+                    {kpiPance.ticket>0?fmtCOP(kpiPance.ticket):'—'}
+                  </p>
+                  {metaPance && (
+                    <>
+                      <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-3">
+                        <div className="h-full rounded-full" style={{width:`${Math.min(pctTick,100)}%`,background:sem.color}}/>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="bg-brand-bg/50 rounded-lg p-2">
+                          <p className="font-mono text-[9px] text-brand-muted">Vehículos</p>
+                          <p className="font-mono text-sm font-bold text-brand-text">{kpiPance.vehs} / {metaPance.meta_vehiculos}</p>
+                          <p className="font-mono text-[9px]" style={{color:semaforo(pctVeh).color}}>{fmtPct(pctVeh)}</p>
+                        </div>
+                        <div className="bg-brand-bg/50 rounded-lg p-2">
+                          <p className="font-mono text-[9px] text-brand-muted">Neto</p>
+                          <p className="font-mono text-xs font-bold" style={{color:'#A78BFA'}}>{fmtM(kpiPance.neto)}</p>
+                          <p className="font-mono text-[9px]" style={{color:semaforo(pctNeto).color}}>{fmtPct(pctNeto)}</p>
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t border-brand-border/50 space-y-1.5">
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span className="text-brand-muted">Meta neta</span>
+                          <span className="text-brand-subtle">{fmtCOP(metaPance.meta_neta)}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span className="text-brand-muted">Falta</span>
+                          <span className={metaPance.meta_neta-kpiPance.neto>0?'text-brand-red':'text-brand-teal'}>
+                            {fmtCOP(Math.abs(metaPance.meta_neta-kpiPance.neto))}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </button>
+              )
+            })()}
           </div>
         )}
 
-        {/* TARJETAS POR SEDE — 3 sedes + Pance */}
-        <div className={`grid gap-4 mb-4 ${filtroSede === 'Todas' ? 'grid-cols-1 md:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'}`}>
-          {filtroSede !== 'Pance' && porSede.map(s => (
-            <button key={s.sede} onClick={() => setFiltroSede(filtroSede === s.sede ? 'Todas' : s.sede)}
-              className={`rounded-xl border p-5 text-left transition-all ${
-                filtroSede === s.sede ? 'border-opacity-60 bg-opacity-10' : 'border-brand-border bg-brand-surface hover:border-opacity-50'
-              }`}
-              style={filtroSede === s.sede ? { borderColor: COLORES_SEDE[s.sede], background: `${COLORES_SEDE[s.sede]}10` } : {}}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ background: COLORES_SEDE[s.sede] }}/>
-                  <p className="font-title font-semibold text-brand-text">{s.sede}</p>
-                </div>
-                {filtroSede === s.sede && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-mono text-black"
-                    style={{ background: COLORES_SEDE[s.sede] }}>Activo</span>
-                )}
-              </div>
-              <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket real (neto / vehículos vendidos)</p>
-              <p className="font-title font-bold text-2xl mb-1" style={{ color: colorTicket(s.ticket_real) }}>
-                {s.ticket_real > 0 ? fmtCOP(s.ticket_real) : '—'}
-              </p>
-              <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-1">
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(s.pctMeta, 100)}%`, background: colorTicket(s.ticket_real) }}/>
-              </div>
-              <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-3">
-                <span>{fmtPct(s.pctMeta)} de la meta</span>
-                <span>Meta: {fmtCOP(META_TICKET)}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Neto</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtCOP(s.neto)}</p>
-                </div>
-                <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Vehículos vendidos</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{s.vehiculos_vend}</p>
-                </div>
-              </div>
-              <div className="pt-2 border-t border-brand-border/50">
-                <p className="font-mono text-[10px] text-brand-muted mb-0.5">
-                  Ticket c/accesorios ({s.vehiculos_acc} veh.)
-                </p>
-                <p className="font-mono text-xs font-semibold" style={{ color: colorTicket(s.ticket_parcial) }}>
-                  {s.ticket_parcial > 0 ? fmtCOP(s.ticket_parcial) : '—'}
-                </p>
-              </div>
-            </button>
-          ))}
-
-          {/* ── TARJETA PANCE ── */}
-          {(filtroSede === 'Todas' || filtroSede === 'Pance') && (
-            <button onClick={() => setFiltroSede(filtroSede === 'Pance' ? 'Todas' : 'Pance')}
-              className={`rounded-xl border p-5 text-left transition-all ${
-                filtroSede === 'Pance' ? '' : 'border-brand-border bg-brand-surface hover:border-opacity-50'
-              }`}
-              style={filtroSede === 'Pance'
-                ? { borderColor: COLORES_SEDE['Pance'], background: `${COLORES_SEDE['Pance']}10` }
-                : {}}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ background: COLORES_SEDE['Pance'] }}/>
-                  <p className="font-title font-semibold text-brand-text">Pance</p>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono border border-brand-border text-brand-muted">Vitrina</span>
-                </div>
-                {filtroSede === 'Pance' && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-mono text-black"
-                    style={{ background: COLORES_SEDE['Pance'] }}>Activo</span>
-                )}
-              </div>
-
-              {/* TICKET — grande, igual que las otras sedes */}
-              <p className="font-mono text-[10px] text-brand-muted mb-0.5">Ticket promedio (neto / vehículos)</p>
-              <p className="font-title font-bold text-2xl mb-1" style={{ color: colorTicket(kpisPance.ticket) }}>
-                {kpisPance.ticket > 0 ? fmtCOP(kpisPance.ticket) : '—'}
-              </p>
-              {/* Barra vs meta */}
-              <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-1">
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: `${Math.min((kpisPance.ticket / META_TICKET) * 100, 100)}%`, background: colorTicket(kpisPance.ticket) }}/>
-              </div>
-              <div className="flex justify-between text-[10px] font-mono text-brand-muted mb-3">
-                <span>{fmtPct((kpisPance.ticket / META_TICKET) * 100)} de la meta</span>
-                <span>Meta: {fmtCOP(META_TICKET)}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Neto</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{fmtCOP(kpisPance.neto)}</p>
-                </div>
-                <div>
-                  <p className="font-mono text-[10px] text-brand-muted">Vehículos</p>
-                  <p className="font-mono text-xs text-brand-subtle font-semibold">{kpisPance.vehiculos}</p>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-brand-border/50">
-                <p className="font-mono text-[10px] text-brand-muted mb-0.5">Facturas</p>
-                <p className="font-mono text-xs font-semibold text-brand-subtle">{kpisPance.facturas}</p>
-              </div>
-            </button>
-          )}
-        </div>
-
-        {/* GRÁFICAS */}
-        {filtroSede !== 'Pance' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <Panel title="Ticket promedio mensual" sub={`Neto accesorios / vehículos vendidos · ${filtroAnio} · línea roja = meta $2.2M`}>
-              <ResponsiveContainer width="100%" height={260}>
-                <AreaChart data={evolucionMensual} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
-                  <defs>
-                    {sedes.map(sede => (
-                      <linearGradient key={sede} id={`grad_${sede.replace(' ','_')}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={COLORES_SEDE[sede]} stopOpacity={0.35}/>
-                        <stop offset="100%" stopColor={COLORES_SEDE[sede]} stopOpacity={0}/>
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
-                  <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                  <ReferenceLine y={META_TICKET} stroke="#E5484D" strokeWidth={1.5} strokeDasharray="6 3"
-                    label={{ value: 'Meta $2.2M', fill: '#E5484D', fontSize: 10, position: 'right' }}/>
-                  <Tooltip
-                    contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
-                    formatter={(v: number, name: string) => [fmtCOP(v), name]}
-                    labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
-                  <Legend wrapperStyle={{ fontSize: 11, color: '#8AA4C8', paddingTop: 8 }}/>
-                  {sedes.map(sede => (
-                    <Area key={sede} type="monotone" dataKey={sede} name={sede}
-                      stroke={COLORES_SEDE[sede]} strokeWidth={2.5}
-                      fill={`url(#grad_${sede.replace(' ','_')})`}
-                      dot={{ fill: COLORES_SEDE[sede], r: 4, strokeWidth: 2, stroke: '#0F1419' }}
-                      activeDot={{ r: 6, strokeWidth: 2, stroke: '#0F1419' }}
-                      connectNulls/>
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
-            </Panel>
-
-            <Panel title={`Ticket acumulado diario — ${mesNombre} ${filtroAnio}`}
-              sub="Área teal = ticket acumulado · línea punteada = ticket del día · rojo = meta">
-              <ResponsiveContainer width="100%" height={260}>
-                <ComposedChart data={acumuladoDiario} margin={{ left: 0, right: 16, top: 12, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="grad_acum" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/>
-                      <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
-                  <XAxis dataKey="dia" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                  <ReferenceLine y={META_TICKET} stroke="#E5484D" strokeWidth={1.5} strokeDasharray="6 3"
-                    label={{ value: '$2.2M', fill: '#E5484D', fontSize: 10, position: 'right' }}/>
-                  <Tooltip
-                    contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
-                    formatter={(v: number, name: string) => [fmtCOP(v), name === 'ticket_acum' ? 'Acumulado' : 'Del día']}
-                    labelStyle={{ color: '#8AA4C8', marginBottom: 4 }}/>
-                  <Area type="monotone" dataKey="ticket_acum" name="ticket_acum"
-                    stroke="#4FD1C5" strokeWidth={2.5} fill="url(#grad_acum)"
-                    dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#0F1419', fill: '#4FD1C5' }}/>
-                  <Line type="monotone" dataKey="ticket_dia" name="ticket_dia"
-                    stroke="#E8A33D" strokeWidth={1.5} strokeDasharray="4 3"
-                    dot={false} activeDot={{ r: 4, fill: '#E8A33D' }}/>
-                </ComposedChart>
-              </ResponsiveContainer>
-            </Panel>
-          </div>
+        {/* GRÁFICO ACUMULADO DIARIO */}
+        {filtroSede !== 'Pance' && acumDiario.length>0 && (
+          <Panel>
+            <h3 className="font-title text-base font-semibold text-brand-text mb-1">
+              Ticket acumulado diario — {mesNombre} {filtroAnio}
+            </h3>
+            <p className="text-xs text-brand-subtle mb-4">Área = ticket acumulado · línea = ticket del día · rojo = meta</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={acumDiario} margin={{left:0,right:16,top:8,bottom:0}}>
+                <defs>
+                  <linearGradient id="gAcum" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/>
+                    <stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
+                <XAxis dataKey="dia" tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fill:'#8AA4C8',fontSize:10}} axisLine={false} tickLine={false}
+                  tickFormatter={(v:number)=>v?fmtM(v):''}/>
+                <ReferenceLine y={ticketMetaGlobal} stroke="#E5484D" strokeWidth={1.5} strokeDasharray="6 3"
+                  label={{value:'Meta',fill:'#E5484D',fontSize:10,position:'right'}}/>
+                <Tooltip
+                  contentStyle={{background:'#0F1419',border:'1px solid #2A3340',borderRadius:10,fontSize:12}}
+                  formatter={(v:number,n:string)=>[fmtCOP(v),n==='ticket_acum'?'Acumulado':'Del día']}/>
+                <Area type="monotone" dataKey="ticket_acum" stroke="#4FD1C5" strokeWidth={2.5}
+                  fill="url(#gAcum)" dot={false} activeDot={{r:5,strokeWidth:2,stroke:'#0F1419',fill:'#4FD1C5'}}/>
+                <Line type="monotone" dataKey="ticket_dia" stroke="#E8A33D" strokeWidth={1.5}
+                  strokeDasharray="4 3" dot={false}/>
+              </ComposedChart>
+            </ResponsiveContainer>
+          </Panel>
         )}
 
-        {/* NETO DIARIO */}
-        {filtroSede !== 'Pance' && (
-          <div className="mb-4">
-            <Panel title={`Facturación diaria accesorios — ${mesNombre} ${filtroAnio}`} sub="Valor neto facturado por día">
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={acumuladoDiario} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="grad_neto_dia" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'} stopOpacity={0.5}/>
-                      <stop offset="100%" stopColor={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'} stopOpacity={0.05}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
-                  <XAxis dataKey="dia" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v: number) => v ? fmtM(v) : ''}/>
-                  <Tooltip
-                    contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
-                    formatter={(v: number) => [fmtCOP(v), 'Neto del día']}/>
-                  <Area dataKey="neto_dia" name="Neto del día" type="monotone"
-                    stroke={filtroSede !== 'Todas' ? COLORES_SEDE[filtroSede] : '#4FD1C5'}
-                    strokeWidth={2} fill="url(#grad_neto_dia)"
-                    dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#0F1419' }}/>
-                </AreaChart>
-              </ResponsiveContainer>
-            </Panel>
-          </div>
-        )}
-
-        {/* TABLA POR ASESOR */}
-        {asesorF.length > 0 && filtroSede !== 'Pance' && (
-          <Panel title="Ticket promedio por asesor" sub="Requiere cargar vehículos vendidos en comisiones_acc_vehiculos">
+        {/* TABLA ASESORES */}
+        {asesoresF.length > 0 && filtroSede !== 'Pance' && (
+          <Panel>
+            <h3 className="font-title text-base font-semibold text-brand-text mb-1">Seguimiento por asesor</h3>
+            <p className="text-xs text-brand-subtle mb-4">Meta asesor: {fmtCOP(metas[0]?.meta_asesor||11500000)}</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-brand-border">
-                    {['Asesor','Sede','Neto accesorios','Vehículos vendidos','Ticket promedio','% vs Meta'].map(h => (
+                    {['Asesor','Sede','Neto','Veh. vendidos','Ticket promedio','% vs Meta','Estado'].map(h=>(
                       <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {asesorF.map((a, i) => (
-                    <tr key={`${a.asesor}-${i}`} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                      <td className="py-3 pr-4 text-brand-text font-medium">{a.asesor}</td>
-                      <td className="py-3 pr-4">
-                        <span className="font-mono text-xs px-2 py-0.5 rounded-full"
-                          style={{ color: COLORES_SEDE[a.sede], background: `${COLORES_SEDE[a.sede]}15` }}>
-                          {a.sede}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{fmtCOP(a.neto_accesorios)}</td>
-                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">
-                        {a.vehiculos_vendidos > 0 ? a.vehiculos_vendidos : <span className="text-brand-muted">Sin datos</span>}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-sm font-bold" style={{ color: colorTicket(a.ticket_promedio) }}>
-                        {a.ticket_promedio ? fmtCOP(a.ticket_promedio) : '—'}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {a.pct_vs_meta ? (
+                  {asesoresF.sort((a,b)=>(b.neto_accesorios||0)-(a.neto_accesorios||0)).map((a,i)=>{
+                    const metaAsesor = metas[0]?.meta_asesor || 11500000
+                    const pctA = metaAsesor>0 ? ((a.neto_accesorios||0)/metaAsesor)*100 : 0
+                    const semA = semaforo(pctA)
+                    const ticketMeta = metas.find(m=>m.sede===a.sede)?.ticket_promedio || ticketMetaGlobal
+                    const pctT = ticketMeta>0 && a.ticket_promedio ? (a.ticket_promedio/ticketMeta)*100 : 0
+                    return (
+                      <tr key={`${a.asesor}-${i}`} className="border-b border-brand-border/40 hover:bg-brand-surface/50">
+                        <td className="py-3 pr-4 text-brand-text font-medium">{a.asesor}</td>
+                        <td className="py-3 pr-4">
+                          <span className="font-mono text-xs px-2 py-0.5 rounded-full"
+                            style={{color:COLORES_SEDE[a.sede],background:`${COLORES_SEDE[a.sede]}15`}}>{a.sede}</span>
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-xs font-semibold" style={{color:semA.color}}>{fmtCOP(a.neto_accesorios||0)}</td>
+                        <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{a.vehiculos_vendidos||0}</td>
+                        <td className="py-3 pr-4 font-mono text-sm font-bold" style={{color:pctT>=100?'#4FD1C5':pctT>=80?'#E8A33D':'#E5484D'}}>
+                          {a.ticket_promedio?fmtCOP(a.ticket_promedio):'—'}
+                        </td>
+                        <td className="py-3 pr-4">
                           <div className="flex items-center gap-2">
-                            <div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{
-                                width: `${Math.min(a.pct_vs_meta, 100)}%`,
-                                background: colorTicket(a.ticket_promedio)
-                              }}/>
+                            <div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{width:`${Math.min(pctA,100)}%`,background:semA.color}}/>
                             </div>
-                            <span className="font-mono text-xs" style={{ color: colorTicket(a.ticket_promedio) }}>
-                              {fmtPct(a.pct_vs_meta)}
-                            </span>
+                            <span className="font-mono text-xs" style={{color:semA.color}}>{fmtPct(pctA)}</span>
                           </div>
-                        ) : <span className="text-brand-muted font-mono text-xs">—</span>}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-3 font-mono text-xs" style={{color:semA.color}}>{semA.label}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           </Panel>
         )}
 
+        {/* RANKINGS */}
+        <div className="space-y-4">
+          <h2 className="font-title text-lg font-bold text-brand-text">🏆 Rankings — {mesNombre} {filtroAnio}</h2>
+
+          {/* Top 5 Global */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[
+              { titulo: 'Top 5 Global · Mayor Neto', data: rankingNeto, campo: 'neto_accesorios' as const, fmt: fmtCOP },
+              { titulo: 'Top 5 Global · Mayor Ticket', data: rankingTicket, campo: 'ticket_promedio' as const, fmt: fmtCOP },
+            ].map(({ titulo, data, campo, fmt }) => (
+              <Panel key={titulo}>
+                <h3 className="font-title text-sm font-semibold text-brand-text mb-4">{titulo}</h3>
+                <div className="space-y-2">
+                  {data.map((a, i) => (
+                    <div key={`${a.asesor}-${i}`} className="flex items-center gap-3 p-2 rounded-lg bg-brand-bg/50">
+                      <div className="w-6 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-brand-text text-xs font-medium truncate">{a.asesor}</p>
+                        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+                          style={{color:COLORES_SEDE[a.sede],background:`${COLORES_SEDE[a.sede]}15`}}>{a.sede}</span>
+                      </div>
+                      <p className="font-mono text-xs font-bold text-brand-teal shrink-0">{fmt(a[campo]||0)}</p>
+                    </div>
+                  ))}
+                  {data.length===0 && <p className="text-brand-muted text-xs font-mono text-center py-4">Sin datos con vehículos vendidos</p>}
+                </div>
+              </Panel>
+            ))}
+          </div>
+
+          {/* Top 5 por Sede */}
+          {filtroSede === 'Todas' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(['Norte','Pasoancho','Calle 9'] as const).map(sede => (
+                <Panel key={sede}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 rounded-full" style={{background:COLORES_SEDE[sede]}}/>
+                    <h3 className="font-title text-sm font-semibold text-brand-text">{sede}</h3>
+                  </div>
+                  <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Neto</p>
+                  <div className="space-y-1.5 mb-4">
+                    {rankingNetoPorSede[sede].map((a,i) => (
+                      <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
+                        <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                        <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
+                        <p className="font-mono text-[10px] font-bold text-brand-teal">{fmtM(a.neto_accesorios||0)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Ticket</p>
+                  <div className="space-y-1.5">
+                    {rankingTicketPorSede[sede].map((a,i) => (
+                      <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
+                        <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                        <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
+                        <p className="font-mono text-[10px] font-bold" style={{color:COLORES_SEDE[sede]}}>{fmtM(a.ticket_promedio||0)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
-    </div>
-  )
-}
-
-// ── Sub-componentes ───────────────────────────────────────────────────────────
-function KpiCard({ icon, label, value, accent, small, hint }: {
-  icon: React.ReactNode; label: string; value: string
-  accent: string; small?: boolean; hint?: string
-}) {
-  const bc: Record<string, string> = { teal: '#4FD1C5', gold: '#E8A33D', blue: '#60A5FA', red: '#E5484D', subtle: '#5B6472' }
-  return (
-    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 relative overflow-hidden">
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: bc[accent] || '#4FD1C5' }}/>
-      <div className="flex items-center gap-2 text-brand-subtle mb-2">{icon}<span className="text-xs">{label}</span></div>
-      <div className={`font-title font-bold text-brand-text ${small ? 'text-lg' : 'text-2xl'}`}>{value}</div>
-      {hint && <p className="text-brand-muted text-xs mt-1 font-mono">{hint}</p>}
-    </div>
-  )
-}
-
-function Panel({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-brand-surface border border-brand-border rounded-xl p-5">
-      <h3 className="font-title text-base font-semibold text-brand-text">{title}</h3>
-      <p className="text-xs text-brand-subtle mb-4">{sub}</p>
-      {children}
     </div>
   )
 }
