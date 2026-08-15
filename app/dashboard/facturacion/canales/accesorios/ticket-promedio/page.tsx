@@ -64,6 +64,7 @@ interface FilaAsesor {
 }
 interface FilaDiario { fecha: string; sede: string; neto_dia: number; vehiculos_dia: number }
 interface FilaPance { neto: number; placa: string | null }
+interface FilaAsesorPance { asesor: string; neto: number; facturas: number }
 
 // ── Componentes helper ────────────────────────────────────────────────────────
 function Panel({ children, className='' }: { children: React.ReactNode; className?: string }) {
@@ -95,7 +96,8 @@ export default function TicketPromedioPage() {
   const [dataSede,  setDataSede]  = useState<FilaSede[]>([])
   const [dataAsesor,setDataAsesor]= useState<FilaAsesor[]>([])
   const [dataDiario,setDataDiario]= useState<FilaDiario[]>([])
-  const [dataPance, setDataPance] = useState<FilaPance[]>([])
+  const [dataPance,       setDataPance]       = useState<FilaPance[]>([])
+  const [asesoresPance,   setAsesoresPance]   = useState<FilaAsesorPance[]>([])
   const [loading,   setLoading]   = useState(true)
   const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
   const [countdown, setCountdown] = useState(1800)
@@ -105,7 +107,7 @@ export default function TicketPromedioPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
     }
-    const [rMetas, rSede, rAsesor, rDiario, rPance] = await Promise.all([
+    const [rMetas, rSede, rAsesor, rDiario, rPance, rAsesorPance] = await Promise.all([
       supabase.from('metas_accesorios')
         .select('sede,meta_vehiculos,ticket_promedio,meta_asesor')
         .eq('anio', filtroAnio).eq('mes_num', filtroMes),
@@ -121,6 +123,9 @@ export default function TicketPromedioPage() {
       supabase.from('comisiones_acc_detalle')
         .select('neto,placa')
         .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance').gt('neto',0),
+      supabase.from('comisiones_acc_detalle')
+        .select('asesor,neto')
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance').gt('neto',0),
     ])
     const rawMetas = (rMetas.data || []) as any[]
     setMetas(rawMetas.map(m => ({
@@ -131,6 +136,15 @@ export default function TicketPromedioPage() {
     setDataAsesor((rAsesor.data || []) as FilaAsesor[])
     setDataDiario((rDiario.data || []) as FilaDiario[])
     setDataPance((rPance.data || []) as FilaPance[])
+    const rawAsesorPance = (rAsesorPance.data || []) as {asesor:string;neto:number}[]
+    const mapaAP: Record<string,{neto:number;facturas:number}> = {}
+    rawAsesorPance.forEach(r => {
+      const k = r.asesor || 'Sin asesor'
+      if (!mapaAP[k]) mapaAP[k] = {neto:0,facturas:0}
+      mapaAP[k].neto += r.neto
+      mapaAP[k].facturas += 1
+    })
+    setAsesoresPance(Object.entries(mapaAP).map(([asesor,d])=>({asesor,...d})).sort((a,b)=>b.neto-a.neto))
     setUltimaAct(new Date())
     setLoading(false)
   }, [filtroAnio, filtroMes, router])
@@ -520,6 +534,33 @@ export default function TicketPromedioPage() {
         )}
 
         {/* TABLA ASESORES */}
+        {filtroSede === 'Pance' && asesoresPance.length > 0 && (
+          <Panel>
+            <h3 className="font-title text-base font-semibold text-brand-text mb-1">Asesores · Pance</h3>
+            <p className="text-xs text-brand-subtle mb-4">Vitrina Pance · {mesNombre} {filtroAnio}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-brand-border">
+                    {['Asesor','Facturas','Neto accesorios'].map(h=>(
+                      <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {asesoresPance.map((a,i)=>(
+                    <tr key={i} className="border-b border-brand-border/40 hover:bg-brand-surface/50">
+                      <td className="py-3 pr-4 text-brand-text font-medium">{a.asesor}</td>
+                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{a.facturas}</td>
+                      <td className="py-3 font-mono text-sm font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.neto)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        )}
+
         {asesoresF.length > 0 && filtroSede !== 'Pance' && (
           <Panel>
             <h3 className="font-title text-base font-semibold text-brand-text mb-1">Seguimiento por asesor</h3>
