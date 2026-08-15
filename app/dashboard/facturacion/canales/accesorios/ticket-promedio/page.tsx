@@ -679,21 +679,21 @@ export default function TicketPromedioPage() {
                 </div>
                 <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Neto</p>
                 <div className="space-y-1.5 mb-3">
-                  {dataAsesor.filter(a=>a.sede==='Calle 9').sort((a,b)=>(b.neto_accesorios||0)-(a.neto_accesorios||0)).slice(0,3).map((a,i)=>(
+                  {asesoresPance.slice(0,3).map((a,i)=>(
                     <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
                       <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
                       <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
-                      <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.neto_accesorios||0)}</p>
+                      <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.neto||0)}</p>
                     </div>
                   ))}
                 </div>
                 <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Ticket</p>
                 <div className="space-y-1.5">
-                  {dataAsesor.filter(a=>a.sede==='Calle 9'&&(a.vehiculos_vendidos||0)>0).sort((a,b)=>(b.ticket_promedio||0)-(a.ticket_promedio||0)).slice(0,3).map((a,i)=>(
+                  {asesoresPance.filter(a=>a.neto>0).sort((a,b)=>b.neto-a.neto).slice(0,3).map((a,i)=>(
                     <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
                       <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
                       <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
-                      <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.ticket_promedio||0)}</p>
+                      <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.neto>0&&a.facturas>0?a.neto/a.facturas:0)}</p>
                     </div>
                   ))}
                 </div>
