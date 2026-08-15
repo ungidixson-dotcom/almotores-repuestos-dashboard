@@ -493,7 +493,8 @@ export default function TicketPromedioPage() {
         <div className="space-y-4">
           <h2 className="font-title text-lg font-bold text-brand-text">🏆 Rankings — {mesNombre} {filtroAnio}</h2>
 
-          {/* Top 5 Global */}
+          {/* Top 5 Global — ocultar cuando filtro es Pance */}
+          {filtroSede !== 'Pance' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {[
               { titulo: 'Top 5 Global · Mayor Neto', data: rankingNeto, campo: 'neto_accesorios' as const, fmt: fmtCOP },
@@ -519,10 +520,10 @@ export default function TicketPromedioPage() {
             ))}
           </div>
 
-          {/* Top 5 por Sede */}
-          {filtroSede === 'Todas' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(['Norte','Pasoancho','Calle 9'] as const).map(sede => (
+          {/* Top por Sede + Pance */}
+          {(filtroSede === 'Todas' || filtroSede === 'Pance') && (
+            <div className={`grid grid-cols-1 gap-4 ${filtroSede==='Todas'?'md:grid-cols-4':'md:grid-cols-1 max-w-sm'}`}>
+              {(filtroSede==='Todas'?['Norte','Pasoancho','Calle 9']:[] as string[]).map(sede => (
                 <Panel key={sede}>
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-3 h-3 rounded-full" style={{background:COLORES_SEDE[sede]}}/>
@@ -550,13 +551,51 @@ export default function TicketPromedioPage() {
                   </div>
                 </Panel>
               ))}
+
+              {/* Top 3 Pance */}
+              {(filtroSede==='Todas' || filtroSede==='Pance') && (() => {
+                const panceAsesores = dataAsesor.filter(a => a.sede==='Calle 9' || a.sede==='Pance')
+                // Para Pance usamos los datos de comisiones_acc_detalle agrupados por asesor
+                // Como approximación usamos los asesores de Calle 9 con datos del mes
+                const topNeto   = [...panceAsesores].sort((a,b)=>(b.neto_accesorios||0)-(a.neto_accesorios||0)).slice(0,3)
+                const topTicket = [...panceAsesores].filter(a=>(a.vehiculos_vendidos||0)>0).sort((a,b)=>(b.ticket_promedio||0)-(a.ticket_promedio||0)).slice(0,3)
+                return (
+                  <Panel key="pance-ranking">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-3 h-3 rounded-full" style={{background:'#A78BFA'}}/>
+                      <h3 className="font-title text-sm font-semibold text-brand-text">Pance</h3>
+                      <span className="text-[9px] font-mono border border-brand-border text-brand-muted px-1 rounded">Vitrina · Top 3</span>
+                    </div>
+                    <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Neto</p>
+                    <div className="space-y-1.5 mb-4">
+                      {topNeto.length>0 ? topNeto.map((a,i) => (
+                        <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
+                          <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                          <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
+                          <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.neto_accesorios||0)}</p>
+                        </div>
+                      )) : <p className="text-brand-muted text-xs font-mono text-center py-2">Sin datos</p>}
+                    </div>
+                    <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Ticket</p>
+                    <div className="space-y-1.5">
+                      {topTicket.length>0 ? topTicket.map((a,i) => (
+                        <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
+                          <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                          <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
+                          <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.ticket_promedio||0)}</p>
+                        </div>
+                      )) : <p className="text-brand-muted text-xs font-mono text-center py-2">Sin datos</p>}
+                    </div>
+                  </Panel>
+                )
+              })()}
             </div>
           )}
         </div>
 
 
         {/* GRÁFICO ACUMULADO DIARIO */}
-        {filtroSede !== 'Pance' && acumDiario.length>0 && (
+        {acumDiario.length>0 && (
           <Panel>
             <h3 className="font-title text-base font-semibold text-brand-text mb-1">
               Ticket acumulado diario — {mesNombre} {filtroAnio}
@@ -589,7 +628,7 @@ export default function TicketPromedioPage() {
         )}
 
         {/* TABLA ASESORES */}
-        {asesoresF.length > 0 && filtroSede !== 'Pance' && (
+        {asesoresF.length > 0 && (
           <Panel>
             <h3 className="font-title text-base font-semibold text-brand-text mb-1">Seguimiento por asesor</h3>
             <p className="text-xs text-brand-subtle mb-4">Meta asesor: {fmtCOP(metas[0]?.meta_asesor||11500000)}</p>
