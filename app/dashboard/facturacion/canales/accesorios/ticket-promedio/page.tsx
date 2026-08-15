@@ -246,11 +246,11 @@ export default function TicketPromedioPage() {
   const mesNombre = MESES_SHORT[filtroMes]
   const ticketMetaGlobal = metas.length > 0 ? metas[0].ticket_promedio : 2200000
 
-  const iconoRanking = (i: number) =>
-    i===0 ? <Trophy size={14} className="text-yellow-400"/> :
-    i===1 ? <Medal size={14} className="text-gray-400"/> :
-    i===2 ? <Award size={14} className="text-amber-600"/> :
-            <span className="text-brand-muted font-mono text-xs w-3.5 text-center">{i+1}</span>
+  const iconoRanking = (i: number): React.ReactNode =>
+    i===0 ? (<Trophy size={14} className="text-yellow-400"/>) :
+    i===1 ? (<Medal size={14} className="text-gray-400"/>) :
+    i===2 ? (<Award size={14} className="text-amber-600"/>) :
+            (<span className="text-brand-muted font-mono text-xs w-3.5 text-center">{i+1}</span>)
 
   return (
     <div className="min-h-screen bg-brand-bg">
