@@ -376,7 +376,7 @@ export default function TicketPromedioPage() {
                     </div>
                     <div className="bg-brand-bg/50 rounded-lg p-2">
                       <p className="font-mono text-[9px] text-brand-muted">Neto</p>
-                      <p className="font-mono text-xs font-bold" style={{color:COLORES_SEDE[sede]}}>{fmtM(neto)}</p>
+                      <p className="font-mono text-xs font-bold" style={{color:COLORES_SEDE[sede]}}>{fmtCOP(neto)}</p>
                       {meta && <p className="font-mono text-[9px]" style={{color:semaforo(pctNeto).color}}>{fmtPct(pctNeto)}</p>}
                     </div>
                   </div>
@@ -448,7 +448,7 @@ export default function TicketPromedioPage() {
                         </div>
                         <div className="bg-brand-bg/50 rounded-lg p-2">
                           <p className="font-mono text-[9px] text-brand-muted">Neto</p>
-                          <p className="font-mono text-xs font-bold" style={{color:'#A78BFA'}}>{fmtM(kpiPance.neto)}</p>
+                          <p className="font-mono text-xs font-bold" style={{color:'#A78BFA'}}>{fmtCOP(kpiPance.neto)}</p>
                           <p className="font-mono text-[9px]" style={{color:semaforo(pctNeto).color}}>{fmtPct(pctNeto)}</p>
                         </div>
                       </div>
@@ -463,6 +463,23 @@ export default function TicketPromedioPage() {
                             {fmtCOP(Math.abs(metaPance.meta_neta-kpiPance.neto))}
                           </span>
                         </div>
+                        {dhRest>0 && metaPance.meta_neta-kpiPance.neto>0 && (
+                          <div className="flex justify-between text-[10px] font-mono">
+                            <span className="text-brand-muted">Necesario/día</span>
+                            <span className="text-brand-gold">{fmtCOP(Math.round((metaPance.meta_neta-kpiPance.neto)/dhRest))}</span>
+                          </div>
+                        )}
+                        {dhTransc>0 && (
+                          <div className="flex justify-between text-[10px] font-mono">
+                            <span className="text-brand-muted">Proyección cierre</span>
+                            {(() => {
+                              const ritmo = kpiPance.neto / dhTransc
+                              const proy  = kpiPance.neto + ritmo * dhRest
+                              const pct   = metaPance.meta_neta > 0 ? (proy/metaPance.meta_neta)*100 : 0
+                              return <span style={{color:semaforo(pct).color}}>{fmtPct(pct)}</span>
+                            })()}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -471,6 +488,72 @@ export default function TicketPromedioPage() {
             })()}
           </div>
         )}
+
+        {/* RANKINGS */}
+        <div className="space-y-4">
+          <h2 className="font-title text-lg font-bold text-brand-text">🏆 Rankings — {mesNombre} {filtroAnio}</h2>
+
+          {/* Top 5 Global */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[
+              { titulo: 'Top 5 Global · Mayor Neto', data: rankingNeto, campo: 'neto_accesorios' as const, fmt: fmtCOP },
+              { titulo: 'Top 5 Global · Mayor Ticket', data: rankingTicket, campo: 'ticket_promedio' as const, fmt: fmtCOP },
+            ].map(({ titulo, data, campo, fmt }) => (
+              <Panel key={titulo}>
+                <h3 className="font-title text-sm font-semibold text-brand-text mb-4">{titulo}</h3>
+                <div className="space-y-2">
+                  {data.map((a, i) => (
+                    <div key={`${a.asesor}-${i}`} className="flex items-center gap-3 p-2 rounded-lg bg-brand-bg/50">
+                      <div className="w-6 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-brand-text text-xs font-medium truncate">{a.asesor}</p>
+                        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+                          style={{color:COLORES_SEDE[a.sede],background:`${COLORES_SEDE[a.sede]}15`}}>{a.sede}</span>
+                      </div>
+                      <p className="font-mono text-xs font-bold text-brand-teal shrink-0">{fmt(a[campo]||0)}</p>
+                    </div>
+                  ))}
+                  {data.length===0 && <p className="text-brand-muted text-xs font-mono text-center py-4">Sin datos con vehículos vendidos</p>}
+                </div>
+              </Panel>
+            ))}
+          </div>
+
+          {/* Top 5 por Sede */}
+          {filtroSede === 'Todas' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(['Norte','Pasoancho','Calle 9'] as const).map(sede => (
+                <Panel key={sede}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 rounded-full" style={{background:COLORES_SEDE[sede]}}/>
+                    <h3 className="font-title text-sm font-semibold text-brand-text">{sede}</h3>
+                  </div>
+                  <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Neto</p>
+                  <div className="space-y-1.5 mb-4">
+                    {rankingNetoPorSede[sede].map((a,i) => (
+                      <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
+                        <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                        <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
+                        <p className="font-mono text-[10px] font-bold text-brand-teal">{fmtM(a.neto_accesorios||0)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Ticket</p>
+                  <div className="space-y-1.5">
+                    {rankingTicketPorSede[sede].map((a,i) => (
+                      <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
+                        <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
+                        <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
+                        <p className="font-mono text-[10px] font-bold" style={{color:COLORES_SEDE[sede]}}>{fmtM(a.ticket_promedio||0)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          )}
+        </div>
+
 
         {/* GRÁFICO ACUMULADO DIARIO */}
         {filtroSede !== 'Pance' && acumDiario.length>0 && (
@@ -555,72 +638,6 @@ export default function TicketPromedioPage() {
             </div>
           </Panel>
         )}
-
-        {/* RANKINGS */}
-        <div className="space-y-4">
-          <h2 className="font-title text-lg font-bold text-brand-text">🏆 Rankings — {mesNombre} {filtroAnio}</h2>
-
-          {/* Top 5 Global */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {[
-              { titulo: 'Top 5 Global · Mayor Neto', data: rankingNeto, campo: 'neto_accesorios' as const, fmt: fmtCOP },
-              { titulo: 'Top 5 Global · Mayor Ticket', data: rankingTicket, campo: 'ticket_promedio' as const, fmt: fmtCOP },
-            ].map(({ titulo, data, campo, fmt }) => (
-              <Panel key={titulo}>
-                <h3 className="font-title text-sm font-semibold text-brand-text mb-4">{titulo}</h3>
-                <div className="space-y-2">
-                  {data.map((a, i) => (
-                    <div key={`${a.asesor}-${i}`} className="flex items-center gap-3 p-2 rounded-lg bg-brand-bg/50">
-                      <div className="w-6 flex justify-center shrink-0">{iconoRanking(i)}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-brand-text text-xs font-medium truncate">{a.asesor}</p>
-                        <span className="font-mono text-[9px] px-1.5 py-0.5 rounded"
-                          style={{color:COLORES_SEDE[a.sede],background:`${COLORES_SEDE[a.sede]}15`}}>{a.sede}</span>
-                      </div>
-                      <p className="font-mono text-xs font-bold text-brand-teal shrink-0">{fmt(a[campo]||0)}</p>
-                    </div>
-                  ))}
-                  {data.length===0 && <p className="text-brand-muted text-xs font-mono text-center py-4">Sin datos con vehículos vendidos</p>}
-                </div>
-              </Panel>
-            ))}
-          </div>
-
-          {/* Top 5 por Sede */}
-          {filtroSede === 'Todas' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(['Norte','Pasoancho','Calle 9'] as const).map(sede => (
-                <Panel key={sede}>
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-3 h-3 rounded-full" style={{background:COLORES_SEDE[sede]}}/>
-                    <h3 className="font-title text-sm font-semibold text-brand-text">{sede}</h3>
-                  </div>
-                  <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Neto</p>
-                  <div className="space-y-1.5 mb-4">
-                    {rankingNetoPorSede[sede].map((a,i) => (
-                      <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
-                        <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
-                        <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
-                        <p className="font-mono text-[10px] font-bold text-brand-teal">{fmtM(a.neto_accesorios||0)}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Ticket</p>
-                  <div className="space-y-1.5">
-                    {rankingTicketPorSede[sede].map((a,i) => (
-                      <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
-                        <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
-                        <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
-                        <p className="font-mono text-[10px] font-bold" style={{color:COLORES_SEDE[sede]}}>{fmtM(a.ticket_promedio||0)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Panel>
-              ))}
-            </div>
-          )}
-        </div>
-
       </div>
     </div>
   )
