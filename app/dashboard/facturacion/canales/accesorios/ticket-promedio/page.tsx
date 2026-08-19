@@ -97,7 +97,8 @@ export default function TicketPromedioPage() {
   const [dataAsesor,setDataAsesor]= useState<FilaAsesor[]>([])
   const [dataDiario,setDataDiario]= useState<FilaDiario[]>([])
   const [dataPance,       setDataPance]       = useState<FilaPance[]>([])
-  const [asesoresPance,   setAsesoresPance]   = useState<FilaAsesorPance[]>([])
+  const [asesoresPance,     setAsesoresPance]     = useState<FilaAsesorPance[]>([])
+  const [asesoresPanceVeh,  setAsesoresPanceVeh]  = useState<FilaAsesor[]>([])
   const [loading,   setLoading]   = useState(true)
   const [ultimaAct, setUltimaAct] = useState<Date|null>(null)
   const [countdown, setCountdown] = useState(1800)
@@ -107,7 +108,7 @@ export default function TicketPromedioPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
     }
-    const [rMetas, rSede, rAsesor, rDiario, rPance, rAsesorPance] = await Promise.all([
+    const [rMetas, rSede, rAsesor, rDiario, rPance, rAsesorPance, rAsesorPanceVeh] = await Promise.all([
       supabase.from('metas_accesorios')
         .select('sede,meta_vehiculos,ticket_promedio,meta_asesor')
         .eq('anio', filtroAnio).eq('mes_num', filtroMes),
@@ -126,6 +127,9 @@ export default function TicketPromedioPage() {
       supabase.from('comisiones_acc_detalle')
         .select('asesor,neto')
         .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance'),
+      supabase.from('v_ticket_promedio')
+        .select('asesor,neto_accesorios,vehiculos_vendidos,ticket_promedio')
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('sede','Pance'),
     ])
     const rawMetas = (rMetas.data || []) as any[]
     setMetas(rawMetas.map(m => ({
@@ -145,6 +149,7 @@ export default function TicketPromedioPage() {
       mapaAP[k].facturas += 1
     })
     setAsesoresPance(Object.entries(mapaAP).map(([asesor,d])=>({asesor,...d})).sort((a,b)=>b.neto-a.neto))
+    setAsesoresPanceVeh((rAsesorPanceVeh.data || []) as FilaAsesor[])
     setUltimaAct(new Date())
     setLoading(false)
   }, [filtroAnio, filtroMes, router])
@@ -689,11 +694,11 @@ export default function TicketPromedioPage() {
                 </div>
                 <p className="font-mono text-[9px] text-brand-subtle uppercase mb-2">Por Ticket</p>
                 <div className="space-y-1.5">
-                  {asesoresPance.filter(a=>a.neto>0).sort((a,b)=>b.neto-a.neto).slice(0,3).map((a,i)=>(
+                  {(asesoresPanceVeh.length>0?asesoresPanceVeh:asesoresPance).filter(a=>((a as any).ticket_promedio||0)>0).sort((a,b)=>((b as any).ticket_promedio||0)-((a as any).ticket_promedio||0)).slice(0,3).map((a,i)=>(
                     <div key={i} className="flex items-center gap-2 p-1.5 rounded bg-brand-bg/50">
                       <div className="w-5 flex justify-center shrink-0">{iconoRanking(i)}</div>
                       <p className="text-brand-text text-[10px] flex-1 truncate">{a.asesor}</p>
-                      <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP(a.neto>0&&a.facturas>0?a.neto/a.facturas:0)}</p>
+                      <p className="font-mono text-[10px] font-bold" style={{color:'#A78BFA'}}>{fmtCOP((a as any).ticket_promedio||(a as any).neto||(a as any).neto_accesorios||0)}</p>
                     </div>
                   ))}
                 </div>
