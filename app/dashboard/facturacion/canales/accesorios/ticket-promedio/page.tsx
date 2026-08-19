@@ -127,9 +127,9 @@ export default function TicketPromedioPage() {
       supabase.from('comisiones_acc_detalle')
         .select('asesor,neto')
         .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance'),
-      supabase.from('v_ticket_promedio')
+      supabase.from('v_ticket_promedio_pance')
         .select('asesor,neto_accesorios,vehiculos_vendidos,ticket_promedio')
-        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('sede','Pance'),
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes),
     ])
     const rawMetas = (rMetas.data || []) as any[]
     setMetas(rawMetas.map(m => ({
