@@ -125,7 +125,7 @@ export default function TicketPromedioPage() {
         .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance').gt('neto',0),
       supabase.from('comisiones_acc_detalle')
         .select('asesor,neto')
-        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance').gt('neto',0),
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance'),
     ])
     const rawMetas = (rMetas.data || []) as any[]
     setMetas(rawMetas.map(m => ({
