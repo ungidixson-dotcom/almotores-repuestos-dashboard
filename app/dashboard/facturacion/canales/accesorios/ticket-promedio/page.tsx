@@ -122,7 +122,7 @@ export default function TicketPromedioPage() {
         .gte('fecha', `${filtroAnio}-01-01`).lte('fecha', `${filtroAnio}-12-31`),
       supabase.from('comisiones_acc_detalle')
         .select('neto,placa')
-        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance').gt('neto',0),
+        .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance'),
       supabase.from('comisiones_acc_detalle')
         .select('asesor,neto')
         .eq('anio', filtroAnio).eq('mes_num', filtroMes).eq('vitrina','Pance'),
