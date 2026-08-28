@@ -21,6 +21,7 @@ interface FilaVista {
   lineas:      number
 }
 
+interface MarcaSubasta { marca: string; facturas: number; neto: number; pct: number }
 interface CanalData {
   canal:   string
   icon:    string
@@ -169,7 +170,8 @@ export default function FacGeneralPage() {
   const todasActivo = sedes.has('Todas')
 
   const [filas,     setFilas]     = useState<FilaVista[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const [loading,      setLoading]      = useState(true)
+  const [marcasSubasta,setMarcasSubasta] = useState<MarcaSubasta[]>([])
   const [error,     setError]     = useState('')
   const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
 
