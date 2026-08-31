@@ -196,7 +196,7 @@ export default function EntregasPage() {
       )
       .order('fecha_limite_entrega', { ascending: true })
     if (err) { setError(err.message); setLoading(false); return }
-    setItems((data as EntregaItem[]) ?? [])
+    setItems((data as unknown as EntregaItem[]) ?? [])
     setUltimaActualizacion(new Date())
     setLoading(false)
   }, [router])
@@ -406,3 +406,4 @@ export default function EntregasPage() {
     </div>
   )
 }
+
