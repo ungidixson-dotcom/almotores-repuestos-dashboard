@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// Mapeo ruta → dashboard key (solo para /dashboard)
+// Mapeo ruta → dashboard key
 const ROUTE_DASHBOARD: Record<string, string> = {
   '/dashboard':                                                'subastas',
   '/dashboard/resumen-mensual':                               'resumen_mensual',
@@ -24,11 +24,9 @@ const ROUTE_DASHBOARD: Record<string, string> = {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  const esDashboard = pathname.startsWith('/dashboard')
-  const esEntregas  = pathname === '/entregas' || pathname.startsWith('/entregas/')
-
-  // Rutas no protegidas: dejar pasar sin tocar Supabase
-  if (!esDashboard && !esEntregas) return NextResponse.next()
+  // /entregas se protege en el propio componente (client-side auth check)
+  // No pasar por middleware para evitar timeout en Edge Runtime
+  if (!pathname.startsWith('/dashboard')) return NextResponse.next()
 
   const response = NextResponse.next()
 
@@ -47,15 +45,9 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Verificar sesión — única consulta para /entregas
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(new URL('/login', request.url))
 
-  // /entregas: cualquier usuario autenticado tiene acceso — salir aquí
-  // No consultar user_profiles ni user_dashboards
-  if (esEntregas) return response
-
-  // A partir de aquí solo /dashboard — control de acceso por rol
   const { data: perfil } = await supabase
     .from('user_profiles')
     .select('rol')
@@ -82,5 +74,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/entregas', '/entregas/:path*'],
+  // /entregas queda fuera del matcher — la página maneja su propio auth
+  matcher: ['/dashboard/:path*'],
 }
