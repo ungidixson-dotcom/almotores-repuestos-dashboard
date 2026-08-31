@@ -21,11 +21,18 @@ const ROUTE_DASHBOARD: Record<string, string> = {
   '/dashboard/inventario':                                   'inventario',
 }
 
+// Rutas protegidas por auth pero sin control de acceso por rol
+// (acceso para cualquier usuario autenticado)
+const RUTAS_AUTH_LIBRE = ['/entregas']
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Solo proteger rutas del dashboard
-  if (!pathname.startsWith('/dashboard')) return NextResponse.next()
+  const esDashboard   = pathname.startsWith('/dashboard')
+  const esRutaLibre   = RUTAS_AUTH_LIBRE.some(r => pathname === r || pathname.startsWith(r + '/'))
+
+  // Solo actuar en rutas protegidas
+  if (!esDashboard && !esRutaLibre) return NextResponse.next()
 
   const response = NextResponse.next()
 
@@ -49,7 +56,11 @@ export async function middleware(request: NextRequest) {
   // No autenticado → login
   if (!user) return NextResponse.redirect(new URL('/login', request.url))
 
-  // Verificar si es admin
+  // Rutas de auth libre: cualquier usuario autenticado tiene acceso
+  if (esRutaLibre) return response
+
+  // A partir de aquí: lógica de control de acceso por rol para /dashboard
+
   const { data: perfil } = await supabase
     .from('user_profiles')
     .select('rol')
@@ -59,7 +70,7 @@ export async function middleware(request: NextRequest) {
   // Admin tiene acceso total
   if (perfil?.rol === 'admin') return response
 
-  // Verificar acceso a la ruta
+  // Verificar acceso a la ruta específica del dashboard
   const dashboardKey = ROUTE_DASHBOARD[pathname]
   if (dashboardKey) {
     const { data: acceso } = await supabase
@@ -70,7 +81,6 @@ export async function middleware(request: NextRequest) {
       .single()
 
     if (!acceso) {
-      // Sin acceso → redirigir a la primera ruta permitida
       return NextResponse.redirect(new URL('/dashboard/facturacion/general', request.url))
     }
   }
@@ -79,5 +89,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/entregas/:path*', '/entregas'],
 }
