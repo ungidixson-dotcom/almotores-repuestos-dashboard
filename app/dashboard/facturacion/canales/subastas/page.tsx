@@ -182,6 +182,27 @@ export default function SubastasPage() {
 
   useEffect(() => { cargar() }, [cargar])
 
+  // Fetch marcas subastas
+  useEffect(() => {
+    supabase.from('v_subastas_por_marca')
+      .select('marca,facturas,neto')
+      .eq('anio', anio)
+      .eq('mes', MESES_KEY[mes - 1])
+      .then(({ data: dm }) => {
+        if (dm && dm.length > 0) {
+          const tot = dm.reduce((s: number, r: any) => s + Number(r.neto), 0)
+          setMarcasFact(dm.map((r: any) => ({
+            marca: r.marca,
+            facturas: Number(r.facturas),
+            neto: Number(r.neto),
+            pct: tot > 0 ? (Number(r.neto) / tot) * 100 : 0,
+          })).sort((a: any, b: any) => b.neto - a.neto))
+        } else {
+          setMarcasFact([])
+        }
+      })
+  }, [anio, mes])
+
   // ── Días hábiles ──────────────────────────────────────────────────────────
   const totalDH  = useMemo(() => diasHabilesEnMes(anio, mes), [anio, mes])
   const dhTransc = useMemo(() => (
