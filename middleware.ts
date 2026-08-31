@@ -2,37 +2,33 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// Mapeo ruta → dashboard key
+// Mapeo ruta → dashboard key (solo para /dashboard)
 const ROUTE_DASHBOARD: Record<string, string> = {
-  '/dashboard':                                               'subastas',
-  '/dashboard/resumen-mensual':                              'resumen_mensual',
-  '/dashboard/aseguradoras':                                 'aseguradoras',
-  '/dashboard/asesores':                                     'asesores',
-  '/dashboard/facturacion/general':                          'facturacion_general',
-  '/dashboard/facturacion/canales/accesorios':               'facturacion_accesorios',
-  '/dashboard/facturacion/canales/accesorios/comisiones':    'facturacion_accesorios',
-  '/dashboard/facturacion/canales/accesorios/ventas-asesor': 'facturacion_accesorios',
+  '/dashboard':                                                'subastas',
+  '/dashboard/resumen-mensual':                               'resumen_mensual',
+  '/dashboard/aseguradoras':                                  'aseguradoras',
+  '/dashboard/asesores':                                      'asesores',
+  '/dashboard/facturacion/general':                           'facturacion_general',
+  '/dashboard/facturacion/canales/accesorios':                'facturacion_accesorios',
+  '/dashboard/facturacion/canales/accesorios/comisiones':     'facturacion_accesorios',
+  '/dashboard/facturacion/canales/accesorios/ventas-asesor':  'facturacion_accesorios',
   '/dashboard/facturacion/canales/accesorios/ticket-promedio':'facturacion_accesorios',
-  '/dashboard/facturacion/canales/taller':                   'facturacion_taller',
-  '/dashboard/facturacion/canales/mostrador':                'facturacion_mostrador',
-  '/dashboard/facturacion/canales/mayoristas':               'facturacion_mayoristas',
-  '/dashboard/facturacion/canales/subastas':                 'subastas',
-  '/dashboard/facturacion/canales/colision':                 'facturacion_colision',
-  '/dashboard/inventario':                                   'inventario',
+  '/dashboard/facturacion/canales/taller':                    'facturacion_taller',
+  '/dashboard/facturacion/canales/mostrador':                 'facturacion_mostrador',
+  '/dashboard/facturacion/canales/mayoristas':                'facturacion_mayoristas',
+  '/dashboard/facturacion/canales/subastas':                  'subastas',
+  '/dashboard/facturacion/canales/colision':                  'facturacion_colision',
+  '/dashboard/inventario':                                    'inventario',
 }
-
-// Rutas protegidas por auth pero sin control de acceso por rol
-// (acceso para cualquier usuario autenticado)
-const RUTAS_AUTH_LIBRE = ['/entregas']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  const esDashboard   = pathname.startsWith('/dashboard')
-  const esRutaLibre   = RUTAS_AUTH_LIBRE.some(r => pathname === r || pathname.startsWith(r + '/'))
+  const esDashboard = pathname.startsWith('/dashboard')
+  const esEntregas  = pathname === '/entregas' || pathname.startsWith('/entregas/')
 
-  // Solo actuar en rutas protegidas
-  if (!esDashboard && !esRutaLibre) return NextResponse.next()
+  // Rutas no protegidas: dejar pasar sin tocar Supabase
+  if (!esDashboard && !esEntregas) return NextResponse.next()
 
   const response = NextResponse.next()
 
@@ -51,26 +47,23 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // Verificar sesión — única consulta para /entregas
   const { data: { user } } = await supabase.auth.getUser()
-
-  // No autenticado → login
   if (!user) return NextResponse.redirect(new URL('/login', request.url))
 
-  // Rutas de auth libre: cualquier usuario autenticado tiene acceso
-  if (esRutaLibre) return response
+  // /entregas: cualquier usuario autenticado tiene acceso — salir aquí
+  // No consultar user_profiles ni user_dashboards
+  if (esEntregas) return response
 
-  // A partir de aquí: lógica de control de acceso por rol para /dashboard
-
+  // A partir de aquí solo /dashboard — control de acceso por rol
   const { data: perfil } = await supabase
     .from('user_profiles')
     .select('rol')
     .eq('id', user.id)
     .single()
 
-  // Admin tiene acceso total
   if (perfil?.rol === 'admin') return response
 
-  // Verificar acceso a la ruta específica del dashboard
   const dashboardKey = ROUTE_DASHBOARD[pathname]
   if (dashboardKey) {
     const { data: acceso } = await supabase
@@ -89,5 +82,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/entregas/:path*', '/entregas'],
+  matcher: ['/dashboard/:path*', '/entregas', '/entregas/:path*'],
 }
