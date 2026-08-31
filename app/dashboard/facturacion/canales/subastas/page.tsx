@@ -139,6 +139,7 @@ export default function SubastasPage() {
   const [buscar,         setBuscar]         = useState('')
   const [filtroAseg,     setFiltroAseg]     = useState('Todas')
   const [filtroAsesor,   setFiltroAsesor]   = useState('Todos')
+  const [marcasFact,     setMarcasFact]     = useState<{marca:string;facturas:number;neto:number;pct:number}[]>([])
 
   // ── Carga desde Supabase ──────────────────────────────────────────────────
   const cargar = useCallback(async () => {
@@ -515,6 +516,48 @@ export default function SubastasPage() {
               </tfoot>
             </table>
           </div>
+        </Panel>
+
+        {/* Facturación por marca */}
+        <Panel>
+          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
+            Facturación por marca — {MESES_LABEL[mes - 1]} {anio}
+          </h2>
+          <p className="text-xs text-brand-subtle mb-4 font-mono">
+            prefijo 1/ = KIA · prefijo 10/ = VW
+          </p>
+          {marcasFact.length > 0 ? (
+            <div className="space-y-4">
+              {marcasFact.map(m => {
+                const color = m.marca === 'Kia' ? '#E8A33D' : m.marca === 'Vw' ? '#60A5FA' : '#5B6472'
+                return (
+                  <div key={m.marca} className="bg-brand-bg rounded-xl p-4 border border-brand-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{background:color}}/>
+                        <span className="font-title font-bold text-brand-text">{m.marca}</span>
+                      </div>
+                      <span className="font-mono text-xs text-brand-muted">{m.facturas} facturas</span>
+                    </div>
+                    <p className="font-title font-bold text-2xl mb-2" style={{color}}>
+                      {fmtCOP(m.neto)}
+                    </p>
+                    <div className="h-2 bg-brand-border rounded-full overflow-hidden mb-1">
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{width:`${Math.min(m.pct,100)}%`,background:color}}/>
+                    </div>
+                    <p className="font-mono text-[10px] text-brand-muted text-right">
+                      {m.pct.toFixed(1)}% del total facturado
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-brand-muted text-xs font-mono text-center py-8">
+              Sin datos de facturación por marca para este mes
+            </p>
+          )}
         </Panel>
 
         {/* Por asesor */}
