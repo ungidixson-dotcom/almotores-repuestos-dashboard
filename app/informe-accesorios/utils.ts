@@ -11,9 +11,11 @@ export const fmtCOP = (n: number | null | undefined): string => {
 
 export const fmtM = (n: number | null | undefined): string => {
   if (n == null) return '—'
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
-  return `$${(n / 1e3).toFixed(0)}K`
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(n)
 }
 
 export const fmtPct = (n: number | null | undefined, decimals = 1): string => {
