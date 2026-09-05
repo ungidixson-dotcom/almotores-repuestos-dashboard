@@ -1,772 +1,649 @@
 'use client'
-import { useCallback, useEffect, useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useInformeAcc } from '../../useInformeAcc'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
-  AreaChart, Area, ComposedChart, Line, ReferenceLine,
+  fmtM, fmtCOP, fmtNum, fmtPct, calcDelta,
+  VITRINA_COLORS, VITRINAS, semaforoVentas, semaforoTicket,
+  SEMAFORO_CLS, SEMAFORO_BADGE, VITRINA_BG, MESES,
+} from '../../utils'
+import {
+  KpiCard, VitrinaBadge, DeltaBadge, SemaforoBadge,
+  ProgressBar, MesSelector, TablaHeader, RankBadge,
+} from '../../components/Shared'
+import TabComparativo from '../../components/TabComparativo'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid,
 } from 'recharts'
-import {
-  LogOut, TrendingUp, CheckCircle, Clock, Timer,
-  FileCheck, FileX, FileClock, Calendar, Target, RefreshCw,
-} from 'lucide-react'
 
-// ── Constantes ───────────────────────────────────────────────────────────────
-const ESTADOS_GANADOS   = ['Autorizada Completa', 'Autorizada parcial'] as const
-const ESTADOS_RESUELTOS = ['Autorizada Completa', 'Autorizada parcial', 'NO Autorizada'] as const
+// ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const COLORES_ESTADO: Record<string, string> = {
-  'Autorizada Completa': '#4FD1C5',
-  'Autorizada parcial':  '#E8A33D',
-  'NO Autorizada':       '#E5484D',
-  'Subasta no aplicada': '#5B6472',
-  'Sin respuesta':       '#8AA4C8',
-}
-const COLORES_CIUDADES = [
-  '#4FD1C5','#E8A33D','#8AA4C8','#E5484D',
-  '#60A5FA','#A78BFA','#34D399','#F87171','#FBBF24','#6EE7B7',
-]
+const TABS = [
+  { id: 'resumen',      label: 'Resumen'       },
+  { id: 'areas',        label: 'Áreas de venta' },
+  { id: 'ventas',       label: 'Por ventas'     },
+  { id: 'ticket',       label: 'Por ticket'     },
+  { id: 'vitrina',      label: 'Por vitrina'    },
+  { id: 'comparativo',  label: 'Comparativo'    },
+] as const
 
-const FESTIVOS_2026 = new Set([
-  '2026-01-01','2026-01-12','2026-03-23','2026-04-02','2026-04-03',
-  '2026-05-01','2026-05-18','2026-06-08','2026-06-15','2026-06-29',
-  '2026-07-20','2026-08-07','2026-08-17','2026-10-12','2026-11-02',
-  '2026-11-16','2026-12-08','2026-12-25',
-])
+type TabId = typeof TABS[number]['id']
 
-// ── Utilidades ───────────────────────────────────────────────────────────────
-function diasHabiles(year: number, month: number): { total: number; transcurridos: number; restantes: number } {
-  const hoy    = new Date()
-  const diaHoy = (hoy.getFullYear() === year && hoy.getMonth() === month - 1)
-    ? hoy.getDate()
-    : new Date(year, month, 0).getDate()
-  let total = 0, transcurridos = 0
-  const diasMes = new Date(year, month, 0).getDate()
-  for (let d = 1; d <= diasMes; d++) {
-    const dow  = new Date(year, month - 1, d).getDay()
-    const fStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    if (dow !== 0 && !FESTIVOS_2026.has(fStr)) {
-      total++
-      if (d <= diaHoy) transcurridos++
-    }
-  }
-  return { total, transcurridos, restantes: total - transcurridos }
-}
+// ── Helpers de tooltip ────────────────────────────────────────────────────────
 
-function diasHabilesHasta(year: number, month: number, diaMax: number): number {
-  let count = 0
-  for (let d = 1; d <= diaMax; d++) {
-    const dow  = new Date(year, month - 1, d).getDay()
-    const fStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    if (dow !== 0 && !FESTIVOS_2026.has(fStr)) count++
-  }
-  return count
-}
-
-const fmtCOP = (n: number) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
-const fmtPct = (n: number) => `${(n || 0).toFixed(1)}%`
-const fmtM   = (n: number) =>
-  n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(0)}M` : `$${(n / 1e3).toFixed(0)}K`
-
-// ── Tipos ────────────────────────────────────────────────────────────────────
-interface Aseguradora    { id: number; nombre_corto: string }
-interface Asesor         { id: number; nombre: string }
-interface ResumenMensual {
-  anio: number; mes: string; orden: number
-  total_subastas: number; ganadas: number; no_autorizadas: number
-  valor_autorizado: number; valor_subastado: number; max_fecha_subasta: string | null
-}
-interface KpiRow {
-  anio: number; mes_subasta: string; marca: string
-  aseguradora_id: number; asesor_id: number; estado_autorizacion: string
-  ciudad_destino: string; total: number; valor_subastado: number
-  valor_autorizado: number; tiempo_promedio: number
-}
-interface Factura {
-  id: number; placa: string; marca: string
-  aseguradora_id: number; asesor_id: number
-  est_radicacion: string; fecha_radicado: string; base_imp: number; mes: string
-}
-interface PipelineAnio {
-  anio: number | null; total: number; pend_auth: number
-  en_pedido: number; por_facturar: number; por_radicar: number; completadas: number
-}
-
-// ── Fetch centralizado ───────────────────────────────────────────────────────
-interface DatosApp {
-  kpiRows: KpiRow[]; facturas: Factura[]; aseguradoras: Aseguradora[]
-  asesores: Asesor[]; resumenMensual: ResumenMensual[]
-  mesesDisponibles: Array<{ anio: number; mes: string; orden: number }>
-  pipelineData: PipelineAnio[]
-}
-
-async function fetchTodosDatos(): Promise<DatosApp> {
-  const [
-    { data: kpis }, { data: f }, { data: aseg }, { data: ases },
-    { data: resumen }, { data: meses }, { data: pipeline },
-  ] = await Promise.all([
-    supabase.from('v_kpis_subastas').select('anio,mes_subasta,marca,aseguradora_id,asesor_id,estado_autorizacion,ciudad_destino,total,valor_subastado,valor_autorizado,tiempo_promedio'),
-    supabase.from('facturas').select('id,placa,marca,aseguradora_id,asesor_id,est_radicacion,fecha_radicado,base_imp,mes').limit(2000),
-    supabase.from('aseguradoras').select('id,nombre_corto'),
-    supabase.from('asesores').select('id,nombre'),
-    supabase.from('v_resumen_mensual').select('anio,mes,orden,total_subastas,ganadas,no_autorizadas,valor_autorizado,valor_subastado,max_fecha_subasta'),
-    supabase.from('v_meses_disponibles').select('anio,mes,orden').order('anio').order('orden'),
-    supabase.from('v_subastas_pipeline').select('anio,total,pend_auth,en_pedido,por_facturar,por_radicar,completadas').order('anio'),
-  ])
-  return {
-    kpiRows:          (kpis     as KpiRow[]        ) || [],
-    facturas:         (f        as Factura[]        ) || [],
-    aseguradoras:     (aseg     as Aseguradora[]    ) || [],
-    asesores:         (ases     as Asesor[]         ) || [],
-    resumenMensual:   (resumen  as ResumenMensual[] ) || [],
-    mesesDisponibles: (meses    as Array<{ anio: number; mes: string; orden: number }>) || [],
-    pipelineData:     (pipeline as PipelineAnio[]   ) || [],
-  }
-}
-
-// ── Componente principal ─────────────────────────────────────────────────────
-export default function Dashboard() {
-  const router = useRouter()
-
-  const [kpiRows,          setKpiRows]          = useState<KpiRow[]>([])
-  const [facturas,         setFacturas]          = useState<Factura[]>([])
-  const [aseguradoras,     setAseguradoras]      = useState<Aseguradora[]>([])
-  const [asesores,         setAsesores]          = useState<Asesor[]>([])
-  const [resumenMensual,   setResumenMensual]    = useState<ResumenMensual[]>([])
-  const [mesesDisponibles, setMesesDisponibles]  = useState<Array<{ anio: number; mes: string; orden: number }>>([])
-  const [pipelineData,     setPipelineData]      = useState<PipelineAnio[]>([])
-  const [loading,              setLoading]              = useState(true)
-  const [ultimaActualizacion,  setUltimaActualizacion]  = useState<Date | null>(null)
-  const [autoRefresh,          setAutoRefresh]          = useState(true)
-  const [countdown,            setCountdown]            = useState(1800)
-  const [filtroAnio,        setFiltroAnio]        = useState(2026)
-  const [filtroAsesor,      setFiltroAsesor]      = useState(0)
-  const [filtroAseguradora, setFiltroAseguradora] = useState(0)
-  const [filtroMes,         setFiltroMes]         = useState('todos')
-  const [filtroMarca,       setFiltroMarca]       = useState('todas')
-
-  const asegMap = useMemo(() => { const m: Record<number, string> = {}; aseguradoras.forEach(a => { m[a.id] = a.nombre_corto }); return m }, [aseguradoras])
-  const asesMap = useMemo(() => { const m: Record<number, string> = {}; asesores.forEach(a => { m[a.id] = a.nombre }); return m }, [asesores])
-
-  const cargarDatos = useCallback(async (verificarAuth = false) => {
-    if (verificarAuth) {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-    }
-    const datos = await fetchTodosDatos()
-    setKpiRows(datos.kpiRows); setFacturas(datos.facturas)
-    setAseguradoras(datos.aseguradoras); setAsesores(datos.asesores)
-    setResumenMensual(datos.resumenMensual); setMesesDisponibles(datos.mesesDisponibles)
-    setPipelineData(datos.pipelineData); setUltimaActualizacion(new Date()); setLoading(false)
-  }, [router])
-
-  useEffect(() => { cargarDatos(true) }, [cargarDatos])
-
-  useEffect(() => {
-    if (!autoRefresh) return
-    const interval = setInterval(() => {
-      setCountdown(c => { if (c <= 1) { cargarDatos(false); return 1800 } return c - 1 })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [autoRefresh, cargarDatos])
-
-  const handleRefreshManual = () => { cargarDatos(false); setCountdown(1800) }
-  const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login') }
-
-  const aniosDisponibles = useMemo(() =>
-    Array.from(new Set(mesesDisponibles.map(m => m.anio))).sort((a, b) => b - a),
-  [mesesDisponibles])
-
-  const mesesDelAnio = useMemo(() => {
-    const del_anio = mesesDisponibles.filter(m => m.anio === filtroAnio).sort((a, b) => a.orden - b.orden).map(m => m.mes)
-    return ['todos', ...del_anio]
-  }, [mesesDisponibles, filtroAnio])
-
-  const marcas = useMemo(() => {
-    const ms = kpiRows.filter(r => r.anio === filtroAnio).map(r => r.marca).filter((m): m is string => !!m && m.trim() !== '')
-    return ['todas', ...Array.from(new Set(ms)).sort()]
-  }, [kpiRows, filtroAnio])
-
-  const sf = kpiRows.filter(r =>
-    Number(r.anio) === Number(filtroAnio) &&
-    (filtroAsesor      === 0       || r.asesor_id      === filtroAsesor) &&
-    (filtroAseguradora === 0       || r.aseguradora_id === filtroAseguradora) &&
-    (filtroMes         === 'todos' || (r.mes_subasta || '').toLowerCase() === filtroMes.toLowerCase()) &&
-    (filtroMarca       === 'todas' || (r.marca || '').toLowerCase() === filtroMarca.toLowerCase())
-  )
-
-  const ff = facturas.filter(f =>
-    (filtroAsesor      === 0       || f.asesor_id      === filtroAsesor) &&
-    (filtroAseguradora === 0       || f.aseguradora_id === filtroAseguradora) &&
-    (filtroMes         === 'todos' || f.mes            === filtroMes) &&
-    (filtroMarca       === 'todas' || (f.marca || '').toLowerCase() === filtroMarca.toLowerCase())
-  )
-
-  const kpis = useMemo(() => {
-    const total     = sf.reduce((a, r) => a + (r.total || 0), 0)
-    const ganadas   = sf.filter(r => ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number])).reduce((a, r) => a + (r.total || 0), 0)
-    const resueltas = sf.filter(r => ESTADOS_RESUELTOS.includes(r.estado_autorizacion as typeof ESTADOS_RESUELTOS[number])).reduce((a, r) => a + (r.total || 0), 0)
-    const sinResp   = sf.filter(r => !ESTADOS_RESUELTOS.includes(r.estado_autorizacion as typeof ESTADOS_RESUELTOS[number]) && r.estado_autorizacion !== 'Subasta no aplicada').reduce((a, r) => a + (r.total || 0), 0)
-    const valorSub  = sf.reduce((a, r) => a + (r.valor_subastado || 0), 0)
-    const valorAut  = sf.filter(r => ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number])).reduce((a, r) => a + (r.valor_autorizado || 0), 0)
-    const tiempos   = sf.filter(r => r.tiempo_promedio > 0).map(r => r.tiempo_promedio)
-    const tiempoProm = tiempos.length ? (tiempos.reduce((a, b) => a + b, 0) / tiempos.length).toFixed(1) : '—'
-    return { total, ganadas, resueltas, sinRespuesta: sinResp, tasaAuth: resueltas ? (ganadas / resueltas) * 100 : 0, efectividad: total ? (ganadas / total) * 100 : 0, valorSub, valorAut, convValor: valorSub ? (valorAut / valorSub) * 100 : 0, tiempoProm }
-  }, [sf])
-
-  const fKpis = useMemo(() => ({
-    radicadas:  ff.filter(f => f.est_radicacion === 'Radicada').length,
-    pendientes: ff.filter(f => ['Pendiente', 'pendiente'].includes(f.est_radicacion)).length,
-    anuladas:   ff.filter(f => f.est_radicacion === 'Anulada').length,
-  }), [ff])
-
-  const mesActual = useMemo(() => {
-    const hoy = new Date(); const year = hoy.getFullYear(); const month = hoy.getMonth() + 1
-    const NOMBRES_MES = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
-    const nombreMes = NOMBRES_MES[month]; const dh = diasHabiles(year, month)
-    const resumenMes = resumenMensual.find(r => r.anio === filtroAnio && r.mes === nombreMes)
-    const subastasAcum = resumenMes?.total_subastas || 0; const valorAutAcum = resumenMes?.valor_autorizado || 0
-    const maxFecha = resumenMes?.max_fecha_subasta || null
-    const diasConDatos = maxFecha ? diasHabilesHasta(year, month, new Date(maxFecha + 'T00:00:00').getDate()) : 0
-    const ritmo = diasConDatos > 0 ? subastasAcum / diasConDatos : 0
-    const ritmoValor = diasConDatos > 0 ? valorAutAcum / diasConDatos : 0
-    return { nombre: `${nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1)} ${year}`, total: dh.total, transcurridos: dh.transcurridos, restantes: dh.restantes, subastasAcum, diasConDatos, ritmo, proySubastas: Math.round(ritmo * dh.total), proyValor: ritmoValor * dh.total, valorAutAcum, pctAvance: dh.total > 0 ? (dh.transcurridos / dh.total) * 100 : 0 }
-  }, [resumenMensual, filtroAnio])
-
-  const porAsesor = useMemo(() => {
-    const map: Record<number, { id: number; total: number; ganadas: number; noAut: number; pendientes: number; valorAut: number }> = {}
-    sf.forEach(r => {
-      if (!r.asesor_id) return
-      if (!map[r.asesor_id]) map[r.asesor_id] = { id: r.asesor_id, total: 0, ganadas: 0, noAut: 0, pendientes: 0, valorAut: 0 }
-      map[r.asesor_id].total += r.total || 0
-      if (ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number])) { map[r.asesor_id].ganadas += r.total || 0; map[r.asesor_id].valorAut += r.valor_autorizado || 0 }
-      else if (r.estado_autorizacion === 'NO Autorizada') { map[r.asesor_id].noAut += r.total || 0 }
-      else { map[r.asesor_id].pendientes += r.total || 0 }
-    })
-    return Object.values(map).map(a => { const d = a.ganadas + a.noAut; return { ...a, nombre: asesMap[a.id] || `Asesor ${a.id}`, tasaAuth: d ? (a.ganadas / d) * 100 : 0, efectividad: a.total ? (a.ganadas / a.total) * 100 : 0 } }).sort((a, b) => b.valorAut - a.valorAut)
-  }, [sf, asesMap])
-
-  const porEstado = useMemo(() => {
-    const map: Record<string, number> = {}
-    sf.forEach(r => { const k = r.estado_autorizacion || 'Sin respuesta'; map[k] = (map[k] || 0) + (r.total || 0) })
-    return Object.entries(map).map(([name, value]) => ({ name, value }))
-  }, [sf])
-
-  const porAseguradora = useMemo(() => {
-    const map: Record<number, { id: number; total: number; ganadas: number; resueltas: number }> = {}
-    sf.forEach(r => {
-      if (!r.aseguradora_id) return
-      if (!map[r.aseguradora_id]) map[r.aseguradora_id] = { id: r.aseguradora_id, total: 0, ganadas: 0, resueltas: 0 }
-      map[r.aseguradora_id].total += r.total || 0
-      if (ESTADOS_RESUELTOS.includes(r.estado_autorizacion as typeof ESTADOS_RESUELTOS[number])) map[r.aseguradora_id].resueltas += r.total || 0
-      if (ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number]))    map[r.aseguradora_id].ganadas   += r.total || 0
-    })
-    return Object.values(map).map(a => ({ ...a, nombre: asegMap[a.id] || `Aseg.${a.id}`, tasa: a.resueltas ? (a.ganadas / a.resueltas) * 100 : 0 })).sort((a, b) => b.total - a.total)
-  }, [sf, asegMap])
-
-  const porCiudad = useMemo(() => {
-    const map: Record<string, { total: number; ganadas: number }> = {}
-    sf.forEach(r => {
-      const c = r.ciudad_destino ? r.ciudad_destino.trim().toLowerCase() : 'sin ciudad'
-      if (!map[c]) map[c] = { total: 0, ganadas: 0 }
-      map[c].total += r.total || 0
-      if (ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number])) map[c].ganadas += r.total || 0
-    })
-    return Object.entries(map).map(([ciudad, v]) => ({ ciudad: ciudad.charAt(0).toUpperCase() + ciudad.slice(1), ...v, tasa: v.total ? (v.ganadas / v.total) * 100 : 0 })).sort((a, b) => b.total - a.total).slice(0, 10)
-  }, [sf])
-
-  const porTiempo = useMemo(() => {
-    const rangos: Record<string, number> = { '0-3 días': 0, '4-6 días': 0, '7-15 días': 0, '16-30 días': 0, '+30 días': 0 }
-    sf.filter(r => r.tiempo_promedio > 0).forEach(r => { const d = r.tiempo_promedio; const key = d <= 3 ? '0-3 días' : d <= 6 ? '4-6 días' : d <= 15 ? '7-15 días' : d <= 30 ? '16-30 días' : '+30 días'; rangos[key] += r.total || 0 })
-    return Object.entries(rangos).map(([rango, cantidad]) => ({ rango, cantidad }))
-  }, [sf])
-
-  const participacionMarca = useMemo(() => {
-    const mapa: Record<string, { subastas: number; ganadas: number; valorSub: number; valorAut: number }> = {}
-    sf.forEach(r => {
-      const marca = r.marca || 'Sin marca'
-      if (!mapa[marca]) mapa[marca] = { subastas: 0, ganadas: 0, valorSub: 0, valorAut: 0 }
-      mapa[marca].subastas += r.total || 0; mapa[marca].valorSub += r.valor_subastado || 0; mapa[marca].valorAut += r.valor_autorizado || 0
-      if (ESTADOS_GANADOS.includes(r.estado_autorizacion as typeof ESTADOS_GANADOS[number])) mapa[marca].ganadas += r.total || 0
-    })
-    const totalSub = Object.values(mapa).reduce((s, m) => s + m.subastas, 0)
-    const totalVal = Object.values(mapa).reduce((s, m) => s + m.valorSub, 0)
-    return Object.entries(mapa).map(([marca, d]) => ({ marca, subastas: d.subastas, ganadas: d.ganadas, valorSub: d.valorSub, valorAut: d.valorAut, pctSub: totalSub > 0 ? (d.subastas / totalSub) * 100 : 0, pctVal: totalVal > 0 ? (d.valorSub / totalVal) * 100 : 0, tasaAut: d.ganadas > 0 || d.subastas > 0 ? (d.ganadas / Math.max(d.subastas, 1)) * 100 : 0 })).sort((a, b) => b.subastas - a.subastas)
-  }, [sf])
-
-  const pipeline = useMemo(() => {
-    const row = pipelineData.find(p => p.anio === filtroAnio)
-    if (!row) return null
-    const autorizadas = row.total - row.pend_auth
-    return { total: row.total, autorizadas, en_pedido: row.en_pedido, por_facturar: row.por_facturar, por_radicar: row.por_radicar, completadas: row.completadas, pct_auth: row.total > 0 ? (autorizadas / row.total) * 100 : 0, pct_pedido: autorizadas > 0 ? (row.en_pedido / autorizadas) * 100 : 0, pct_facturar: row.en_pedido > 0 ? (row.por_facturar / row.en_pedido) * 100 : 0, pct_radicar: row.por_facturar + row.completadas > 0 ? (row.completadas / (row.por_facturar + row.completadas)) * 100 : 0 }
-  }, [pipelineData, filtroAnio])
-
-  const proyeccionMes = useMemo(() => {
-    const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-    const mapReal: Record<string, ResumenMensual> = {}
-    resumenMensual.filter(r => r.anio === filtroAnio).forEach(r => { if (r.mes) mapReal[r.mes.toLowerCase()] = r })
-    const serie = MESES.map((mes, idx) => { const real = mapReal[mes.toLowerCase()]; return { mes, orden: idx + 1, valorAut: real ? real.valor_autorizado : null, ganadas: real ? real.ganadas : null, esReal: !!real } })
-    const conDatos = serie.filter(s => s.valorAut !== null)
-    let proyectado: number | null = null; let siguienteMes = ''
-    if (conDatos.length >= 2) {
-      const valores = conDatos.map(s => s.valorAut as number); const n = valores.length; const prom = valores.reduce((a, b) => a + b, 0) / n; const tend = (valores[n - 1] - valores[0]) / (n - 1)
-      proyectado = Math.max(0, prom + tend); const sig = serie.find(s => !s.esReal && s.orden > (conDatos[conDatos.length - 1].orden)); siguienteMes = sig ? sig.mes : ''
-      if (sig) serie[sig.orden - 1] = { ...serie[sig.orden - 1], valorAut: proyectado, esReal: false }
-    }
-    return { serie, proyectado, siguienteMes, historico: conDatos }
-  }, [resumenMensual, filtroAnio])
-
-  useEffect(() => { setFiltroMes('todos'); setFiltroMarca('todas') }, [filtroAnio])
-
-  const hayFiltrosActivos = filtroAsesor !== 0 || filtroAseguradora !== 0 || filtroMes !== 'todos' || filtroMarca !== 'todas'
-
-  // ── Mes actual para el enlace del informe ─────────────────────────────────
-  const mesActualNum = new Date().getMonth() + 1
-  const anioActualNum = new Date().getFullYear()
-
-  if (loading) return (
-    <div className="min-h-screen bg-brand-bg flex items-center justify-center flex-col gap-3">
-      <div className="w-8 h-8 border-2 border-brand-teal border-t-transparent rounded-full animate-spin"/>
-      <p className="text-brand-subtle font-mono text-xs">Cargando datos...</p>
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-brand-surface border border-brand-border rounded-lg p-3 text-xs">
+      <p className="text-brand-muted mb-1">{label}</p>
+      {payload.map((p: any) => (
+        <p key={p.name} className="text-brand-text font-mono">
+          {p.name}: {fmtM(p.value)}
+        </p>
+      ))}
     </div>
   )
+}
+
+// ── Componente principal ──────────────────────────────────────────────────────
+
+export default function InformeAccesoriosPage() {
+  const router = useRouter()
+  const params = useParams()
+
+  // Parámetros de URL o valores por defecto (mes actual)
+  const now = new Date()
+  const [anio, setAnio] = useState<number>(
+    params?.anio ? Number(params.anio) : now.getFullYear()
+  )
+  const [mes, setMes] = useState<number>(
+    params?.mes ? Number(params.mes) : now.getMonth() + 1
+  )
+  const [tab, setTab] = useState<TabId>('resumen')
+
+  // Verificar sesión — mismo patrón que el dashboard existente
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) router.replace('/login')
+    })
+  }, [router])
+
+  const {
+    resumen, vitrinas, asesores, areas,
+    resumenMesAnt, resumenAnioAnt,
+    vitrinasMesAnt, vitrinasAnioAnt,
+    meses, loading, error,
+  } = useInformeAcc(anio, mes)
+
+  const handleMesChange = (a: number, m: number) => {
+    setAnio(a)
+    setMes(m)
+    router.replace(`/informe-accesorios/${a}/${m}`, { scroll: false })
+  }
+
+  // ── Datos derivados ─────────────────────────────────────────────────────────
+
+  // Áreas consolidadas para el tab de áreas
+  const areaConsolidada = areas.reduce<Record<string, { facturas: number; ventas_neto: number; comisiones: number }>>(
+    (acc, r) => {
+      if (!acc[r.area]) acc[r.area] = { facturas: 0, ventas_neto: 0, comisiones: 0 }
+      acc[r.area].facturas   += r.facturas
+      acc[r.area].ventas_neto += r.ventas_neto
+      acc[r.area].comisiones  += r.comisiones
+      return acc
+    }, {}
+  )
+
+  // Detalle de semanas para Comercial VN
+  const semanasComercial = areas
+    .filter(a => a.area === 'Comercial VN' && a.area_detalle !== 'Comercial' && a.area_detalle !== '#N/A')
+    .sort((a, b) => {
+      const nA = parseInt(a.area_detalle.replace('Semana ', ''))
+      const nB = parseInt(b.area_detalle.replace('Semana ', ''))
+      return nA - nB
+    })
+
+  // Datos del chart de comparativo vitrinas
+  const chartVitrinas = VITRINAS.map(v => {
+    const act  = vitrinas.find(x => x.vitrina === v)
+    const mAnt = vitrinasMesAnt.find(x => x.vitrina === v)
+    const aAnt = vitrinasAnioAnt.find(x => x.vitrina === v)
+    return {
+      vitrina: v,
+      actual:   (act?.ventas_neto  ?? 0) / 1e6,
+      mes_ant:  (mAnt?.ventas_neto ?? 0) / 1e6,
+      anio_ant: (aAnt?.ventas_neto ?? 0) / 1e6,
+    }
+  })
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-brand-bg">
+    <div className="min-h-screen bg-brand-bg text-brand-text font-sans">
+      <div className="max-w-screen-xl mx-auto px-6 pb-16">
 
-      {/* ── TOP BAR ──────────────────────────────────────────────────────── */}
-      <div className="border-b border-brand-border bg-brand-surface/50 px-6 py-3 flex items-center justify-between sticky top-0 z-10 backdrop-blur-sm">
-        {/* Izquierda: título + enlace informe */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-brand-teal animate-pulse"/>
-            <span className="font-mono text-xs text-brand-subtle uppercase tracking-widest">
-              Almotores KIA · Repuestos &amp; Accesorios
-            </span>
+        {/* Header */}
+        <div className="flex items-end justify-between py-8 border-b border-brand-border mb-6">
+          <div>
+            <h1 className="font-title text-xl font-bold text-brand-text">
+              Accesorios{' '}
+              <span className="text-brand-subtle">·</span>{' '}
+              <span className="text-brand-gold">{MESES[mes - 1]} {anio}</span>
+            </h1>
+            <p className="text-brand-muted text-sm mt-1">
+              Almotores KIA — Informe mensual de ventas y comisiones
+            </p>
           </div>
-          <a
-            href={`/informe-accesorios/${anioActualNum}/${mesActualNum}`}
-            className="flex items-center gap-1.5 text-xs font-mono text-brand-gold hover:text-brand-text transition-colors border border-brand-gold/30 hover:border-brand-gold rounded-lg px-2.5 py-1"
-          >
-            ▸ Informe Accesorios
-          </a>
-        </div>
-        {/* Derecha: refresh + logout */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleRefreshManual}
-            className="flex items-center gap-1.5 text-xs font-mono text-brand-subtle hover:text-brand-teal transition-colors border border-brand-border rounded-lg px-2.5 py-1"
-            title="Actualizar ahora"
-          >
-            <RefreshCw size={12}/> Actualizar
-          </button>
-          <div className="flex items-center gap-1.5 text-xs font-mono text-brand-muted" title="Próxima actualización automática">
-            <div className="w-1.5 h-1.5 rounded-full bg-brand-teal animate-pulse"/>
-            {`Auto en ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}`}
-          </div>
-          {ultimaActualizacion && (
-            <span className="text-brand-muted font-mono text-xs hidden md:block">
-              {ultimaActualizacion.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-          <button onClick={handleLogout} className="flex items-center gap-2 text-brand-subtle hover:text-brand-text text-xs font-mono transition-colors">
-            <LogOut size={13}/> Salir
-          </button>
-        </div>
-      </div>
-
-      <div className="p-6">
-
-        {/* ── TÍTULO ───────────────────────────────────────────────────── */}
-        <div className="mb-6">
-          <h1 className="font-title text-2xl font-bold text-brand-text">Torre de Control · Subastas</h1>
-          <p className="text-brand-subtle text-sm mt-1">Análisis histórico — {aniosDisponibles.join(', ')} · viendo {filtroAnio}</p>
-        </div>
-
-        {/* ── FILTROS ──────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-2 mb-6 p-4 bg-brand-surface border border-brand-border rounded-xl">
-          <span className="font-mono text-xs text-brand-muted self-center mr-2 uppercase tracking-wider">Filtrar por</span>
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-brand-subtle">Año</span>
-            <select value={filtroAnio} onChange={e => setFiltroAnio(Number(e.target.value))} className="bg-brand-bg border border-brand-teal/50 rounded-lg px-3 py-1.5 text-brand-teal text-sm font-mono font-semibold outline-none focus:border-brand-teal">
-              {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-brand-subtle">Asesor</span>
-            <select value={filtroAsesor} onChange={e => setFiltroAsesor(Number(e.target.value))} className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-              <option value={0}>Todos</option>
-              {asesores.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-brand-subtle">Aseguradora</span>
-            <select value={filtroAseguradora} onChange={e => setFiltroAseguradora(Number(e.target.value))} className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-              <option value={0}>Todas</option>
-              {aseguradoras.map(a => <option key={a.id} value={a.id}>{a.nombre_corto}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-brand-subtle">Mes</span>
-            <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)} className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-              <option value="todos">Todos</option>
-              {mesesDelAnio.filter(m => m !== 'todos').map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-brand-subtle">Marca</span>
-            <select value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)} className="bg-brand-bg border border-brand-border rounded-lg px-3 py-1.5 text-brand-text text-sm outline-none focus:border-brand-teal">
-              <option value="todas">Todas</option>
-              {marcas.filter(m => m !== 'todas').map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </label>
-          {hayFiltrosActivos && (
-            <button onClick={() => { setFiltroAsesor(0); setFiltroAseguradora(0); setFiltroMes('todos'); setFiltroMarca('todas') }} className="ml-auto text-xs font-mono text-brand-muted hover:text-brand-red transition-colors border border-brand-border rounded-lg px-3 py-1.5">
-              × Limpiar filtros
-            </button>
-          )}
-        </div>
-
-        {/* ── MES EN CURSO ─────────────────────────────────────────────── */}
-        <div className="mb-4 p-4 bg-gradient-to-r from-brand-surface to-brand-bg border border-brand-teal/30 rounded-xl">
-          <div className="flex items-center gap-2 mb-3">
-            <Calendar size={15} className="text-brand-teal"/>
-            <span className="font-mono text-xs text-brand-teal uppercase tracking-wider">Mes en curso · {mesActual.nombre}</span>
-            {filtroAnio !== new Date().getFullYear() && (
-              <span className="font-mono text-xs text-brand-gold ml-2">(proyección disponible solo para {new Date().getFullYear()})</span>
-            )}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-            <MesCard label="Días hábiles totales"    value={mesActual.total}           color="teal"/>
-            <MesCard label="Días transcurridos"      value={mesActual.transcurridos}   color="subtle"/>
-            <MesCard label="Días restantes"          value={mesActual.restantes}       color="gold"/>
-            <MesCard label="Subastas acumuladas"     value={mesActual.subastasAcum}    color="teal"/>
-            <MesCard label="Días hábiles con datos"  value={mesActual.diasConDatos}    color="subtle"/>
-            <MesCard label="Proyección subastas"     value={mesActual.proySubastas}    color="gold" highlight/>
-            <MesCard label="Proyección valor aut."   value={fmtM(mesActual.proyValor)} color="gold" highlight small/>
-          </div>
-          <div className="mt-3">
-            <div className="flex justify-between text-xs font-mono text-brand-muted mb-1">
-              <span>Avance del mes</span><span>{fmtPct(mesActual.pctAvance)}</span>
-            </div>
-            <div className="h-1.5 bg-brand-border rounded-full overflow-hidden">
-              <div className="h-full rounded-full bg-brand-teal transition-all" style={{ width: `${mesActual.pctAvance}%` }}/>
-            </div>
+          <div className="flex items-center gap-4">
+            <MesSelector anio={anio} mes={mes} meses={meses} onChange={handleMesChange} />
+            <span className="text-brand-muted text-xs">Objetivo ticket: {fmtCOP(resumen?.ticket_objetivo ?? 2600000)}</span>
           </div>
         </div>
 
-        {/* ── KPIs PRINCIPALES ──────────────────────────────────────────── */}
-        <div key={`kpis-${filtroMarca}-${filtroMes}-${filtroAnio}`} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
-          <KpiCard icon={<TrendingUp size={15}/>}  label="Subastas"            value={kpis.total}               accent="teal"/>
-          <KpiCard icon={<CheckCircle size={15}/>} label="Ganadas"             value={kpis.ganadas}             accent="teal"/>
-          <KpiCard icon={<Target size={15}/>}      label="Tasa autorización"   value={fmtPct(kpis.tasaAuth)}    accent="teal" hint="ganadas / resueltas"/>
-          <KpiCard icon={<TrendingUp size={15}/>}  label="Efectividad"         value={fmtPct(kpis.efectividad)} accent="gold" hint="ganadas / total"/>
-          <KpiCard icon={<Clock size={15}/>}       label="Sin respuesta"       value={kpis.sinRespuesta}        accent="muted"/>
-          <KpiCard icon={<Timer size={15}/>}       label="T. prom. suministro" value={`${kpis.tiempoProm} días`} accent="blue"/>
-        </div>
-        <div className="grid grid-cols-3 gap-3 mb-3">
-          <KpiCard icon={<TrendingUp size={15}/>}  label="Valor subastado"  value={fmtCOP(kpis.valorSub)}  accent="blue" small/>
-          <KpiCard icon={<CheckCircle size={15}/>} label="Valor autorizado" value={fmtCOP(kpis.valorAut)}  accent="teal" small/>
-          <KpiCard icon={<TrendingUp size={15}/>}  label="Conversión en $"  value={fmtPct(kpis.convValor)} accent="gold"/>
-        </div>
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <StatBadge icon={<FileCheck size={14}/>} label="Facturas radicadas"  value={fKpis.radicadas}  color="teal"/>
-          <StatBadge icon={<FileClock size={14}/>} label="Facturas pendientes" value={fKpis.pendientes} color="gold"/>
-          <StatBadge icon={<FileX size={14}/>}     label="Facturas anuladas"   value={fKpis.anuladas}   color="red"/>
-        </div>
-
-        {/* ── PIPELINE ─────────────────────────────────────────────────── */}
-        {pipeline && (
-          <div className="mb-4 p-5 bg-brand-surface border border-brand-border rounded-xl">
-            <h3 className="font-title text-base font-semibold text-brand-text mb-1">Pipeline de conversión · {filtroAnio}</h3>
-            <p className="text-xs text-brand-subtle mb-5">Flujo acumulado del año — de subasta a factura radicada</p>
-            <div className="flex items-stretch gap-2">
-              <PipelineEtapa label="Total subastas" value={pipeline.total}        color="subtle"/>
-              <PipelineArrow pct={pipeline.pct_auth}    label="autorizadas"/>
-              <PipelineEtapa label="Autorizadas"    value={pipeline.autorizadas}  color="teal"   pct={pipeline.pct_auth}/>
-              <PipelineArrow pct={pipeline.pct_pedido}  label="en pedido"/>
-              <PipelineEtapa label="En pedido"      value={pipeline.en_pedido}    color="blue"   pct={pipeline.pct_pedido}/>
-              <PipelineArrow pct={null} label=""/>
-              <PipelineEtapa label="Por facturar"   value={pipeline.por_facturar} color="gold"   pct={null}/>
-              <PipelineArrow pct={null} label=""/>
-              <PipelineEtapa label="Por radicar"    value={pipeline.por_radicar}  color="gold"   pct={null}/>
-              <PipelineArrow pct={null} label=""/>
-              <PipelineEtapa label="Radicadas"      value={pipeline.completadas}  color="teal"   pct={null}/>
-            </div>
+        {/* Error */}
+        {error && (
+          <div className="bg-red-900/20 border border-brand-red rounded-lg p-4 mb-6 text-brand-red text-sm">
+            Error cargando datos: {error}
           </div>
         )}
 
-        {/* ── GRÁFICAS PRINCIPALES ──────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-          <Panel title="Valor autorizado por asesor" sub="Subastas ganadas en el periodo filtrado">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={porAsesor} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                <defs><linearGradient id="bar_asesor_0" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4FD1C5" stopOpacity={1}/><stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.5}/></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
-                <XAxis dataKey="nombre" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${(v / 1e6).toFixed(0)}M`}/>
-                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} formatter={(v: number) => [fmtCOP(v), 'Valor autorizado']}/>
-                <Bar dataKey="valorAut" radius={[6, 6, 0, 0]} fill="url(#bar_asesor_0)"/>
-              </BarChart>
-            </ResponsiveContainer>
-          </Panel>
-          <Panel title="Estado de subastas" sub="Distribución del periodo filtrado">
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={porEstado} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={4}>
-                  {porEstado.map((e, i) => <Cell key={i} fill={COLORES_ESTADO[e.name] || '#8AA4C8'} stroke="#0F1419" strokeWidth={3}/>)}
-                </Pie>
-                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
-                <Legend wrapperStyle={{ fontSize: 12, color: '#8AA4C8' }}/>
-              </PieChart>
-            </ResponsiveContainer>
-          </Panel>
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-brand-border mb-6">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === t.id
+                  ? 'border-brand-gold text-brand-text'
+                  : 'border-transparent text-brand-muted hover:text-brand-subtle'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {/* ── PARTICIPACIÓN POR MARCA ──────────────────────────────────── */}
-        <div className="mb-4">
-          <Panel title="Participación por marca" sub={`Distribución del periodo filtrado · ${sf.reduce((a,r)=>a+(r.total||0),0).toLocaleString('es-CO')} subastas totales`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-brand-border">
-                    {['Marca','Subastas','% Subastas','Valor subastado','% Valor','Ganadas','Tasa aut.','Valor autorizado'].map(h => (
-                      <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {participacionMarca.map((m, i) => (
-                    <tr key={m.marca} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                      <td className="py-3 pr-4"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ background: `hsl(${i * 47 % 360}, 65%, 55%)` }}/><span className="font-medium text-brand-text">{m.marca}</span></div></td>
-                      <td className="py-3 pr-4 font-mono text-xs text-brand-teal font-semibold">{m.subastas.toLocaleString('es-CO')}</td>
-                      <td className="py-3 pr-4"><div className="flex items-center gap-2"><div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(m.pctSub, 100)}%`, background: `hsl(${i * 47 % 360}, 65%, 55%)` }}/></div><span className="font-mono text-xs text-brand-subtle">{m.pctSub.toFixed(1)}%</span></div></td>
-                      <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(m.valorSub)}</td>
-                      <td className="py-3 pr-4"><div className="flex items-center gap-2"><div className="w-20 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(m.pctVal, 100)}%`, background: `hsl(${i * 47 % 360}, 65%, 55%)` }}/></div><span className="font-mono text-xs text-brand-subtle">{m.pctVal.toFixed(1)}%</span></div></td>
-                      <td className="py-3 pr-4 font-mono text-xs text-green-400">{m.ganadas}</td>
-                      <td className="py-3 pr-4 font-mono text-xs" style={{ color: m.tasaAut >= 30 ? '#4FD1C5' : m.tasaAut >= 20 ? '#E8A33D' : '#E5484D' }}>{m.tasaAut.toFixed(1)}%</td>
-                      <td className="py-3 pr-4 font-mono text-xs text-brand-gold font-semibold">{fmtCOP(m.valorAut)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-brand-border">
-                    <td className="pt-3 font-mono text-xs text-brand-text font-bold uppercase">Total</td>
-                    <td className="pt-3 font-mono text-xs text-brand-teal font-bold">{participacionMarca.reduce((s,m)=>s+m.subastas,0).toLocaleString('es-CO')}</td>
-                    <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
-                    <td className="pt-3 font-mono text-xs text-brand-subtle font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorSub,0))}</td>
-                    <td className="pt-3 font-mono text-xs text-brand-subtle">100%</td>
-                    <td className="pt-3 font-mono text-xs text-green-400 font-bold">{participacionMarca.reduce((s,m)=>s+m.ganadas,0)}</td>
-                    <td className="pt-3 font-mono text-xs text-brand-subtle">—</td>
-                    <td className="pt-3 font-mono text-xs text-brand-gold font-bold">{fmtCOP(participacionMarca.reduce((s,m)=>s+m.valorAut,0))}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </Panel>
-        </div>
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="grid grid-cols-4 gap-3 mb-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-24 bg-brand-surface rounded-lg animate-pulse" />
+            ))}
+          </div>
+        )}
 
-        {/* ── PROYECCIÓN ANUAL ─────────────────────────────────────────── */}
-        <div className="mb-4">
-          <Panel title={`Valor autorizado por mes — ${filtroAnio}`} sub="Área = histórico real · punto dorado = proyección mes siguiente">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-              <div className="lg:col-span-3">
-                <ResponsiveContainer width="100%" height={240}>
-                  <ComposedChart data={proyeccionMes.serie} margin={{ left: 0, right: 16, top: 8, bottom: 0 }}>
-                    <defs><linearGradient id="grad_proy_real" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4FD1C5" stopOpacity={0.4}/><stop offset="100%" stopColor="#4FD1C5" stopOpacity={0.02}/></linearGradient></defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
-                    <XAxis dataKey="mes" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={40}/>
-                    <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v ? `$${(v / 1e6).toFixed(0)}M` : ''}/>
-                    <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} formatter={(v: number, _: string, p: { payload?: { esReal?: boolean } }) => [v ? fmtCOP(v) : '—', p.payload?.esReal ? 'Real' : 'Proyectado']}/>
-                    <Area type="monotone" dataKey="valorAut" stroke="#4FD1C5" strokeWidth={2.5} fill="url(#grad_proy_real)" connectNulls={false}
-                      dot={(p: { cx: number; cy: number; payload: { esReal: boolean; valorAut: number | null } }) => {
-                        if (!p.payload.valorAut) return <circle key={p.cx} cx={0} cy={0} r={0}/>
-                        return <circle key={p.cx} cx={p.cx} cy={p.cy} r={5} fill={p.payload.esReal ? '#4FD1C5' : '#E8A33D'} stroke="#0F1419" strokeWidth={2}/>
-                      }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+        {!loading && (
+          <>
+            {/* ══ TAB RESUMEN ══ */}
+            {tab === 'resumen' && (
+              <div className="space-y-6">
+                {/* KPIs */}
+                <div className="grid grid-cols-4 gap-3">
+                  <KpiCard
+                    label="Ventas netas"
+                    value={fmtM(resumen?.ventas_neto)}
+                    sub={`${fmtPct(resumen?.pct_meta_ventas)} de meta · obj ${fmtM(resumen?.meta_ventas)}`}
+                    subColor={SEMAFORO_CLS[semaforoVentas(resumen?.pct_meta_ventas ?? null)]}
+                  />
+                  <KpiCard
+                    label="Vehículos accesorios"
+                    value={fmtNum(resumen?.vehiculos)}
+                    sub={`${fmtPct(resumen?.pct_meta_vehiculos)} de meta · obj ${resumen?.meta_vehiculos ?? '—'}`}
+                    subColor={SEMAFORO_CLS[semaforoVentas(resumen?.pct_meta_vehiculos ?? null)]}
+                  />
+                  <KpiCard
+                    label="Ticket promedio"
+                    value={fmtM(resumen?.ticket_promedio)}
+                    sub={`vs objetivo ${fmtCOP(resumen?.ticket_objetivo ?? 0)}`}
+                    subColor={SEMAFORO_CLS[semaforoTicket(resumen?.ticket_promedio ?? null, resumen?.ticket_objetivo ?? 2600000)]}
+                  />
+                  <KpiCard
+                    label="Comisiones"
+                    value={fmtM(resumen?.comisiones)}
+                    sub={`${fmtPct(resumen?.pct_comision)} s/ ventas · ${resumen?.facturas ?? '—'} facturas`}
+                    subColor="text-brand-muted"
+                  />
+                </div>
+
+                {/* Áreas resumen */}
+                <div>
+                  <p className="text-xs font-medium text-brand-muted uppercase tracking-widest mb-3">Ventas por área</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {['Comercial VN', 'Accesorios', 'Taller'].map(area => {
+                      const d = areaConsolidada[area]
+                      const pct = d && resumen ? (d.ventas_neto / resumen.ventas_neto * 100) : 0
+                      return (
+                        <div key={area} className="bg-brand-surface border border-brand-border rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <p className="text-sm font-medium text-brand-text">{area}</p>
+                            <p className="text-xs text-brand-muted font-mono">{fmtPct(pct)}</p>
+                          </div>
+                          <p className="font-mono text-lg font-medium text-brand-text">{fmtM(d?.ventas_neto)}</p>
+                          <p className="text-xs text-brand-muted mt-1">{fmtNum(d?.facturas)} facturas · comisiones {fmtM(d?.comisiones)}</p>
+                          <ProgressBar pct={pct} color="bg-brand-subtle" />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Vitrinas */}
+                <div>
+                  <p className="text-xs font-medium text-brand-muted uppercase tracking-widest mb-3">Resultado por vitrina</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {vitrinas
+                      .filter(v => VITRINAS.includes(v.vitrina as any))
+                      .sort((a, b) => (b.ventas_neto ?? 0) - (a.ventas_neto ?? 0))
+                      .map(v => (
+                        <div key={v.vitrina} className="bg-brand-surface border border-brand-border rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-3">
+                            <VitrinaBadge vitrina={v.vitrina} />
+                            <SemaforoBadge pct={v.pct_meta_ventas} />
+                          </div>
+                          <p className="font-mono text-xl font-medium text-brand-text mb-2">{fmtM(v.ventas_neto)}</p>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-brand-muted">Vehículos</span>
+                              <span className="text-brand-text font-medium">{v.vehiculos ?? '—'} / {v.meta_vehiculos ?? '—'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-brand-muted">Ticket promedio</span>
+                              <span className={`font-medium ${SEMAFORO_CLS[semaforoTicket(v.ticket_promedio, v.ticket_objetivo ?? 2600000)]}`}>
+                                {fmtM(v.ticket_promedio)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-brand-muted">Facturas</span>
+                              <span className="text-brand-text font-medium">{fmtNum(v.facturas)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-brand-muted">Comisiones</span>
+                              <span className="text-brand-text font-medium">{fmtM(v.comisiones)}</span>
+                            </div>
+                          </div>
+                          <ProgressBar pct={v.pct_meta_ventas} />
+                          <div className="flex justify-between text-xs text-brand-muted mt-1">
+                            <span>$0</span>
+                            <span>Meta {fmtM(v.meta_ventas)}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Ticket vs objetivo */}
+                <div>
+                  <p className="text-xs font-medium text-brand-muted uppercase tracking-widest mb-3">Ticket promedio vs objetivo por vitrina</p>
+                  <div className="border border-brand-border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <TablaHeader cols={[
+                        { label: 'Vitrina' },
+                        { label: 'Ticket real',   right: true },
+                        { label: 'Objetivo',       right: true },
+                        { label: 'Diferencia',     right: true },
+                        { label: 'Vehículos',      right: true },
+                        { label: 'Cumplimiento',   right: true },
+                      ]} />
+                      <tbody>
+                        {[...vitrinas]
+                          .filter(v => VITRINAS.includes(v.vitrina as any))
+                          .sort((a, b) => (b.ticket_promedio ?? 0) - (a.ticket_promedio ?? 0))
+                          .map(v => {
+                            const obj = v.ticket_objetivo ?? 2600000
+                            const diff = (v.ticket_promedio ?? 0) - obj
+                            const s = semaforoTicket(v.ticket_promedio, obj)
+                            return (
+                              <tr key={v.vitrina} className="border-t border-brand-border hover:bg-brand-surface/50">
+                                <td className="px-3 py-2"><VitrinaBadge vitrina={v.vitrina} /></td>
+                                <td className={`px-3 py-2 font-mono font-medium text-right ${SEMAFORO_CLS[s]}`}>{fmtCOP(v.ticket_promedio)}</td>
+                                <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtCOP(obj)}</td>
+                                <td className={`px-3 py-2 font-mono text-right ${diff >= 0 ? 'text-brand-teal' : 'text-brand-red'}`}>
+                                  {diff >= 0 ? '+' : ''}{fmtCOP(diff)}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtNum(v.vehiculos)}</td>
+                                <td className={`px-3 py-2 font-mono text-right font-medium ${SEMAFORO_CLS[s]}`}>
+                                  {fmtPct(v.ticket_promedio && obj ? (v.ticket_promedio / obj * 100) : null)}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-3 justify-center">
-                {proyeccionMes.proyectado !== null && proyeccionMes.siguienteMes && (
-                  <div className="bg-brand-bg border border-brand-gold/40 rounded-xl p-4">
-                    <p className="font-mono text-xs text-brand-gold uppercase tracking-wider mb-1">Proyección {proyeccionMes.siguienteMes}</p>
-                    <p className="font-title text-lg font-bold text-brand-text">{fmtCOP(proyeccionMes.proyectado)}</p>
-                    <p className="text-brand-muted text-xs mt-1 font-mono">Tendencia lineal</p>
+            )}
+
+            {/* ══ TAB ÁREAS ══ */}
+            {tab === 'areas' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-3 gap-3">
+                  {['Comercial VN', 'Accesorios', 'Taller'].map(area => {
+                    const d = areaConsolidada[area]
+                    const pct = d && resumen ? (d.ventas_neto / resumen.ventas_neto * 100) : 0
+                    return (
+                      <div key={area} className="bg-brand-surface border border-brand-border rounded-lg p-4">
+                        <div className="flex justify-between mb-2">
+                          <p className="text-sm font-medium">{area}</p>
+                          <p className="text-xs text-brand-muted font-mono">{fmtPct(pct)}</p>
+                        </div>
+                        <p className="font-mono text-xl font-medium">{fmtM(d?.ventas_neto)}</p>
+                        <p className="text-xs text-brand-muted mt-1">{fmtNum(d?.facturas)} facturas · comisiones {fmtM(d?.comisiones)}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Desglose por vitrina */}
+                <div>
+                  <p className="text-xs font-medium text-brand-muted uppercase tracking-widest mb-3">Distribución por área y vitrina</p>
+                  <div className="border border-brand-border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <TablaHeader cols={[
+                        { label: 'Vitrina' },
+                        { label: 'Comercial VN', right: true },
+                        { label: 'Accesorios',   right: true },
+                        { label: 'Taller',        right: true },
+                        { label: 'Total',         right: true },
+                      ]} />
+                      <tbody>
+                        {VITRINAS.map(vit => {
+                          const v = vitrinas.find(x => x.vitrina === vit)
+                          return (
+                            <tr key={vit} className="border-t border-brand-border hover:bg-brand-surface/50">
+                              <td className="px-3 py-2"><VitrinaBadge vitrina={vit} /></td>
+                              <td className="px-3 py-2 font-mono text-brand-text text-right">{v ? fmtM(v.comercial_vn) : '—'}</td>
+                              <td className="px-3 py-2 font-mono text-brand-muted text-right">{v && v.accesorios > 0 ? fmtM(v.accesorios) : '—'}</td>
+                              <td className="px-3 py-2 font-mono text-brand-muted text-right">{v && v.taller > 0 ? fmtM(v.taller) : '—'}</td>
+                              <td className="px-3 py-2 font-mono text-brand-text font-medium text-right">{fmtM(v?.ventas_neto)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td className="px-3 py-2 font-medium text-brand-text">Total</td>
+                          <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">{fmtM(areaConsolidada['Comercial VN']?.ventas_neto)}</td>
+                          <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">{fmtM(areaConsolidada['Accesorios']?.ventas_neto)}</td>
+                          <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">{fmtM(areaConsolidada['Taller']?.ventas_neto)}</td>
+                          <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">{fmtM(resumen?.ventas_neto)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Desglose semanas */}
+                {semanasComercial.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-brand-muted uppercase tracking-widest mb-3">Facturación por semana — Comercial VN</p>
+                    <div className="border border-brand-border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <TablaHeader cols={[
+                          { label: 'Período' },
+                          { label: 'Ventas',     right: true },
+                          { label: 'Facturas',   right: true },
+                          { label: 'Comisiones', right: true },
+                          { label: '% s/ CV',    right: true },
+                        ]} />
+                        <tbody>
+                          {semanasComercial.map(s => {
+                            const base = areaConsolidada['Comercial VN']?.ventas_neto
+                            const pct  = base ? (s.ventas_neto / base * 100) : 0
+                            return (
+                              <tr key={s.area_detalle} className="border-t border-brand-border hover:bg-brand-surface/50">
+                                <td className="px-3 py-2 font-medium">{s.area_detalle}</td>
+                                <td className="px-3 py-2 font-mono text-right">{fmtM(s.ventas_neto)}</td>
+                                <td className="px-3 py-2 font-mono text-brand-muted text-right">{s.facturas}</td>
+                                <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtM(s.comisiones)}</td>
+                                <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtPct(pct)}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
-                <div className="bg-brand-bg border border-brand-teal/40 rounded-xl p-4">
-                  <p className="font-mono text-xs text-brand-teal uppercase tracking-wider mb-1">{mesActual.nombre}</p>
-                  <p className="font-title text-lg font-bold text-brand-text">{fmtCOP(mesActual.proyValor)}</p>
-                  <p className="text-brand-muted text-xs mt-1 font-mono">Ritmo: {mesActual.ritmo.toFixed(1)} sub/día · {mesActual.diasConDatos} días con datos · {mesActual.total} días hábiles</p>
-                </div>
-                {proyeccionMes.historico.filter(h => h.mes).slice(-2).reverse().map(h => (
-                  <div key={h.mes} className="bg-brand-bg border border-brand-border rounded-xl p-3">
-                    <p className="font-mono text-xs text-brand-subtle">{h.mes}</p>
-                    <p className="font-title text-sm font-bold text-brand-text">{fmtCOP(h.valorAut as number)}</p>
-                    <p className="text-brand-muted text-xs">{h.ganadas} ganadas</p>
-                  </div>
-                ))}
               </div>
-            </div>
-          </Panel>
-        </div>
+            )}
 
-        {/* ── CIUDADES + TIEMPO ────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-          <Panel title="Top ciudades destino" sub="Volumen de subastas por ciudad">
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={porCiudad} layout="vertical" margin={{ left: 8, right: 40, top: 4, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" horizontal={false}/>
-                <XAxis type="number" tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
-                <YAxis type="category" dataKey="ciudad" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false} width={80}/>
-                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
-                <Bar dataKey="total" radius={[0, 6, 6, 0]} name="Total subastas">
-                  {porCiudad.map((_, i) => <Cell key={i} fill={COLORES_CIUDADES[i % COLORES_CIUDADES.length]}/>)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Panel>
-          <Panel title="Tiempo máximo de suministro" sub="Distribución por rango de días">
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={porTiempo} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                <defs><linearGradient id="grad_tiempo" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#8AA4C8" stopOpacity={1}/><stop offset="100%" stopColor="#8AA4C8" stopOpacity={0.4}/></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A36" vertical={false}/>
-                <XAxis dataKey="rango" tick={{ fill: '#8AA4C8', fontSize: 11 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fill: '#8AA4C8', fontSize: 10 }} axisLine={false} tickLine={false}/>
-                <Tooltip contentStyle={{ background: '#0F1419', border: '1px solid #2A3340', borderRadius: 10, fontSize: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}/>
-                <Bar dataKey="cantidad" radius={[6, 6, 0, 0]} fill="url(#grad_tiempo)" name="Subastas"/>
-              </BarChart>
-            </ResponsiveContainer>
-          </Panel>
-        </div>
-
-        {/* ── TABLA ASESORES ───────────────────────────────────────────── */}
-        <div className="mb-4">
-          <Panel title="Efectividad por asesor" sub="Tasa autorización (ganadas/decididas) · Efectividad (ganadas/total)">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-brand-border">
-                    {['Asesor','Total','Ganadas','No autorizadas','Sin respuesta','Tasa aut. (resueltas)','Efectividad','Valor autorizado'].map(h => (
-                      <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
+            {/* ══ TAB POR VENTAS ══ */}
+            {tab === 'ventas' && (
+              <div className="border border-brand-border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <TablaHeader cols={[
+                    { label: '#', right: true },
+                    { label: 'Asesor' },
+                    { label: 'Vitrina' },
+                    { label: 'Ventas', right: true },
+                    { label: 'Veh',    right: true },
+                    { label: 'Fact',   right: true },
+                    { label: 'Comisión', right: true },
+                    { label: 'Tipo' },
+                  ]} />
+                  <tbody>
+                    {asesores.map((a, i) => (
+                      <tr key={`${a.nombre_dropbox}-${a.vitrina}`}
+                          className="border-t border-brand-border hover:bg-brand-surface/50">
+                        <td className="px-3 py-2 text-right">
+                          {i < 3 ? <RankBadge rank={i + 1} /> :
+                            <span className="text-brand-muted text-xs font-mono">{i + 1}</span>}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-brand-text">{a.nombre_dropbox}</td>
+                        <td className="px-3 py-2"><VitrinaBadge vitrina={a.vitrina} /></td>
+                        <td className={`px-3 py-2 font-mono text-right font-medium ${a.ventas_neto < 0 ? 'text-brand-red' : 'text-brand-text'}`}>
+                          {fmtM(a.ventas_neto)}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-brand-muted text-right">{a.vehiculos ?? '—'}</td>
+                        <td className="px-3 py-2 font-mono text-brand-muted text-right">{a.facturas}</td>
+                        <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtM(a.comisiones)}</td>
+                        <td className="px-3 py-2">
+                          {a.solo_accesorios && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300">Mostrador</span>
+                          )}
+                        </td>
+                      </tr>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {porAsesor.map(a => (
-                    <tr key={a.id} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                      <td className="py-3 pr-6 text-brand-text font-medium">{a.nombre}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-subtle">{a.total}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-teal font-semibold">{a.ganadas}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-red">{a.noAut}</td>
-                      <td className="py-3 pr-6 font-mono text-brand-subtle">{a.pendientes}</td>
-                      <td className="py-3 pr-6"><div className="flex items-center gap-2"><div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full bg-brand-teal" style={{ width: `${a.tasaAuth}%` }}/></div><span className="font-mono text-xs text-brand-subtle">{fmtPct(a.tasaAuth)}</span></div></td>
-                      <td className="py-3 pr-6"><div className="flex items-center gap-2"><div className="w-16 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${a.efectividad}%`, background: a.efectividad >= 30 ? '#4FD1C5' : '#E8A33D' }}/></div><span className="font-mono text-xs text-brand-subtle">{fmtPct(a.efectividad)}</span></div></td>
-                      <td className="py-3 pr-6 font-mono text-xs text-brand-subtle">{fmtCOP(a.valorAut)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-        </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-        {/* ── RANKING ASEGURADORAS ─────────────────────────────────────── */}
-        <Panel title="Ranking por aseguradora" sub="Volumen de subastas y tasa de autorización (ganadas/resueltas)">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-brand-border">
-                  {['Aseguradora','Total','Ganadas','Resueltas','Tasa autorización'].map(h => (
-                    <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-6">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {porAseguradora.map(a => (
-                  <tr key={a.id} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                    <td className="py-3 pr-6 text-brand-text">{a.nombre}</td>
-                    <td className="py-3 pr-6 font-mono text-brand-subtle">{a.total}</td>
-                    <td className="py-3 pr-6 font-mono text-brand-teal font-semibold">{a.ganadas}</td>
-                    <td className="py-3 pr-6 font-mono text-brand-subtle">{a.resueltas}</td>
-                    <td className="py-3 pr-6"><div className="flex items-center gap-2"><div className="w-24 h-1.5 bg-brand-border rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${a.tasa}%`, background: a.tasa >= 40 ? '#4FD1C5' : '#E8A33D' }}/></div><span className="font-mono text-xs text-brand-subtle">{fmtPct(a.tasa)}</span></div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
+            {/* ══ TAB POR TICKET ══ */}
+            {tab === 'ticket' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 text-xs text-brand-muted">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-brand-teal inline-block"/>
+                    ≥ {fmtCOP(resumen?.ticket_objetivo ?? 2600000)} — supera objetivo
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-brand-gold inline-block"/>
+                    $1.800.000 – {fmtCOP((resumen?.ticket_objetivo ?? 2600000) - 1)}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-brand-red inline-block"/>
+                    {'< $1.800.000'}
+                  </span>
+                </div>
+                <div className="border border-brand-border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <TablaHeader cols={[
+                      { label: '#', right: true },
+                      { label: 'Asesor' },
+                      { label: 'Vitrina' },
+                      { label: 'Ticket',  right: true },
+                      { label: 'vs objetivo', right: false },
+                      { label: 'Ventas',  right: true },
+                      { label: 'Veh',     right: true },
+                    ]} />
+                    <tbody>
+                      {asesores
+                        .filter(a => !a.solo_accesorios && a.ticket_promedio != null && a.ticket_promedio > 0)
+                        .sort((a, b) => (b.ticket_promedio ?? 0) - (a.ticket_promedio ?? 0))
+                        .map((a, i) => {
+                          const obj = resumen?.ticket_objetivo ?? 2600000
+                          const s   = semaforoTicket(a.ticket_promedio, obj)
+                          const pct = a.ticket_promedio ? Math.min((a.ticket_promedio / obj) * 100, 100) : 0
+                          return (
+                            <tr key={`${a.nombre_dropbox}-${a.vitrina}`}
+                                className="border-t border-brand-border hover:bg-brand-surface/50">
+                              <td className="px-3 py-2 text-right">
+                                {i < 3 ? <RankBadge rank={i + 1} /> :
+                                  <span className="text-brand-muted text-xs font-mono">{i + 1}</span>}
+                              </td>
+                              <td className="px-3 py-2 font-medium">{a.nombre_dropbox}</td>
+                              <td className="px-3 py-2"><VitrinaBadge vitrina={a.vitrina} /></td>
+                              <td className={`px-3 py-2 font-mono font-medium text-right ${SEMAFORO_CLS[s]}`}>
+                                {fmtCOP(a.ticket_promedio)}
+                              </td>
+                              <td className="px-3 py-2 w-24">
+                                <div className="w-full bg-brand-border rounded-full h-1 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${s === 'ok' ? 'bg-brand-teal' : s === 'warn' ? 'bg-brand-gold' : 'bg-brand-red'}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtM(a.ventas_neto)}</td>
+                              <td className="px-3 py-2 font-mono text-brand-muted text-right">{a.vehiculos ?? '—'}</td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                  <p className="text-xs text-brand-muted px-3 py-2 border-t border-brand-border">
+                    Excluye asesores de mostrador y asesores con neto negativo en el mes.
+                  </p>
+                </div>
+              </div>
+            )}
 
+            {/* ══ TAB POR VITRINA ══ */}
+            {tab === 'vitrina' && (
+              <div className="space-y-8">
+                {VITRINAS.map(vit => {
+                  const vitData  = vitrinas.find(v => v.vitrina === vit)
+                  const asesVit  = asesores
+                    .filter(a => a.vitrina === vit)
+                    .sort((a, b) => (b.ventas_neto ?? 0) - (a.ventas_neto ?? 0))
+                  const sinVeh   = asesVit.filter(a => !a.solo_accesorios && !a.vehiculos)
+
+                  return (
+                    <div key={vit}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <h3 className="font-title font-bold text-brand-text">{vit}</h3>
+                        <SemaforoBadge pct={vitData?.pct_meta_ventas ?? null} />
+                        <div className="flex gap-4 text-xs text-brand-muted">
+                          <span>Ventas <span className="font-mono text-brand-text">{fmtM(vitData?.ventas_neto)}</span></span>
+                          <span>Veh <span className="font-mono text-brand-text">{vitData?.vehiculos ?? '—'}/{vitData?.meta_vehiculos ?? '—'} ({fmtPct(vitData?.pct_meta_vehiculos)})</span></span>
+                          <span>Comisiones <span className="font-mono text-brand-text">{fmtM(vitData?.comisiones)}</span></span>
+                          <span>Facturas <span className="font-mono text-brand-text">{fmtNum(vitData?.facturas)}</span></span>
+                        </div>
+                      </div>
+                      <div className="border border-brand-border rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <TablaHeader cols={[
+                            { label: '#', right: true },
+                            { label: 'Asesor' },
+                            { label: 'Ventas',   right: true },
+                            { label: 'Ticket',   right: true },
+                            { label: 'vs obj.',  right: false },
+                            { label: 'Veh',      right: true },
+                            { label: 'Fact',     right: true },
+                            { label: 'Comisión', right: true },
+                          ]} />
+                          <tbody>
+                            {asesVit.map((a, i) => {
+                              const obj = vitData?.ticket_objetivo ?? 2600000
+                              const s   = a.solo_accesorios
+                                ? 'ok'
+                                : semaforoTicket(a.ticket_promedio, obj)
+                              const pct = a.ticket_promedio
+                                ? Math.min((a.ticket_promedio / obj) * 100, 100)
+                                : 0
+                              return (
+                                <tr key={`${a.nombre_dropbox}-${a.vitrina}`}
+                                    className={`border-t border-brand-border hover:bg-brand-surface/50 ${
+                                      a.solo_accesorios ? 'bg-emerald-900/5' : ''
+                                    }`}>
+                                  <td className="px-3 py-2 text-right">
+                                    {i < 3 ? <RankBadge rank={i + 1} /> :
+                                      <span className="text-brand-muted text-xs font-mono">{i + 1}</span>}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium">
+                                    {a.nombre_dropbox}
+                                    {a.solo_accesorios && (
+                                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300">Mostrador</span>
+                                    )}
+                                  </td>
+                                  <td className={`px-3 py-2 font-mono font-medium text-right ${a.ventas_neto < 0 ? 'text-brand-red' : ''}`}>
+                                    {fmtM(a.ventas_neto)}
+                                  </td>
+                                  <td className={`px-3 py-2 font-mono text-right ${a.solo_accesorios ? 'text-brand-muted' : SEMAFORO_CLS[s]}`}>
+                                    {a.solo_accesorios ? '—' : fmtCOP(a.ticket_promedio)}
+                                  </td>
+                                  <td className="px-3 py-2 w-20">
+                                    {!a.solo_accesorios && (
+                                      <div className="w-full bg-brand-border rounded-full h-1 overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full ${s === 'ok' ? 'bg-brand-teal' : s === 'warn' ? 'bg-brand-gold' : 'bg-brand-red'}`}
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-brand-muted text-right">{a.vehiculos ?? '—'}</td>
+                                  <td className="px-3 py-2 font-mono text-brand-muted text-right">{a.facturas}</td>
+                                  <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtM(a.comisiones)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td colSpan={2} className="px-3 py-2 font-medium text-brand-text">Total {vit}</td>
+                              <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">{fmtM(vitData?.ventas_neto)}</td>
+                              <td className="px-3 py-2 font-mono text-brand-muted text-right text-xs">{fmtPct(vitData?.pct_meta_ventas)} meta</td>
+                              <td />
+                              <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">
+                                {vitData?.vehiculos ?? '—'}<span className="text-brand-muted">/{vitData?.meta_vehiculos ?? '—'}</span>
+                              </td>
+                              <td className="px-3 py-2 font-mono text-brand-muted text-right">{fmtNum(vitData?.facturas)}</td>
+                              <td className="px-3 py-2 font-mono font-medium text-brand-text text-right">{fmtM(vitData?.comisiones)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                        {sinVeh.length > 0 && (
+                          <p className="text-xs text-brand-muted px-3 py-2 border-t border-brand-border">
+                            Sin vehículos en {MESES[mes - 1]} (desfase de facturación): {sinVeh.map(a => a.nombre_dropbox).join(' · ')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* ══ TAB COMPARATIVO ══ */}
+            {tab === 'comparativo' && (
+              <TabComparativo
+                actual={resumen}
+                mesAnterior={resumenMesAnt}
+                anioAnterior={resumenAnioAnt}
+                vitrinasAct={vitrinas}
+                vitrinasMesAnt={vitrinasMesAnt}
+                vitrinasAnioAnt={vitrinasAnioAnt}
+              />
+            )}
+          </>
+        )}
       </div>
-    </div>
-  )
-}
-
-// ── Sub-componentes ──────────────────────────────────────────────────────────
-function MesCard({ label, value, color, highlight, small }: { label: string; value: string | number; color: string; highlight?: boolean; small?: boolean }) {
-  const cls: Record<string, string> = { teal: 'text-brand-teal', gold: 'text-brand-gold', subtle: 'text-brand-subtle' }
-  return (
-    <div className={`rounded-lg p-3 ${highlight ? 'bg-brand-gold/10 border border-brand-gold/30' : 'bg-brand-bg border border-brand-border'}`}>
-      <p className="font-mono text-xs text-brand-muted mb-1">{label}</p>
-      <p className={`font-title font-bold ${small ? 'text-base' : 'text-xl'} ${cls[color] || 'text-brand-text'}`}>{value}</p>
-    </div>
-  )
-}
-
-function KpiCard({ icon, label, value, accent, small, hint }: { icon: React.ReactNode; label: string; value: string | number; accent: string; small?: boolean; hint?: string }) {
-  const bc: Record<string, string> = { teal: '#4FD1C5', gold: '#E8A33D', blue: '#60A5FA', red: '#E5484D', muted: '#5B6472' }
-  return (
-    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 relative overflow-hidden">
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: bc[accent] || '#4FD1C5' }}/>
-      <div className="flex items-center gap-2 text-brand-subtle mb-2">{icon}<span className="text-xs">{label}</span></div>
-      <div className={`font-title font-bold text-brand-text ${small ? 'text-lg' : 'text-2xl'}`}>{value}</div>
-      {hint && <p className="text-brand-muted text-xs mt-1 font-mono">{hint}</p>}
-    </div>
-  )
-}
-
-function StatBadge({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
-  const cls: Record<string, string> = { teal: 'text-brand-teal', gold: 'text-brand-gold', red: 'text-brand-red' }
-  return (
-    <div className="bg-brand-surface border border-brand-border rounded-xl p-4 flex justify-between items-center">
-      <div className="flex items-center gap-2 text-brand-subtle text-sm">{icon}{label}</div>
-      <span className={`font-mono font-bold text-xl ${cls[color] || ''}`}>{value}</span>
-    </div>
-  )
-}
-
-function Panel({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-brand-surface border border-brand-border rounded-xl p-5">
-      <h3 className="font-title text-base font-semibold text-brand-text">{title}</h3>
-      <p className="text-xs text-brand-subtle mb-4">{sub}</p>
-      {children}
-    </div>
-  )
-}
-
-function PipelineEtapa({ label, value, color, pct }: { label: string; value: number; color: 'teal' | 'gold' | 'blue' | 'subtle'; pct?: number | null }) {
-  const colorMap: Record<string, string> = { teal: 'text-brand-teal border-brand-teal/30 bg-brand-teal/5', gold: 'text-brand-gold border-brand-gold/30 bg-brand-gold/5', blue: 'text-blue-400 border-blue-400/30 bg-blue-400/5', subtle: 'text-brand-subtle border-brand-border bg-brand-bg' }
-  const textColor: Record<string, string> = { teal: 'text-brand-teal', gold: 'text-brand-gold', blue: 'text-blue-400', subtle: 'text-brand-subtle' }
-  return (
-    <div className={`flex-1 min-w-0 border rounded-xl p-3 flex flex-col gap-1 ${colorMap[color]}`}>
-      <p className="font-mono text-[10px] text-brand-muted uppercase tracking-wider leading-tight">{label}</p>
-      <p className={`font-title font-bold text-2xl ${textColor[color]}`}>{value.toLocaleString('es-CO')}</p>
-      {pct != null && <p className="font-mono text-[10px] text-brand-muted">{pct.toFixed(1)}% del anterior</p>}
-    </div>
-  )
-}
-
-function PipelineArrow({ pct, label }: { pct: number | null; label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-1 shrink-0 w-8">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path d="M4 10h12M12 6l4 4-4 4" stroke="#2A3340" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-      {pct != null && <span className="font-mono text-[9px] text-brand-muted text-center leading-tight">{pct.toFixed(0)}%</span>}
     </div>
   )
 }
