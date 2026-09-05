@@ -63,20 +63,10 @@ export default function InformeAccesoriosPage() {
   )
   const [tab, setTab] = useState<TabId>('resumen')
 
-  // Verificar acceso — solo admin y gerente
+  // Verificar sesión — mismo patrón que el dashboard existente
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) { router.replace('/login'); return }
-      supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
-        .then(({ data: profile }) => {
-          if (!profile || !['admin', 'gerente'].includes(profile.role)) {
-            router.replace('/')
-          }
-        })
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) router.replace('/login')
     })
   }, [router])
 
