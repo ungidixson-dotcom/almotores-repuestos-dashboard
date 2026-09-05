@@ -2,17 +2,17 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { useInformeAcc } from './useInformeAcc'
+import { useInformeAcc } from '@/lib/informe-accesorios/useInformeAcc'
 import {
   fmtM, fmtCOP, fmtNum, fmtPct, calcDelta,
   VITRINA_COLORS, VITRINAS, semaforoVentas, semaforoTicket,
   SEMAFORO_CLS, SEMAFORO_BADGE, VITRINA_BG, MESES,
-} from './utils'
+} from '@/lib/informe-accesorios/utils'
 import {
   KpiCard, VitrinaBadge, DeltaBadge, SemaforoBadge,
   ProgressBar, MesSelector, TablaHeader, RankBadge,
-} from './components/Shared'
-import TabComparativo from './components/TabComparativo'
+} from '@/lib/informe-accesorios/components/Shared'
+import TabComparativo from '@/lib/informe-accesorios/components/TabComparativo'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
