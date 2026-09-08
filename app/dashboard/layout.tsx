@@ -20,30 +20,20 @@ const ROUTE_DASHBOARD: Record<string, string> = {
   '/dashboard/facturacion/canales/accesorios/comisiones':                'facturacion_accesorios',
   '/dashboard/facturacion/canales/accesorios/ventas-asesor':             'facturacion_accesorios',
   '/dashboard/facturacion/canales/accesorios/ticket-promedio':           'facturacion_accesorios',
+  '/informe-accesorios':                                                 'facturacion_accesorios',
   '/dashboard/facturacion/canales/taller':                               'facturacion_taller',
   '/dashboard/facturacion/canales/mostrador':                            'facturacion_mostrador',
   '/dashboard/facturacion/canales/mayoristas':                           'facturacion_mayoristas',
   '/dashboard/facturacion/canales/subastas':                             'subastas',
   '/dashboard/facturacion/canales/colision':                             'facturacion_colision',
-  '/dashboard/inventario':                                          'inventario',
+  '/dashboard/inventario':                                               'inventario',
 }
-
 
 // ── Tipos (3 niveles) ─────────────────────────────────────────────────────────
-interface NavLeaf  { type: 'leaf';  label: string; href: string }
+interface NavLeaf     { type: 'leaf';     label: string; href: string }
 interface NavSubGroup { type: 'subgroup'; label: string; children: NavLeaf[] }
-interface NavGroup {
-  type: 'group'
-  label: string
-  href?: string
-  children: Array<NavLeaf | NavSubGroup>
-}
-interface NavSection {
-  label: string
-  icon: React.ReactNode
-  href?: string
-  children?: Array<NavLeaf | NavGroup>
-}
+interface NavGroup    { type: 'group';    label: string; href?: string; children: Array<NavLeaf | NavSubGroup> }
+interface NavSection  { label: string; icon: React.ReactNode; href?: string; children?: Array<NavLeaf | NavGroup> }
 
 // ── Estructura de navegación ──────────────────────────────────────────────────
 const NAV: NavSection[] = [
@@ -58,6 +48,7 @@ const NAV: NavSection[] = [
           { type: 'leaf', label: 'Comisiones',         href: '/dashboard/facturacion/canales/accesorios/comisiones' },
           { type: 'leaf', label: 'Ventas por asesor',  href: '/dashboard/facturacion/canales/accesorios/ventas-asesor' },
           { type: 'leaf', label: 'Ticket promedio',    href: '/dashboard/facturacion/canales/accesorios/ticket-promedio' },
+          { type: 'leaf', label: 'Informe mensual',    href: `/informe-accesorios/${new Date().getFullYear()}/${new Date().getMonth() + 1}` },
         ],
       },
       { type: 'leaf', label: 'Taller',     href: '/dashboard/facturacion/canales/taller' },
@@ -103,20 +94,14 @@ function hasActivePath(items: Array<NavLeaf | NavGroup | NavSubGroup>, pathname:
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
-  const [openSections,  setOpenSections]  = useState<Record<string, boolean>>({
-    Facturación: true, Inventario: true,
-  })
-  const [openGroups,    setOpenGroups]    = useState<Record<string, boolean>>({
-    Accesorios: true, Subastas: true,
-  })
-  const [openSubGroups, setOpenSubGroups] = useState<Record<string, boolean>>({
-    'Torre de Control': true,
-  })
+  const [openSections,  setOpenSections]  = useState<Record<string, boolean>>({ Facturación: true, Inventario: true })
+  const [openGroups,    setOpenGroups]    = useState<Record<string, boolean>>({ Accesorios: true, Subastas: true })
+  const [openSubGroups, setOpenSubGroups] = useState<Record<string, boolean>>({ 'Torre de Control': true })
 
-  const [syncing,    setSyncing]    = useState(false)
-  const [syncMsg,    setSyncMsg]    = useState('')
-  const [dashboards,    setDashboards]    = useState<string[]>([])
-  const [esAdmin,      setEsAdmin]      = useState(false)
+  const [syncing,        setSyncing]        = useState(false)
+  const [syncMsg,        setSyncMsg]        = useState('')
+  const [dashboards,     setDashboards]     = useState<string[]>([])
+  const [esAdmin,        setEsAdmin]        = useState(false)
   const [permisosListos, setPermisosListos] = useState(false)
   const router = useRouter()
 
@@ -149,10 +134,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router])
 
   const tieneAcceso = (ruta: string): boolean => {
-    if (!permisosListos) return false  // ocultar todo mientras carga
+    if (!permisosListos) return false
     if (esAdmin) return true
     const key = ROUTE_DASHBOARD[ruta]
-    if (!key) return true  // rutas no mapeadas son accesibles
+    if (!key) return true
     return dashboards.includes(key)
   }
 
@@ -224,15 +209,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             if (child.type === 'leaf') {
                               if (!tieneAcceso(child.href)) return null
                               return (
-                              <li key={child.href}>
-                                <Link href={child.href}
-                                  className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
-                                    ${isActive(child.href)
-                                      ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                      : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}>
-                                  {child.label}
-                                </Link>
-                              </li>
+                                <li key={child.href}>
+                                  <Link href={child.href}
+                                    className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
+                                      ${isActive(child.href)
+                                        ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
+                                        : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}>
+                                    {child.label}
+                                  </Link>
+                                </li>
                               )
                             }
 
@@ -257,15 +242,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                       if (item.type === 'leaf') {
                                         if (!tieneAcceso(item.href)) return null
                                         return (
-                                        <li key={item.href}>
-                                          <Link href={item.href}
-                                            className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
-                                              ${isActive(item.href)
-                                                ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                                : 'text-brand-muted hover:text-brand-text hover:bg-brand-bg'}`}>
-                                            {item.label}
-                                          </Link>
-                                        </li>
+                                          <li key={item.href}>
+                                            <Link href={item.href}
+                                              className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
+                                                ${isActive(item.href)
+                                                  ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
+                                                  : 'text-brand-muted hover:text-brand-text hover:bg-brand-bg'}`}>
+                                              {item.label}
+                                            </Link>
+                                          </li>
                                         )
                                       }
 
