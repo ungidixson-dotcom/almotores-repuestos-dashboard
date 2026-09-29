@@ -163,17 +163,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-text font-sans">
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 bg-brand-surface border-r border-brand-border flex flex-col h-screen">
+      <aside className="w-64 shrink-0 flex flex-col h-screen sidebar-glow">
 
         {/* Logo */}
-        <div className="p-5 border-b border-brand-border shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-teal/15 border border-brand-teal/30 flex items-center justify-center">
-              <LayoutGrid size={16} className="text-brand-teal" />
+        <div className="p-5 border-b border-brand-border/50 shrink-0 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-brand-teal/6 to-transparent pointer-events-none"/>
+          <div className="flex items-center gap-3 relative">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{background:'linear-gradient(135deg,rgba(79,209,197,0.2) 0%,rgba(79,209,197,0.05) 100%)',border:'1px solid rgba(79,209,197,0.25)'}}>
+              <LayoutGrid size={15} className="text-brand-teal" />
             </div>
             <div>
-              <p className="font-title font-bold text-sm text-brand-text leading-tight">AlmotoresKIA</p>
-              <p className="text-[10px] text-brand-muted font-mono tracking-wider">WORKSPACE</p>
+              <p className="font-title font-bold text-sm text-brand-text leading-tight tracking-wide">AlmotoresKIA</p>
+              <p className="text-[9px] text-brand-teal/50 font-mono tracking-widest uppercase mt-0.5">Repuestos · BI</p>
             </div>
           </div>
         </div>
