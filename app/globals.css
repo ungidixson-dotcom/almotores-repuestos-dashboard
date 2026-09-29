@@ -2,8 +2,153 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
-
 ::selection { background: #E8A33D44; }
-
 body { min-height: 100vh; }
+
+/* ── Scrollbar personalizado ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0F1419; }
+::-webkit-scrollbar-thumb { background: #2A3340; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #4FD1C5; }
+
+/* ── Gradientes de fondo ────────────────────────────────────────────────────── */
+.bg-glow-teal {
+  background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(79,209,197,0.07) 0%, transparent 70%);
+}
+.bg-glow-gold {
+  background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(232,163,61,0.07) 0%, transparent 70%);
+}
+
+/* ── Glassmorphism cards ────────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(27, 35, 45, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(79, 209, 197, 0.12);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* ── KPI cards con acento superior ─────────────────────────────────────────── */
+.kpi-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(27,35,45,0.95) 0%, rgba(15,20,25,0.95) 100%);
+  border: 1px solid rgba(42,51,64,0.8);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  border-color: rgba(79,209,197,0.2);
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(79,209,197,0.6), transparent);
+}
+
+/* ── Panel estándar mejorado ────────────────────────────────────────────────── */
+.panel-elevated {
+  background: linear-gradient(145deg, rgba(27,35,45,0.9) 0%, rgba(20,27,36,0.9) 100%);
+  border: 1px solid rgba(42,51,64,0.6);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+/* ── Sidebar glow ───────────────────────────────────────────────────────────── */
+.sidebar-glow {
+  background: linear-gradient(180deg, #0F1A24 0%, #0A1118 100%);
+  box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+  border-right: 1px solid rgba(42,51,64,0.5);
+}
+
+/* ── Nav item activo ────────────────────────────────────────────────────────── */
+.nav-active {
+  background: linear-gradient(90deg, rgba(79,209,197,0.15) 0%, rgba(79,209,197,0.05) 100%);
+  border-right: 2px solid #4FD1C5;
+  color: #4FD1C5;
+}
+
+/* ── Número KPI grande ──────────────────────────────────────────────────────── */
+.kpi-number {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* ── Barra de progreso animada ──────────────────────────────────────────────── */
+.progress-bar {
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Animaciones ────────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes countUp {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes pulse-teal {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79,209,197,0.3); }
+  50%       { box-shadow: 0 0 0 6px rgba(79,209,197,0); }
+}
+
+.animate-fade-up       { animation: fadeInUp 0.4s ease both; }
+.animate-fade-up-delay { animation: fadeInUp 0.4s ease 0.1s both; }
+.animate-count-up      { animation: countUp 0.6s ease both; }
+.animate-pulse-teal    { animation: pulse-teal 2s infinite; }
+
+/* ── Skeleton loading ───────────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, #1B232D 25%, #232D38 50%, #1B232D 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  border-radius: 6px;
+}
+
+/* ── Tabla mejorada ─────────────────────────────────────────────────────────── */
+.table-row-hover:hover {
+  background: rgba(79,209,197,0.04);
+  transition: background 0.15s ease;
+}
+
+/* ── Badge semáforo ─────────────────────────────────────────────────────────── */
+.badge-optimo    { background: rgba(79,209,197,0.15); color: #4FD1C5; border: 1px solid rgba(79,209,197,0.3); }
+.badge-aceptable { background: rgba(232,163,61,0.15); color: #E8A33D; border: 1px solid rgba(232,163,61,0.3); }
+.badge-deficiente{ background: rgba(229,72,77,0.15);  color: #E5484D; border: 1px solid rgba(229,72,77,0.3); }
+
+/* ── Top bar ────────────────────────────────────────────────────────────────── */
+.topbar {
+  background: rgba(15,20,25,0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(42,51,64,0.6);
+}
+
+/* ── Mobile bottom nav (PWA) ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(15,20,25,0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(42,51,64,0.6);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    z-index: 50;
+  }
+}
+
+/* ── PWA splash ─────────────────────────────────────────────────────────────── */
+@media (display-mode: standalone) {
+  body { padding-top: env(safe-area-inset-top, 0px); }
+}
