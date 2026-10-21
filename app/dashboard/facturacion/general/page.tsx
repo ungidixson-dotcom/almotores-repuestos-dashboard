@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, Legend, CartesianGrid, Cell,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
+import { AnimatedNumber } from '@/components/ui/AnimatedNumber'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 interface FilaVista {
@@ -117,7 +118,7 @@ function Badge({ tipo }: { tipo: 'ok' | 'alerta' | 'riesgo' }) {
 }
 
 function KpiCard({ label, value, sub, sub2, accent = 'text-brand-teal', alert = false }: {
-  label: string; value: string; sub?: string; sub2?: string; accent?: string; alert?: boolean
+  label: string; value: React.ReactNode; sub?: string; sub2?: string; accent?: string; alert?: boolean
 }) {
   return (
     <Panel className={alert ? 'border-red-500/40' : ''}>
@@ -411,17 +412,17 @@ export default function FacGeneralPage() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Facturado total" value={fmtCOP(totalNeto)}
+        <KpiCard label="Facturado total" value={<AnimatedNumber value={totalNeto} format={fmtCOP} />}
           sub={`de ${fmtCOP(totalPpto)}`} sub2={`${fmtPct(totalPct)} de avance`}
           accent="text-brand-teal" />
-        <KpiCard label="Utilidad" value={fmtCOP(totalUtil)}
+        <KpiCard label="Utilidad" value={<AnimatedNumber value={totalUtil} format={fmtCOP} />}
           sub={`Margen: ${fmtPct(totalPctUtil)}`} sub2={`Costo: ${fmtCOP(totalCosto)}`}
           accent="text-green-400" />
-        <KpiCard label="Facturación / día" value={fmtCOP(porDiaTotal)}
+        <KpiCard label="Facturación / día" value={<AnimatedNumber value={porDiaTotal} format={fmtCOP} />}
           sub={necesTotal > 0 ? `Necesario: ${fmtCOP(necesTotal)}/día` : '✓ Presupuesto alcanzado'}
           sub2={porDiaTotal >= necesTotal && necesTotal > 0 ? '✓ Por encima del ritmo' : necesTotal === 0 ? '' : '✗ Por debajo del ritmo'}
           accent={porDiaTotal >= necesTotal ? 'text-green-400' : 'text-yellow-400'} />
-        <KpiCard label="Pronóstico cierre" value={fmtCOP(pronTotal)}
+        <KpiCard label="Pronóstico cierre" value={<AnimatedNumber value={pronTotal} format={fmtCOP} />}
           sub={`${fmtPct(pctPronTotal)} del presupuesto`}
           accent={pctPronTotal >= 95 ? 'text-green-400' : pctPronTotal >= 85 ? 'text-yellow-400' : 'text-red-400'}
           alert={estadoGeneral === 'riesgo'} />
