@@ -3,9 +3,10 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Receipt, FolderOpen, ChevronDown, ChevronRight,
+  Receipt, FolderOpen,
   LayoutGrid, Package, RefreshCw,
 } from 'lucide-react'
+import { ExpandChevron } from '@/components/ui/ExpandChevron'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -196,11 +197,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       {/* Nivel 1 — sección */}
                       <button
                         onClick={() => toggle(openSections, setOpenSections, section.label)}
-                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors
+                        aria-expanded={!!openSections[section.label]}
+                        className={`group w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                           ${secActive ? 'text-brand-teal' : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
                       >
-                        <span className="flex items-center gap-2">{section.icon}{section.label}</span>
-                        {openSections[section.label] ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                        <span className="flex items-center gap-2">
+                          <span className="inline-flex motion-safe:group-hover:animate-icon-nudge">{section.icon}</span>
+                          {section.label}
+                        </span>
+                        <ExpandChevron open={!!openSections[section.label]} size={14} />
                       </button>
 
                       {openSections[section.label] && (
@@ -229,11 +234,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                               <li key={child.label}>
                                 <button
                                   onClick={() => toggle(openGroups, setOpenGroups, child.label)}
+                                  aria-expanded={!!openGroups[child.label]}
                                   className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
                                     ${grpActive ? 'text-brand-teal' : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
                                 >
                                   <span>{child.label}</span>
-                                  {openGroups[child.label] ? <ChevronDown size={11}/> : <ChevronRight size={11}/>}
+                                  <ExpandChevron open={!!openGroups[child.label]} size={11} />
                                 </button>
 
                                 {openGroups[child.label] && (
@@ -262,11 +268,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                         <li key={item.label}>
                                           <button
                                             onClick={() => toggle(openSubGroups, setOpenSubGroups, item.label)}
+                                            aria-expanded={!!openSubGroups[item.label]}
                                             className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
                                               ${subActive ? 'text-brand-teal' : 'text-brand-muted hover:text-brand-text hover:bg-brand-bg'}`}
                                           >
                                             <span>{item.label}</span>
-                                            {openSubGroups[item.label] ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
+                                            <ExpandChevron open={!!openSubGroups[item.label]} size={10} />
                                           </button>
 
                                           {openSubGroups[item.label] && (
@@ -297,12 +304,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </>
                   ) : (
                     <Link href={section.href!}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
+                      className={`group flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                         ${isActive(section.href!)
                           ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
                           : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
                     >
-                      {section.icon}{section.label}
+                      <span className="inline-flex motion-safe:group-hover:animate-icon-nudge">{section.icon}</span>
+                      {section.label}
                     </Link>
                   )}
                 </li>

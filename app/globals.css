@@ -98,6 +98,46 @@ body { min-height: 100vh; }
   0%   { background-position: -200% center; }
   100% { background-position: 200% center; }
 }
+/* Icono de menú al pasar el mouse: pequeño giro y vuelve a su sitio. */
+@keyframes icon-nudge {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  30%      { transform: rotate(-12deg) scale(1.15); }
+  60%      { transform: rotate(8deg) scale(1.15); }
+}
+/* Iconos de canal: un movimiento propio de cada canal, una sola vez. */
+@keyframes canal-taller {      /* la llave aprieta */
+  0%, 100% { transform: rotate(0deg); }
+  30%      { transform: rotate(-35deg); }
+  60%      { transform: rotate(15deg); }
+}
+@keyframes canal-colision {    /* el carro avanza y frena */
+  0%, 100% { transform: translateX(0); }
+  35%      { transform: translateX(4px); }
+  55%      { transform: translateX(-2px); }
+  75%      { transform: translateX(1px); }
+}
+@keyframes canal-accesorios {  /* el regalo rebota */
+  0%, 100% { transform: translateY(0) scale(1); }
+  30%      { transform: translateY(-5px) scale(1.12); }
+  55%      { transform: translateY(0) scale(0.95); }
+  75%      { transform: translateY(-2px) scale(1.03); }
+}
+@keyframes canal-mostrador {   /* el carrito rueda */
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  30%      { transform: translateX(-3px) rotate(-8deg); }
+  65%      { transform: translateX(3px) rotate(4deg); }
+}
+@keyframes canal-mayoristas {  /* la caja se levanta */
+  0%, 100% { transform: translateY(0); }
+  40%      { transform: translateY(-5px); }
+  70%      { transform: translateY(1px); }
+}
+@keyframes canal-subastas {    /* el mazo golpea */
+  0%, 100% { transform: rotate(0deg); }
+  35%      { transform: rotate(-30deg); }
+  55%      { transform: rotate(12deg); }
+  75%      { transform: rotate(-4deg); }
+}
 @keyframes pulse-teal {
   0%, 100% { box-shadow: 0 0 0 0 rgba(79,209,197,0.3); }
   50%       { box-shadow: 0 0 0 6px rgba(79,209,197,0); }
