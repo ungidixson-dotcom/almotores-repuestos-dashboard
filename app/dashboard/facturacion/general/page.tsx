@@ -462,7 +462,7 @@ export default function FacGeneralPage() {
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <CanalIcon canal={c.canal} size={14} className="text-brand-subtle mb-0.5"
+                    <CanalIcon canal={c.canal} size={14} className="mb-0.5" color={c.color}
                       animated delayMs={300 + i * 120} />
                     <span className="text-sm font-bold font-title" style={{color: clr}}>
                       {c.pct.toFixed(0)}%
@@ -505,7 +505,7 @@ export default function FacGeneralPage() {
                 <tr key={c.canal} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
-                      <CanalIcon canal={c.canal} className="text-brand-subtle" />
+                      <CanalIcon canal={c.canal} color={c.color} />
                       <span className="font-medium text-brand-text">{c.canal}</span>
                     </div>
                   </td>
@@ -627,7 +627,7 @@ export default function FacGeneralPage() {
               }`}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="flex items-center gap-2 text-sm font-medium text-brand-text">
-                    <CanalIcon canal={c.canal} className="text-brand-subtle" />
+                    <CanalIcon canal={c.canal} color={c.color} />
                     {c.canal}
                   </span>
                   <Badge tipo={c.estado} />
