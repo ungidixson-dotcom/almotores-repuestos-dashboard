@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { AnimatedNumber } from '@/components/ui/AnimatedNumber'
+import { CanalIcon, type Canal } from '@/components/ui/CanalIcon'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 interface FilaVista {
@@ -24,8 +25,7 @@ interface FilaVista {
 
 interface MarcaSubasta { marca: string; facturas: number; neto: number; pct: number }
 interface CanalData {
-  canal:   string
-  icon:    string
+  canal:   Canal
   color:   string
   neto:    number
   costo:   number
@@ -51,13 +51,13 @@ const MESES_LABEL = [
 ]
 const SEDES_LIST = ['Todas','Norte','Pasoancho','Sede 39']
 
-const CANALES_CONFIG = [
-  { canal:'Taller',     icon:'🔧', color:'#4FD1C5' },
-  { canal:'Colisión',   icon:'🚗', color:'#F6AD55' },
-  { canal:'Accesorios', icon:'🎁', color:'#B794F4' },
-  { canal:'Mostrador',  icon:'🛒', color:'#68D391' },
-  { canal:'Mayoristas', icon:'📦', color:'#63B3ED' },
-  { canal:'Subastas',   icon:'🔨', color:'#F687B3' },
+const CANALES_CONFIG: Array<{ canal: Canal; color: string }> = [
+  { canal:'Taller',     color:'#4FD1C5' },
+  { canal:'Colisión',   color:'#F6AD55' },
+  { canal:'Accesorios', color:'#B794F4' },
+  { canal:'Mostrador',  color:'#68D391' },
+  { canal:'Mayoristas', color:'#63B3ED' },
+  { canal:'Subastas',   color:'#F687B3' },
 ]
 
 const FESTIVOS = new Set([
@@ -462,7 +462,7 @@ export default function FacGeneralPage() {
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-xs font-mono text-brand-subtle">{c.icon}</span>
+                    <CanalIcon canal={c.canal} size={14} className="text-brand-subtle mb-0.5" />
                     <span className="text-sm font-bold font-title" style={{color: clr}}>
                       {c.pct.toFixed(0)}%
                     </span>
@@ -504,7 +504,7 @@ export default function FacGeneralPage() {
                 <tr key={c.canal} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
-                      <span>{c.icon}</span>
+                      <CanalIcon canal={c.canal} className="text-brand-subtle" />
                       <span className="font-medium text-brand-text">{c.canal}</span>
                     </div>
                   </td>
@@ -625,7 +625,10 @@ export default function FacGeneralPage() {
                 c.estado === 'alerta' ? 'border-yellow-500/20' : 'border-brand-border'
               }`}>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-brand-text">{c.icon} {c.canal}</span>
+                  <span className="flex items-center gap-2 text-sm font-medium text-brand-text">
+                    <CanalIcon canal={c.canal} className="text-brand-subtle" />
+                    {c.canal}
+                  </span>
                   <Badge tipo={c.estado} />
                 </div>
                 <ProgressBar pct={c.pct} color={c.color} />

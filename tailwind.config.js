@@ -47,6 +47,7 @@ module.exports = {
         'count-up':   'countUp 0.6s ease both',
         'pulse-teal': 'pulse-teal 2s infinite',
         'shimmer':    'shimmer 1.5s linear infinite',
+        'icon-nudge': 'icon-nudge 0.5s ease-in-out',
       },
       backdropBlur: {
         'xs': '4px',
