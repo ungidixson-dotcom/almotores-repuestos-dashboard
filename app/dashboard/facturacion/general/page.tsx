@@ -434,14 +434,14 @@ export default function FacGeneralPage() {
           Cumplimiento vs presupuesto por canal · {todasActivo ? 'Todas las sedes' : Array.from(sedes).join(' + ')}
         </h2>
         <div className="grid grid-cols-3 md:grid-cols-6 gap-6">
-          {canalesData.map(c => {
+          {canalesData.map((c, i) => {
             const pct      = Math.min(100, Math.max(0, c.pct))
             const r        = 36
             const circum   = 2 * Math.PI * r
             const offset   = circum - (pct / 100) * circum
             const clr      = c.pct >= pctDias ? '#68D391' : c.pct >= pctDias * 0.8 ? '#F6AD55' : '#FC8181'
             return (
-              <div key={c.canal} className="flex flex-col items-center gap-2">
+              <div key={c.canal} className="group flex flex-col items-center gap-2">
                 <div className="relative w-24 h-24">
                   <svg viewBox="0 0 88 88" className="w-full h-full -rotate-90">
                     {/* Track */}
@@ -462,7 +462,8 @@ export default function FacGeneralPage() {
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <CanalIcon canal={c.canal} size={14} className="text-brand-subtle mb-0.5" />
+                    <CanalIcon canal={c.canal} size={14} className="text-brand-subtle mb-0.5"
+                      animated delayMs={300 + i * 120} />
                     <span className="text-sm font-bold font-title" style={{color: clr}}>
                       {c.pct.toFixed(0)}%
                     </span>

@@ -48,6 +48,12 @@ module.exports = {
         'pulse-teal': 'pulse-teal 2s infinite',
         'shimmer':    'shimmer 1.5s linear infinite',
         'icon-nudge': 'icon-nudge 0.5s ease-in-out',
+        'canal-taller':     'canal-taller 0.7s ease-out both',
+        'canal-colision':   'canal-colision 0.7s ease-out both',
+        'canal-accesorios': 'canal-accesorios 0.7s ease-out both',
+        'canal-mostrador':  'canal-mostrador 0.7s ease-out both',
+        'canal-mayoristas': 'canal-mayoristas 0.7s ease-out both',
+        'canal-subastas':   'canal-subastas 0.7s ease-out both',
       },
       backdropBlur: {
         'xs': '4px',
