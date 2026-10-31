@@ -37,6 +37,8 @@ interface DetalleSubasta {
   estado_autorizacion: string; valor_autorizado: number
   estado_facturacion_oc: string; fecha_factura: string; numero_factura: string
   estado_radicacion_factura: string; mes_subasta: string
+  /** true si la fecha se aproximó con la línea anterior del Sheet (ver v_subastas_base). */
+  fecha_estimada: boolean
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -133,9 +135,10 @@ export default function TorreControlSubastasPage() {
   const cargarDetalle = useCallback(async () => {
     setLoadingDet(true)
     const POR_PAG = 200
-    let q = supabase.from('subastas').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta,valor_subastado,estado_autorizacion,valor_autorizado,estado_facturacion_oc,fecha_factura,numero_factura,estado_radicacion_factura,mes_subasta', {count:'exact'})
+    // v_subastas_base: incluye las líneas sin fecha en el Sheet con su fecha estimada.
+    let q = supabase.from('v_subastas_base').select('id,placa,marca,aseguradora_id,asesor_id,estado_subasta,fecha_subasta:fecha_efectiva,fecha_estimada,valor_subastado,estado_autorizacion,valor_autorizado,estado_facturacion_oc,fecha_factura,numero_factura,estado_radicacion_factura,mes_subasta', {count:'exact'})
       .eq('anio', anio)
-      .order('fecha_subasta', {ascending: false})
+      .order('fecha_efectiva', {ascending: false})
       .range(detallePag * POR_PAG, (detallePag + 1) * POR_PAG - 1)
     if (filtroMes !== 'todos') q = q.eq('mes_subasta', filtroMes)
     if (filtroAseg) q = q.eq('aseguradora_id', filtroAseg)
@@ -1018,7 +1021,10 @@ export default function TorreControlSubastasPage() {
                       <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{s.marca}</td>
                       <td className="py-2 pr-4 text-xs text-brand-text max-w-[110px] truncate">{nombreAseg(s.aseguradora_id)}</td>
                       <td className="py-2 pr-4 text-xs text-brand-subtle max-w-[90px] truncate">{nombreAsesor(s.asesor_id)?.split(' ')[0]}</td>
-                      <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{s.fecha_subasta}</td>
+                      <td className="py-2 pr-4 font-mono text-xs text-brand-subtle"
+                        title={s.fecha_estimada ? 'Fecha estimada: la línea no tiene fecha en el Sheet; se tomó la de la línea anterior' : undefined}>
+                        {s.fecha_subasta}{s.fecha_estimada && <span className="text-brand-gold"> ≈</span>}
+                      </td>
                       <td className="py-2 pr-4 font-mono text-xs text-brand-subtle">{s.valor_subastado?fmtCOP(Number(s.valor_subastado)):'—'}</td>
                       <td className="py-2 pr-4"><Badge estado={s.estado_autorizacion}/></td>
                       <td className="py-2 pr-4"><Badge estado={s.estado_facturacion_oc}/></td>
