@@ -31,15 +31,17 @@ interface CanalIconProps {
   canal: Canal
   size?: number
   className?: string
+  /** Color del trazo (hex). Si se omite, hereda el color del texto. */
+  color?: string
   /** Anima el icono al montarse y al pasar el mouse sobre el contenedor con clase `group`. */
   animated?: boolean
   /** Retraso de la animación inicial, para escalonar varios iconos. */
   delayMs?: number
 }
 
-export function CanalIcon({ canal, size = 14, className = '', animated = false, delayMs = 0 }: CanalIconProps) {
+export function CanalIcon({ canal, size = 14, className = '', color, animated = false, delayMs = 0 }: CanalIconProps) {
   const Icon = CANAL_ICON[canal]
-  const icon = <Icon size={size} className={className} aria-hidden="true" />
+  const icon = <Icon size={size} className={className} color={color} aria-hidden="true" />
   if (!animated) return icon
 
   const anim = CANAL_ANIMATION[canal]
