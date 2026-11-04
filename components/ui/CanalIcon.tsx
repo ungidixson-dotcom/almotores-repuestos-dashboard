@@ -13,6 +13,23 @@ export const CANAL_ICON: Record<Canal, LucideIcon> = {
   Subastas:   Gavel,
 }
 
+/** Color oficial de cada canal (iconos, gráficas, tablas). Fuente única. */
+export const CANAL_COLOR: Record<Canal, string> = {
+  Taller:     '#4FD1C5',
+  Colisión:   '#F6AD55',
+  Accesorios: '#B794F4',
+  Mostrador:  '#68D391',
+  Mayoristas: '#63B3ED',
+  Subastas:   '#F687B3',
+}
+
+const CANALES = Object.keys(CANAL_ICON) as Canal[]
+
+/** true si el texto es exactamente el nombre de un canal. */
+export function esCanal(texto: string): texto is Canal {
+  return (CANALES as string[]).includes(texto)
+}
+
 /**
  * Movimiento propio de cada canal (keyframes en globals.css).
  * Clases escritas completas para que Tailwind las detecte:

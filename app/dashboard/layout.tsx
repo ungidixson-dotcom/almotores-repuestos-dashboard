@@ -2,11 +2,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  Receipt, FolderOpen,
-  LayoutGrid, Package, RefreshCw,
-} from 'lucide-react'
+import { Receipt, Package, RefreshCw } from 'lucide-react'
 import { ExpandChevron } from '@/components/ui/ExpandChevron'
+import { CanalIcon, CANAL_COLOR, esCanal } from '@/components/ui/CanalIcon'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -91,6 +89,12 @@ function hasActivePath(items: Array<NavLeaf | NavGroup | NavSubGroup>, pathname:
   })
 }
 
+// ── Icono de un ítem del menú: los canales llevan su icono y color oficiales ──
+function IconoItem({ label }: { label: string }) {
+  if (esCanal(label)) return <CanalIcon canal={label} size={16} color={CANAL_COLOR[label]} />
+  return <span className="w-4 shrink-0" aria-hidden="true" />
+}
+
 // ── Layout ────────────────────────────────────────────────────────────────────
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -164,27 +168,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-text font-sans">
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 flex flex-col h-screen sidebar-glow">
+      <aside className="w-64 shrink-0 flex flex-col h-screen bg-brand-sidebar border-r border-brand-line">
 
-        {/* Logo */}
-        <div className="p-5 border-b border-brand-border/50 shrink-0 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-brand-teal/6 to-transparent pointer-events-none"/>
-          <div className="flex items-center gap-3 relative">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{background:'linear-gradient(135deg,rgba(79,209,197,0.2) 0%,rgba(79,209,197,0.05) 100%)',border:'1px solid rgba(79,209,197,0.25)'}}>
-              <LayoutGrid size={15} className="text-brand-teal" />
-            </div>
-            <div>
-              <p className="font-title font-bold text-sm text-brand-text leading-tight tracking-wide">AlmotoresKIA</p>
-              <p className="text-[9px] text-brand-teal/50 font-mono tracking-widest uppercase mt-0.5">Repuestos · BI</p>
-            </div>
+        {/* Marca */}
+        <div className="px-5 pt-6 pb-5 shrink-0 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-brand-text text-brand-bg flex items-center justify-center font-bold text-[13px]" aria-hidden="true">IZ</div>
+          <div className="leading-tight">
+            <p className="font-bold text-[15px] text-brand-text">Indizia</p>
+            <p className="text-xs text-brand-subtle">Repuestos y accesorios KIA</p>
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
-          <p className="font-mono text-[10px] text-brand-muted uppercase tracking-wider px-2 mb-2">Informes</p>
-          <ul className="space-y-1">
+        {/* Navegación */}
+        <nav aria-label="Informes" className="flex-1 overflow-y-auto px-3 pb-4">
+          <ul className="space-y-4">
             {NAV.map(section => {
               const secActive = section.children
                 ? hasActivePath(section.children as any, pathname)
@@ -198,8 +195,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       <button
                         onClick={() => toggle(openSections, setOpenSections, section.label)}
                         aria-expanded={!!openSections[section.label]}
-                        className={`group w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-                          ${secActive ? 'text-brand-teal' : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
+                        className={`group w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-[13px] font-semibold transition-colors
+                          ${secActive ? 'text-brand-text' : 'text-brand-subtle hover:text-brand-text'}`}
                       >
                         <span className="flex items-center gap-2">
                           <span className="inline-flex motion-safe:group-hover:animate-icon-nudge">{section.icon}</span>
@@ -209,7 +206,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       </button>
 
                       {openSections[section.label] && (
-                        <ul className="mt-1 ml-4 pl-3 border-l border-brand-border space-y-0.5">
+                        <ul className="mt-1 space-y-0.5">
                           {section.children.map(child => {
 
                             // Nivel 2 — leaf
@@ -218,10 +215,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                               return (
                                 <li key={child.href}>
                                   <Link href={child.href}
-                                    className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
+                                    aria-current={isActive(child.href) ? 'page' : undefined}
+                                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors
                                       ${isActive(child.href)
-                                        ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                        : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}>
+                                        ? 'bg-brand-active text-brand-text font-semibold'
+                                        : 'text-brand-soft hover:text-brand-text hover:bg-brand-active/60'}`}>
+                                    <IconoItem label={child.label} />
                                     {child.label}
                                   </Link>
                                 </li>
@@ -235,15 +234,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 <button
                                   onClick={() => toggle(openGroups, setOpenGroups, child.label)}
                                   aria-expanded={!!openGroups[child.label]}
-                                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
-                                    ${grpActive ? 'text-brand-teal' : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
+                                  className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-sm transition-colors
+                                    ${grpActive ? 'text-brand-text font-semibold' : 'text-brand-soft hover:text-brand-text hover:bg-brand-active/60'}`}
                                 >
-                                  <span>{child.label}</span>
-                                  <ExpandChevron open={!!openGroups[child.label]} size={11} />
+                                  <span className="flex items-center gap-2.5">
+                                    <IconoItem label={child.label} />
+                                    {child.label}
+                                  </span>
+                                  <ExpandChevron open={!!openGroups[child.label]} size={13} />
                                 </button>
 
                                 {openGroups[child.label] && (
-                                  <ul className="mt-0.5 ml-3 pl-3 border-l border-brand-border/50 space-y-0.5">
+                                  <ul className="mt-0.5 ml-[18px] pl-3 border-l border-brand-line space-y-0.5">
                                     {child.children.map(item => {
 
                                       // Nivel 3 — leaf dentro de group
@@ -252,10 +254,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                         return (
                                           <li key={item.href}>
                                             <Link href={item.href}
-                                              className={`block px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
+                                              aria-current={isActive(item.href) ? 'page' : undefined}
+                                              className={`block px-2.5 py-1.5 rounded-lg text-[13px] transition-colors
                                                 ${isActive(item.href)
-                                                  ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                                  : 'text-brand-muted hover:text-brand-text hover:bg-brand-bg'}`}>
+                                                  ? 'bg-brand-active text-brand-text font-semibold'
+                                                  : 'text-brand-subtle hover:text-brand-text hover:bg-brand-active/60'}`}>
                                               {item.label}
                                             </Link>
                                           </li>
@@ -269,22 +272,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                           <button
                                             onClick={() => toggle(openSubGroups, setOpenSubGroups, item.label)}
                                             aria-expanded={!!openSubGroups[item.label]}
-                                            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors
-                                              ${subActive ? 'text-brand-teal' : 'text-brand-muted hover:text-brand-text hover:bg-brand-bg'}`}
+                                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[13px] transition-colors
+                                              ${subActive ? 'text-brand-text font-semibold' : 'text-brand-subtle hover:text-brand-text hover:bg-brand-active/60'}`}
                                           >
                                             <span>{item.label}</span>
-                                            <ExpandChevron open={!!openSubGroups[item.label]} size={10} />
+                                            <ExpandChevron open={!!openSubGroups[item.label]} size={12} />
                                           </button>
 
                                           {openSubGroups[item.label] && (
-                                            <ul className="mt-0.5 ml-3 pl-3 border-l border-brand-border/30 space-y-0.5">
+                                            <ul className="mt-0.5 ml-2.5 pl-3 border-l border-brand-line space-y-0.5">
                                               {item.children.filter(leaf => tieneAcceso(leaf.href)).map(leaf => (
                                                 <li key={leaf.href}>
                                                   <Link href={leaf.href}
-                                                    className={`block px-3 py-1.5 rounded-lg text-[11px] font-mono transition-colors
+                                                    aria-current={isActive(leaf.href) ? 'page' : undefined}
+                                                    className={`block px-2.5 py-1.5 rounded-lg text-[13px] transition-colors
                                                       ${isActive(leaf.href)
-                                                        ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                                                        : 'text-brand-muted hover:text-brand-text hover:bg-brand-bg'}`}>
+                                                        ? 'bg-brand-active text-brand-text font-semibold'
+                                                        : 'text-brand-subtle hover:text-brand-text hover:bg-brand-active/60'}`}>
                                                     {leaf.label}
                                                   </Link>
                                                 </li>
@@ -304,10 +308,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </>
                   ) : (
                     <Link href={section.href!}
-                      className={`group flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
+                      aria-current={isActive(section.href!) ? 'page' : undefined}
+                      className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-colors
                         ${isActive(section.href!)
-                          ? 'bg-brand-teal/10 text-brand-teal border border-brand-teal/30'
-                          : 'text-brand-subtle hover:text-brand-text hover:bg-brand-bg'}`}
+                          ? 'bg-brand-active text-brand-text font-semibold'
+                          : 'text-brand-soft hover:text-brand-text hover:bg-brand-active/60'}`}
                     >
                       <span className="inline-flex motion-safe:group-hover:animate-icon-nudge">{section.icon}</span>
                       {section.label}
@@ -319,24 +324,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </ul>
         </nav>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-brand-border shrink-0 space-y-2">
+        {/* Pie */}
+        <div className="p-4 border-t border-brand-line shrink-0 space-y-2">
           <button onClick={sincronizarDropbox} disabled={syncing}
-            className={`w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-mono transition-colors border ${
+            className={`w-full h-11 flex items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors border ${
               syncing
-                ? 'border-brand-border text-brand-muted cursor-not-allowed'
-                : 'border-brand-teal/40 text-brand-teal hover:bg-brand-teal/10'
+                ? 'border-brand-line text-brand-subtle cursor-not-allowed'
+                : 'border-brand-line text-brand-text hover:bg-brand-active'
             }`}>
-            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''}/>
-            {syncing ? 'Sincronizando...' : 'Sincronizar Dropbox'}
+            <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} aria-hidden="true" />
+            {syncing ? 'Sincronizando…' : 'Sincronizar Dropbox'}
           </button>
           {syncMsg && (
-            <p className="text-center text-[10px] font-mono text-brand-subtle">{syncMsg}</p>
+            <p role="status" className="text-center text-xs text-brand-subtle">{syncMsg}</p>
           )}
-          <div className="flex items-center gap-2">
-            <FolderOpen size={13} className="text-brand-muted" />
-            <p className="text-[10px] text-brand-muted font-mono">Repuestos & Accesorios</p>
-          </div>
         </div>
 
       </aside>

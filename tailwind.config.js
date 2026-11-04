@@ -22,6 +22,11 @@ module.exports = {
           'border-2':  '#374151',
           'teal-dim':  'rgba(79,209,197,0.12)',
           'gold-dim':  'rgba(232,163,61,0.12)',
+          // Menú lateral (rediseño nov-2026)
+          'sidebar':   '#121A23',
+          'line':      '#222C38',
+          'active':    '#1E2833',
+          'soft':      '#B9C4D1',
         }
       },
       fontFamily: {
