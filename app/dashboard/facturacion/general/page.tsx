@@ -224,13 +224,13 @@ export default function FacGeneralPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-[22px] font-bold text-brand-text">Facturación general</h1>
         <div className="flex flex-wrap items-center gap-2.5">
-          <div role="group" aria-label="Sede" className={grupo}>
-            <button type="button" aria-pressed={todasActivo} onClick={() => toggleSede('Todas')} className={segmento(todasActivo)}>
+          <div role="group" aria-label="Sede" className={`${grupo} max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto`}>
+            <button type="button" aria-pressed={todasActivo} onClick={() => toggleSede('Todas')} className={`${segmento(todasActivo)} shrink-0`}>
               Todas las sedes
             </button>
             {SEDES_INDIVIDUALES.map(s => (
               <button key={s} type="button" aria-pressed={!todasActivo && sedes.has(s)} onClick={() => toggleSede(s)}
-                className={segmento(!todasActivo && sedes.has(s))}>
+                className={`${segmento(!todasActivo && sedes.has(s))} shrink-0`}>
                 {s}
               </button>
             ))}

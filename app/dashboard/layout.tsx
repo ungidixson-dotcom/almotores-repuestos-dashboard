@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Receipt, Package, RefreshCw } from 'lucide-react'
+import { Receipt, Package, RefreshCw, Menu, X } from 'lucide-react'
 import { ExpandChevron } from '@/components/ui/ExpandChevron'
 import { CanalIcon, CANAL_COLOR, esCanal } from '@/components/ui/CanalIcon'
 import { supabase } from '@/lib/supabase'
@@ -110,6 +110,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [permisosListos, setPermisosListos] = useState(false)
   const router = useRouter()
 
+  // Menú en celular: cajón lateral que se abre con el botón de la barra superior.
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  const botonMenu = useRef<HTMLButtonElement>(null)
+  const botonCerrar = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { setMenuAbierto(false) }, [pathname])
+
+  useEffect(() => {
+    if (!menuAbierto) return
+    // Esperar un cuadro: el cajón pasa de oculto a visible y solo entonces acepta el foco.
+    const cuadro = requestAnimationFrame(() => botonCerrar.current?.focus())
+    const alTeclear = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMenuAbierto(false); botonMenu.current?.focus() }
+    }
+    window.addEventListener('keydown', alTeclear)
+    return () => { cancelAnimationFrame(cuadro); window.removeEventListener('keydown', alTeclear) }
+  }, [menuAbierto])
+
   useEffect(() => {
     const cargarPermisos = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -165,18 +183,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isActive = (href: string) => pathname === href
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-bg text-brand-text font-sans">
+    <div className="flex h-dvh flex-col overflow-hidden bg-brand-bg text-brand-text font-sans md:flex-row">
+
+      {/* ── BARRA SUPERIOR (solo celular) ───────────────────────────────── */}
+      <header className="md:hidden shrink-0 flex items-center gap-3 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+8px)] border-b border-brand-line bg-brand-sidebar">
+        <button ref={botonMenu} type="button" onClick={() => setMenuAbierto(true)}
+          aria-label="Abrir menú" aria-expanded={menuAbierto} aria-controls="menu-lateral"
+          className="w-11 h-11 flex items-center justify-center rounded-[10px] border border-brand-line bg-[#161E28] text-brand-text">
+          <Menu size={18} aria-hidden="true" />
+        </button>
+        <span className="flex items-center gap-2">
+          <span className="w-7 h-7 rounded-md bg-brand-text text-brand-bg flex items-center justify-center font-bold text-xs" aria-hidden="true">IZ</span>
+          <span className="font-bold text-[15px]">Indizia</span>
+        </span>
+      </header>
+
+      {/* Fondo oscuro detrás del menú abierto en celular */}
+      {menuAbierto && (
+        <div className="md:hidden fixed inset-0 z-30 bg-black/60" aria-hidden="true" onClick={() => setMenuAbierto(false)} />
+      )}
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-      <aside className="w-64 shrink-0 flex flex-col h-screen bg-brand-sidebar border-r border-brand-line">
+      <aside id="menu-lateral"
+        className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] shrink-0 flex flex-col h-dvh bg-brand-sidebar border-r border-brand-line
+          pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]
+          md:static md:z-auto md:w-64 md:max-w-none md:translate-x-0 md:visible md:pt-0 md:pb-0
+          ${menuAbierto
+            ? 'translate-x-0 visible motion-safe:[transition:transform_300ms]'
+            // Al cerrar, se oculta (y sale del orden de tabulación) cuando termina de deslizarse.
+            : '-translate-x-full invisible motion-safe:[transition:transform_300ms,visibility_0s_300ms]'}`}>
 
         {/* Marca */}
         <div className="px-5 pt-6 pb-5 shrink-0 flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-brand-text text-brand-bg flex items-center justify-center font-bold text-[13px]" aria-hidden="true">IZ</div>
-          <div className="leading-tight">
+          <div className="leading-tight flex-1">
             <p className="font-bold text-[15px] text-brand-text">Indizia</p>
             <p className="text-xs text-brand-subtle">Repuestos y accesorios KIA</p>
           </div>
+          <button ref={botonCerrar} type="button" onClick={() => { setMenuAbierto(false); botonMenu.current?.focus() }}
+            aria-label="Cerrar menú"
+            className="md:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-[10px] text-brand-soft hover:text-brand-text">
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
 
         {/* Navegación */}
@@ -343,7 +391,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* ── CONTENIDO ───────────────────────────────────────────────────── */}
-      <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
+      <main className="flex-1 min-w-0 overflow-y-auto pb-[env(safe-area-inset-bottom)]">{children}</main>
 
     </div>
   )
