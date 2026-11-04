@@ -33,6 +33,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
+        {/* Archivo (ancho variable) — cifras grandes de Facturación General */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..700&display=swap"
+          rel="stylesheet"
+        />
         {/* Geist Mono — fuente monoespaciada oficial de Vercel, ideal para cifras financieras */}
         <link
           href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap"

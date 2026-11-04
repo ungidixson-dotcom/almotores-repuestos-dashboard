@@ -27,12 +27,26 @@ module.exports = {
           'line':      '#222C38',
           'active':    '#1E2833',
           'soft':      '#B9C4D1',
-        }
+          // Facturación General (rediseño nov-2026)
+          'muted-2':   '#93A1B2',
+          'track':     '#1C2530',
+          'tile':      '#1F2A36',
+          'card':      '#151D27',
+          'line-2':    '#3A4757',
+        },
+        // Semáforo oficial: mismos valores que lib/semaforo.ts
+        estado: {
+          ok:     '#4FD1C5',
+          alerta: '#E8A33D',
+          riesgo: '#F2555A',
+        },
       },
       fontFamily: {
         sans:  ['Plus Jakarta Sans', 'sans-serif'],
         title: ['Plus Jakarta Sans', 'sans-serif'],
         mono:  ['Geist Mono', 'monospace'],
+        // Cifras grandes: Archivo condensada, números tabulares
+        cifra: ['Archivo', 'Plus Jakarta Sans', 'sans-serif'],
       },
       boxShadow: {
         'glow-teal': '0 0 20px rgba(79,209,197,0.15), 0 0 60px rgba(79,209,197,0.05)',
