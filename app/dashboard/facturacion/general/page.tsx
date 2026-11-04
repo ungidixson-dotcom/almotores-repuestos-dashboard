@@ -1,44 +1,15 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend, CartesianGrid, Cell,
-} from 'recharts'
 import { supabase } from '@/lib/supabase'
-import { AnimatedNumber } from '@/components/ui/AnimatedNumber'
-import { CanalIcon, type Canal } from '@/components/ui/CanalIcon'
-
-// ── Tipos ────────────────────────────────────────────────────────────────────
-interface FilaVista {
-  canal:       string
-  sede:        string
-  mes:         string
-  anio:        number
-  neto:        number
-  costo:       number
-  beneficio:   number
-  presupuesto: number
-  pct_avance:  number
-  pct_margen:  number
-  lineas:      number
-}
-
-interface MarcaSubasta { marca: string; facturas: number; neto: number; pct: number }
-interface CanalData {
-  canal:   Canal
-  color:   string
-  neto:    number
-  costo:   number
-  util:    number
-  pctUtil: number
-  ppto:    number
-  pct:     number
-  porDia:  number
-  neces:   number
-  pron:    number
-  pctPron: number
-  estado:  'ok' | 'alerta' | 'riesgo'
-}
+import { CanalIcon, CANAL_COLOR, esCanal, type Canal } from '@/components/ui/CanalIcon'
+import { avanceMes, type AvanceMes } from '@/lib/diasHabiles'
+import { metricas, topeEscala, type FilaFacturacion, type Metricas } from '@/lib/facturacionGeneral'
+import { fmtCOP, fmtCOPSigno, fmtDias, fmtFechaCorta, fmtMillones, fmtPct } from '@/lib/formato'
+import { BandaKpi, type Kpi } from '@/components/facturacion/BandaKpi'
+import { EstadoPill } from '@/components/facturacion/EstadoPill'
+import { EscalaRegla, BarraCumplimiento, type VistaRegla } from '@/components/facturacion/ReglaDias'
+import { FilaCanal, TarjetaCanal, type SedeCanal } from '@/components/facturacion/TarjetaCanal'
+import { CIFRA, ESTADO_TEXT, GRILLA_REGLA } from '@/components/facturacion/estilos'
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 const MESES_KEY = [
@@ -49,161 +20,112 @@ const MESES_LABEL = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
 ]
-const SEDES_LIST = ['Todas','Norte','Pasoancho','Sede 39']
-
-const CANALES_CONFIG: Array<{ canal: Canal; color: string }> = [
-  { canal:'Taller',     color:'#4FD1C5' },
-  { canal:'Colisión',   color:'#F6AD55' },
-  { canal:'Accesorios', color:'#B794F4' },
-  { canal:'Mostrador',  color:'#68D391' },
-  { canal:'Mayoristas', color:'#63B3ED' },
-  { canal:'Subastas',   color:'#F687B3' },
-]
-
-const FESTIVOS = new Set([
-  '2025-01-01','2025-01-06','2025-03-24','2025-04-17','2025-04-18','2025-05-01',
-  '2025-06-02','2025-06-23','2025-06-30','2025-07-20','2025-08-07','2025-08-18',
-  '2025-10-13','2025-11-03','2025-11-17','2025-12-08','2025-12-25',
-  '2026-01-01','2026-01-05','2026-03-23','2026-04-02','2026-04-03','2026-05-01',
-  '2026-05-18','2026-06-08','2026-06-29','2026-07-20','2026-08-07','2026-08-17',
-  '2026-10-12','2026-11-02','2026-11-16','2026-12-08','2026-12-25',
-])
-
-// ── Utilidades ───────────────────────────────────────────────────────────────
-const fmtCOP = (v: number): string => {
-  const abs = Math.abs(v), sign = v < 0 ? '-' : ''
-  return `${sign}$${abs.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-}
-const fmtPct = (v: number) => `${v.toFixed(1)}%`
-
-const esDiaHabil = (d: Date) =>
-  d.getDay() !== 0 && !FESTIVOS.has(d.toISOString().slice(0, 10))
-
-const diasHabilesEnMes = (a: number, m: number) => {
-  const d = new Date(a, m - 1, 1); let c = 0
-  while (d.getMonth() === m - 1) { if (esDiaHabil(d)) c++; d.setDate(d.getDate() + 1) }
-  return c
+const SEDES_INDIVIDUALES = ['Norte', 'Pasoancho', 'Sede 39']
+const CANALES: Canal[] = ['Taller', 'Colisión', 'Accesorios', 'Mostrador', 'Mayoristas', 'Subastas']
+const CANAL_HREF: Record<Canal, string> = {
+  Taller:     '/dashboard/facturacion/canales/taller',
+  Colisión:   '/dashboard/facturacion/canales/colision',
+  Accesorios: '/dashboard/facturacion/canales/accesorios',
+  Mostrador:  '/dashboard/facturacion/canales/mostrador',
+  Mayoristas: '/dashboard/facturacion/canales/mayoristas',
+  Subastas:   '/dashboard/facturacion/canales/subastas',
 }
 
-const diasHabilesHasta = (a: number, m: number, dia: number) => {
-  const d = new Date(a, m - 1, 1); let c = 0
-  while (d.getDate() <= dia && d.getMonth() === m - 1) {
-    if (esDiaHabil(d)) c++; d.setDate(d.getDate() + 1)
+interface UltimaFecha { anio: number; mes: string; ultima_fecha: string }
+interface CanalCalculado { canal: Canal; m: Metricas; sedes: SedeCanal[] }
+
+/** 'YYYY-MM-DD' como fecha local (sin desfase de zona horaria). */
+const fechaLocal = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+const dec1 = (v: number) => v.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
+// ── Frase principal ──────────────────────────────────────────────────────────
+function textoConclusion(t: Metricas, a: AvanceMes): string {
+  if (!t.ppto) return `Se facturaron ${fmtCOP(t.neto)}. Este mes no tiene presupuesto cargado.`
+  const dias = dec1(Math.abs(t.difDias))
+  if (a.cerrado) {
+    return t.neto < t.ppto
+      ? `Se facturó el ${fmtPct(t.pct)} del presupuesto. Faltaron $${fmtMillones(t.ppto - t.neto)} millones: lo que se factura en ${dias} días hábiles.`
+      : `Se facturó el ${fmtPct(t.pct)} del presupuesto. Se superó en $${fmtMillones(t.neto - t.ppto)} millones: ${dias} días hábiles de ventaja.`
   }
-  return c
+  const pctMes = (a.transcurridos / a.total) * 100
+  const cierre = t.pron >= t.ppto
+    ? `$${fmtMillones(t.pron - t.ppto)} millones por encima`
+    : `$${fmtMillones(t.ppto - t.pron)} millones por debajo`
+  return `Va el ${fmtPct(t.pct)} del presupuesto con el ${fmtPct(pctMes)} del mes. A este ritmo cerraría en el ${fmtPct(t.pctPron)}, ${cierre}.`
 }
 
-// ── Componentes base ─────────────────────────────────────────────────────────
-function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-xl border border-brand-border bg-brand-surface p-5 ${className}`}>
-      {children}
-    </div>
-  )
-}
-
-function ProgressBar({ pct, color, h = 'h-2' }: { pct: number; color: string; h?: string }) {
-  return (
-    <div className={`w-full ${h} bg-brand-border rounded-full overflow-hidden`}>
-      <div className="h-full rounded-full transition-all duration-700"
-        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: color }} />
-    </div>
-  )
-}
-
-function Badge({ tipo }: { tipo: 'ok' | 'alerta' | 'riesgo' }) {
-  if (tipo === 'ok')     return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 font-mono">✓ Óptimo</span>
-  if (tipo === 'alerta') return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono">⚠ Aceptable</span>
-  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-mono">✗ Deficiente</span>
-}
-
-function KpiCard({ label, value, sub, sub2, accent = 'text-brand-teal', alert = false }: {
-  label: string; value: React.ReactNode; sub?: string; sub2?: string; accent?: string; alert?: boolean
-}) {
-  return (
-    <Panel className={alert ? 'border-red-500/40' : ''}>
-      <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">{label}</p>
-      <p className={`text-xl font-bold font-title ${accent}`}>{value}</p>
-      {sub  && <p className="text-xs text-brand-subtle mt-1">{sub}</p>}
-      {sub2 && <p className="text-xs text-brand-subtle mt-0.5">{sub2}</p>}
-    </Panel>
-  )
-}
-
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-brand-surface border border-brand-border rounded-lg p-3 shadow-lg">
-      <p className="text-xs font-mono text-brand-subtle mb-2">{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} className="text-xs font-mono" style={{ color: p.color }}>
-          {p.name}: {p.name.includes('%') ? fmtPct(p.value) : fmtCOP(p.value)}
-        </p>
-      ))}
-    </div>
-  )
-}
-
-// ── Página principal ─────────────────────────────────────────────────────────
+// ── Página ───────────────────────────────────────────────────────────────────
 export default function FacGeneralPage() {
-  const hoy  = new Date()
+  const hoy = new Date()
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mes,  setMes]  = useState(hoy.getMonth() + 1)
-  const [sedes,      setSedes]      = useState<Set<string>>(new Set(['Todas']))
+  const [sedes, setSedes] = useState<Set<string>>(new Set(['Todas']))
   const [sinColision, setSinColision] = useState(false)
+  const [vista, setVista] = useState<VistaRegla>('dias')
+  const [abierto, setAbierto] = useState<Canal | null>(null)
+
+  const [filas,   setFilas]   = useState<FilaFacturacion[]>([])
+  const [ultimas, setUltimas] = useState<UltimaFecha[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+  const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
 
   const toggleSede = (s: string) => {
     setSedes(prev => {
-      const next = new Set(prev)
       if (s === 'Todas') return new Set(['Todas'])
+      const next = new Set(prev)
       next.delete('Todas')
-      if (next.has(s)) {
-        next.delete(s)
-        if (next.size === 0) return new Set(['Todas'])
-      } else {
-        next.add(s)
-        const indiv = ['Norte', 'Pasoancho', 'Sede 39']
-        if (indiv.every(i => next.has(i))) return new Set(['Todas'])
-      }
+      if (next.has(s)) next.delete(s)
+      else next.add(s)
+      if (next.size === 0 || SEDES_INDIVIDUALES.every(i => next.has(i))) return new Set(['Todas'])
       return next
     })
   }
   const todasActivo = sedes.has('Todas')
 
-  const [filas,     setFilas]     = useState<FilaVista[]>([])
-  const [loading,      setLoading]      = useState(true)
-  const [marcasSubasta,setMarcasSubasta] = useState<MarcaSubasta[]>([])
-  const [error,     setError]     = useState('')
-  const [ultimaAct, setUltimaAct] = useState<Date | null>(null)
-
   // ── Carga desde Supabase ──────────────────────────────────────────────────
   const cargar = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const { data, error: err } = await supabase
-        .from('v_facturacion_general')
-        .select('canal, sede, mes, anio, neto, costo, beneficio, presupuesto, pct_avance, pct_margen, lineas')
-        .eq('anio', anio)
-      if (err) throw err
-      setFilas((data ?? []) as FilaVista[])
+      const [fact, fechas] = await Promise.all([
+        supabase
+          .from('v_facturacion_general')
+          .select('canal, sede, mes, anio, neto, costo, presupuesto')
+          .eq('anio', anio),
+        supabase
+          .from('v_facturacion_ultima_fecha')
+          .select('anio, mes, ultima_fecha')
+          .eq('anio', anio),
+      ])
+      if (fact.error) throw fact.error
+      if (fechas.error) throw fechas.error
+      setFilas((fact.data ?? []) as FilaFacturacion[])
+      setUltimas((fechas.data ?? []) as UltimaFecha[])
       setUltimaAct(new Date())
-    } catch (e: any) {
-      setError(`Error cargando datos: ${e?.message ?? 'intente de nuevo'}`)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : (e as { message?: string })?.message
+      setError(`Error cargando datos: ${msg ?? 'intente de nuevo'}`)
     }
     setLoading(false)
   }, [anio])
 
   useEffect(() => { cargar() }, [cargar])
 
-  // ── Días hábiles ──────────────────────────────────────────────────────────
-  const totalDH  = useMemo(() => diasHabilesEnMes(anio, mes), [anio, mes])
-  const dhTransc = useMemo(() => (
-    anio === hoy.getFullYear() && mes === hoy.getMonth() + 1
-      ? diasHabilesHasta(anio, mes, hoy.getDate())
-      : totalDH
-  ), [anio, mes, totalDH])
-  const dhRest  = totalDH - dhTransc
-  const pctDias = totalDH ? (dhTransc / totalDH) * 100 : 0
+  // ── Días hábiles: hasta la última fecha con facturas cargadas ─────────────
+  const ultimaFactura = useMemo(() => {
+    const u = ultimas.find(x => x.mes === MESES_KEY[mes - 1])
+    return u ? fechaLocal(u.ultima_fecha) : null
+  }, [ultimas, mes])
+  const avance = useMemo(() => avanceMes(anio, mes, ultimaFactura), [anio, mes, ultimaFactura])
+
+  /** Último mes del año con facturas cargadas, para ofrecerlo si el elegido está vacío. */
+  const mesConDatos = useMemo(() => {
+    const idx = ultimas.map(u => MESES_KEY.indexOf(u.mes)).filter(i => i >= 0)
+    return idx.length ? Math.max(...idx) + 1 : null
+  }, [ultimas])
 
   // ── Filtrar por mes y sede ────────────────────────────────────────────────
   const filasFiltradas = useMemo(() => {
@@ -212,441 +134,276 @@ export default function FacGeneralPage() {
       if (f.mes !== mesClave) return false
       if (f.canal === 'Colisión' && sinColision) return false
       if (todasActivo) return true
-      if (f.canal === 'Colisión') return false
+      if (f.canal === 'Colisión') return false // Colisión no tiene sede: solo con "Todas"
       return sedes.has(f.sede)
     })
   }, [filas, mes, sedes, todasActivo, sinColision])
 
-  // ── Datos por canal ───────────────────────────────────────────────────────
-  const canalesData = useMemo((): CanalData[] => {
-    return CANALES_CONFIG
-      .filter(c => {
-        if (c.canal === 'Colisión' && sinColision) return false
-        return todasActivo || c.canal !== 'Colisión'
+  // ── Métricas por canal y totales ──────────────────────────────────────────
+  const canales = useMemo((): CanalCalculado[] => {
+    return CANALES
+      .map(canal => {
+        const delCanal = filasFiltradas.filter(f => f.canal === canal)
+        const porSede = new Map<string, FilaFacturacion[]>()
+        delCanal.forEach(f => porSede.set(f.sede, [...(porSede.get(f.sede) ?? []), f]))
+        const sedesCanal: SedeCanal[] = Array.from(porSede.entries())
+          .sort(([a], [b]) => a.localeCompare(b, 'es'))
+          .map(([sede, fs]) => ({ sede: sede === 'Colisión' ? 'Sin sede' : sede, m: metricas(fs, avance) }))
+        return { canal, m: metricas(delCanal, avance), sedes: sedesCanal }
       })
-      .map(c => {
-        // Sumar todas las filas que corresponden a este canal (puede haber varias sedes)
-        const filasCanal = filasFiltradas.filter(f => f.canal === c.canal)
-        const neto  = filasCanal.reduce((s, f) => s + Number(f.neto), 0)
-        const costo = filasCanal.reduce((s, f) => s + Number(f.costo), 0)
-        const ppto  = filasCanal.reduce((s, f) => s + Number(f.presupuesto), 0)
-        const util  = neto - costo
+      .filter(c => c.m.neto !== 0 || c.m.ppto !== 0)
+      .sort((a, b) => b.m.neto - a.m.neto)
+  }, [filasFiltradas, avance])
 
-        const pctUtil = neto ? (util / neto) * 100 : 0
-        const pct     = ppto ? (neto / ppto) * 100 : 0
-        const porDia  = dhTransc ? neto / dhTransc : 0
-        const restante = ppto - neto
-        const neces   = dhRest > 0 && restante > 0 ? restante / dhRest : 0
-        const pron    = neto + porDia * dhRest
-        const pctPron = ppto ? (pron / ppto) * 100 : 0
-        const estado: 'ok' | 'alerta' | 'riesgo' =
-          pctPron >= 95 ? 'ok' : pctPron >= 85 ? 'alerta' : 'riesgo'
+  const total = useMemo(() => metricas(filasFiltradas.filter(f => esCanal(f.canal)), avance), [filasFiltradas, avance])
 
-        return { ...c, neto, costo, util, pctUtil, ppto, pct, porDia, neces, pron, pctPron, estado }
-      })
-  }, [filasFiltradas, dhTransc, dhRest, todasActivo, sinColision])
+  const esperado = avance.cerrado ? null : (avance.transcurridos / avance.total) * 100
+  const tope = topeEscala([total.pct, ...canales.flatMap(c => [c.m.pct, ...c.sedes.map(s => s.m.pct)])])
+  const escala = { tope, esperado, cerrado: avance.cerrado }
+  const sinDatos = !avance.cerrado && avance.transcurridos === 0 && total.neto === 0
 
-  // ── Totales ───────────────────────────────────────────────────────────────
-  const totalNeto    = canalesData.reduce((s, c) => s + c.neto, 0)
-  const totalCosto   = canalesData.reduce((s, c) => s + c.costo, 0)
-  const totalUtil    = totalNeto - totalCosto
-  const totalPpto    = canalesData.reduce((s, c) => s + c.ppto, 0)
-  const totalPct     = totalPpto ? (totalNeto / totalPpto) * 100 : 0
-  const totalPctUtil = totalNeto ? (totalUtil / totalNeto) * 100 : 0
-  const porDiaTotal  = dhTransc ? totalNeto / dhTransc : 0
-  const restanteTotal = totalPpto - totalNeto
-  const necesTotal   = dhRest > 0 && restanteTotal > 0 ? restanteTotal / dhRest : 0
-  const pronTotal    = totalNeto + porDiaTotal * dhRest
-  const pctPronTotal = totalPpto ? (pronTotal / totalPpto) * 100 : 0
-  const estadoGeneral: 'ok' | 'alerta' | 'riesgo' =
-    pctPronTotal >= 95 ? 'ok' : pctPronTotal >= 85 ? 'alerta' : 'riesgo'
-  const colorGeneral =
-    estadoGeneral === 'ok' ? '#68D391' : estadoGeneral === 'alerta' ? '#F6AD55' : '#FC8181'
+  const nombreMes = MESES_LABEL[mes - 1]
+  const alcance = [
+    todasActivo ? '' : `sede ${Array.from(sedes).join(' + ')}`,
+    sinColision ? 'sin colisión' : '',
+  ].filter(Boolean).join(', ')
+  const contexto = avance.cerrado
+    ? `${nombreMes} cerrado, con sus ${avance.total} días hábiles`
+    : `${nombreMes} en curso: datos al ${avance.corte ? fmtFechaCorta(avance.corte) : '—'}, día ${avance.transcurridos} de ${avance.total} hábiles`
 
-  // ── Datos gráficas ────────────────────────────────────────────────────────
-  const graficoCanales = canalesData.map(c => ({
-    name: c.canal, Facturado: c.neto, Presupuesto: c.ppto, Utilidad: c.util,
-  }))
-  const graficoComparativo = canalesData.map(c => ({
-    name: c.canal,
-    '% Avance':     parseFloat(c.pct.toFixed(1)),
-    '% Pronóstico': parseFloat(c.pctPron.toFixed(1)),
-  }))
+  const kpis: Kpi[] = [
+    {
+      titulo: 'Facturado', valor: total.neto, formato: fmtCOP,
+      // En mes abierto el % facturado aún no se juzga: el semáforo va en el cierre proyectado.
+      pill: !total.ppto ? undefined : avance.cerrado
+        ? <EstadoPill estado={total.estado}>{fmtPct(total.pct)}</EstadoPill>
+        : <span className="rounded-full bg-brand-tile px-2.5 py-0.5 text-[13px] font-semibold">{fmtPct(total.pct)}</span>,
+      detalle: `de ${fmtCOP(total.ppto)} presupuestados`,
+    },
+    {
+      titulo: 'Utilidad', valor: total.util, formato: fmtCOP,
+      pill: <span className="rounded-full bg-brand-tile px-2.5 py-0.5 text-[13px] font-semibold">{fmtPct(total.margen)} margen</span>,
+      detalle: `Costo de ${fmtCOP(total.costo)}`,
+    },
+    {
+      titulo: 'Ritmo diario', valor: total.porDia, formato: fmtCOP,
+      detalle: avance.cerrado
+        ? `El presupuesto pedía ${fmtCOP(total.pptoDia)} por día`
+        : total.neces > 0
+          ? `Para cumplir: ${fmtCOP(total.neces)} por día en ${avance.restantes === 1 ? 'el día hábil que falta' : `los ${avance.restantes} días hábiles que faltan`}`
+          : 'Presupuesto del mes alcanzado',
+    },
+  ]
+  if (!avance.cerrado) kpis.push({
+    titulo: 'Cierre proyectado', valor: total.pron, formato: fmtCOP,
+    pill: total.ppto ? <EstadoPill estado={total.estado}>{fmtPct(total.pctPron)}</EstadoPill> : undefined,
+    detalle: 'Si se mantiene el ritmo diario',
+  })
+
+  // ── Estilos de controles ─────────────────────────────────────────────────
+  const segmento = (activo: boolean) =>
+    `h-9 rounded-[7px] px-3.5 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text ${
+      activo ? 'bg-brand-text font-semibold text-brand-bg' : 'text-brand-soft hover:text-brand-text'
+    }`
+  const grupo = 'inline-flex flex-wrap rounded-[10px] border border-brand-line bg-[#161E28] p-[3px]'
+  const select = 'h-[42px] rounded-[10px] border border-brand-line bg-[#161E28] px-3 text-[13px] font-semibold text-brand-text focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text'
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
-        <div className="w-10 h-10 border-2 border-brand-teal border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-brand-subtle text-sm font-mono">Cargando datos...</p>
+        <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-brand-teal border-t-transparent" />
+        <p className="text-sm text-brand-muted-2">Cargando datos…</p>
       </div>
     </div>
   )
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+    <div className="mx-auto flex max-w-[1400px] flex-col gap-8 px-4 pb-12 pt-7 md:px-10">
 
-      {/* ── Header ── */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold font-title text-brand-text">Facturación General</h1>
-          <p className="text-sm text-brand-subtle mt-0.5">
-            Seguimiento vs presupuesto · pronóstico · utilidad · {MESES_LABEL[mes - 1]} {anio}
-            {!todasActivo ? ` · ${Array.from(sedes).join(' + ')}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-brand-border overflow-hidden">
-              {SEDES_LIST.map(s => {
-                const activo = s === 'Todas' ? todasActivo : sedes.has(s)
-                return (
-                  <button key={s} onClick={() => toggleSede(s)}
-                    className={`px-3 py-2 text-xs font-mono transition-colors relative ${
-                      activo ? 'bg-brand-teal text-black font-semibold' : 'text-brand-subtle hover:text-brand-text'
-                    }`}>
-                    {s}
-                    {activo && s !== 'Todas' && (
-                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-teal rounded-full border border-black"/>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="w-px h-6 bg-brand-border"/>
-            <button onClick={() => setSinColision(v => !v)}
-              className={`px-3 py-2 text-xs font-mono rounded-lg border transition-colors ${
-                sinColision
-                  ? 'bg-brand-red/20 border-brand-red/50 text-brand-red font-semibold'
-                  : 'border-brand-border text-brand-subtle hover:text-brand-text'
-              }`}>
-              {sinColision ? '✕ Sin Colisión' : '∅ Sin Colisión'}
+      {/* ── Encabezado y filtros ── */}
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-[22px] font-bold text-brand-text">Facturación general</h1>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div role="group" aria-label="Sede" className={`${grupo} max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto`}>
+            <button type="button" aria-pressed={todasActivo} onClick={() => toggleSede('Todas')} className={`${segmento(todasActivo)} shrink-0`}>
+              Todas las sedes
             </button>
-          </div>
-          <select value={anio} onChange={e => setAnio(Number(e.target.value))}
-            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
-            {[2024, 2025, 2026].map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <select value={mes} onChange={e => setMes(Number(e.target.value))}
-            className="bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text font-mono focus:outline-none focus:border-brand-teal">
-            {MESES_LABEL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-          </select>
-          <button onClick={cargar} disabled={loading}
-            className="bg-brand-teal/20 hover:bg-brand-teal/30 border border-brand-teal/40 text-brand-teal rounded-lg px-4 py-2 text-sm font-mono transition-colors disabled:opacity-50">
-            {loading ? '...' : '↻ Actualizar'}
-          </button>
-          {ultimaAct && (
-            <span className="text-xs text-brand-subtle font-mono">
-              Act: {ultimaAct.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 text-red-400 text-sm font-mono">
-          {error}
-        </div>
-      )}
-
-      {/* ── PANEL PRINCIPAL: % Avance vs Presupuesto (prioridad visual máxima) ── */}
-      <Panel className="border-brand-teal/30">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <div>
-            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle mb-1">
-              Avance vs presupuesto — {MESES_LABEL[mes - 1]} {anio}
-              {!todasActivo ? ` · ${Array.from(sedes).join(' + ')}` : ''}
-            </p>
-            <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-4xl font-bold font-title" style={{ color: colorGeneral }}>
-                {fmtPct(totalPct)}
-              </span>
-              <span className="text-sm text-brand-subtle font-mono">
-                {fmtCOP(totalNeto)} de {fmtCOP(totalPpto)}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-xs font-mono text-brand-subtle">Pronóstico cierre</p>
-              <p className="text-xl font-bold font-title"
-                style={{ color: pctPronTotal >= 95 ? '#68D391' : pctPronTotal >= 85 ? '#F6AD55' : '#FC8181' }}>
-                {fmtPct(pctPronTotal)}
-              </p>
-            </div>
-            <Badge tipo={estadoGeneral} />
-          </div>
-        </div>
-        {/* Barra avance con marcador de días hábiles */}
-        <div className="relative mb-2">
-          <ProgressBar pct={totalPct} color={colorGeneral} h="h-4" />
-          <div className="absolute top-0 h-full flex items-center pointer-events-none"
-            style={{ left: `${Math.min(100, pctDias)}%` }}>
-            <div className="w-0.5 h-6 bg-white/50 -mt-1" />
-          </div>
-        </div>
-        <div className="flex justify-between text-xs font-mono text-brand-subtle">
-          <span>{fmtPct(totalPct)} facturado</span>
-          <span className="opacity-50">↑ {fmtPct(pctDias)} días hábiles</span>
-          <span>{fmtCOP(totalPpto)} presupuesto</span>
-        </div>
-      </Panel>
-
-      {/* ── Días hábiles ── */}
-      <Panel>
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
-          <div>
-            <p className="text-xs font-mono uppercase tracking-wider text-brand-subtle">
-              Días hábiles — {MESES_LABEL[mes - 1]} {anio}
-            </p>
-            <p className="text-lg font-bold font-title text-brand-text mt-0.5">
-              {dhTransc} de {totalDH} transcurridos · {dhRest} restantes
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold font-title text-brand-teal">{pctDias.toFixed(0)}%</p>
-            <p className="text-xs text-brand-subtle font-mono">del mes avanzado</p>
-          </div>
-        </div>
-        <ProgressBar pct={pctDias} color="#4FD1C5" />
-      </Panel>
-
-      {/* ── KPIs ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Facturado total" value={<AnimatedNumber value={totalNeto} format={fmtCOP} />}
-          sub={`de ${fmtCOP(totalPpto)}`} sub2={`${fmtPct(totalPct)} de avance`}
-          accent="text-brand-teal" />
-        <KpiCard label="Utilidad" value={<AnimatedNumber value={totalUtil} format={fmtCOP} />}
-          sub={`Margen: ${fmtPct(totalPctUtil)}`} sub2={`Costo: ${fmtCOP(totalCosto)}`}
-          accent="text-green-400" />
-        <KpiCard label="Facturación / día" value={<AnimatedNumber value={porDiaTotal} format={fmtCOP} />}
-          sub={necesTotal > 0 ? `Necesario: ${fmtCOP(necesTotal)}/día` : '✓ Presupuesto alcanzado'}
-          sub2={porDiaTotal >= necesTotal && necesTotal > 0 ? '✓ Por encima del ritmo' : necesTotal === 0 ? '' : '✗ Por debajo del ritmo'}
-          accent={porDiaTotal >= necesTotal ? 'text-green-400' : 'text-yellow-400'} />
-        <KpiCard label="Pronóstico cierre" value={<AnimatedNumber value={pronTotal} format={fmtCOP} />}
-          sub={`${fmtPct(pctPronTotal)} del presupuesto`}
-          accent={pctPronTotal >= 95 ? 'text-green-400' : pctPronTotal >= 85 ? 'text-yellow-400' : 'text-red-400'}
-          alert={estadoGeneral === 'riesgo'} />
-      </div>
-
-      {/* ── Círculos de progreso por canal ── */}
-      <Panel>
-        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-6">
-          Cumplimiento vs presupuesto por canal · {todasActivo ? 'Todas las sedes' : Array.from(sedes).join(' + ')}
-        </h2>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-6">
-          {canalesData.map((c, i) => {
-            const pct      = Math.min(100, Math.max(0, c.pct))
-            const r        = 36
-            const circum   = 2 * Math.PI * r
-            const offset   = circum - (pct / 100) * circum
-            const clr      = c.pct >= pctDias ? '#68D391' : c.pct >= pctDias * 0.8 ? '#F6AD55' : '#FC8181'
-            return (
-              <div key={c.canal} className="group flex flex-col items-center gap-2">
-                <div className="relative w-24 h-24">
-                  <svg viewBox="0 0 88 88" className="w-full h-full -rotate-90">
-                    {/* Track */}
-                    <circle cx="44" cy="44" r={r} fill="none" stroke="#2D3748" strokeWidth="8"/>
-                    {/* Progress */}
-                    <circle cx="44" cy="44" r={r} fill="none"
-                      stroke={clr} strokeWidth="8"
-                      strokeLinecap="round"
-                      strokeDasharray={circum}
-                      strokeDashoffset={offset}
-                      style={{transition:'stroke-dashoffset 0.7s ease'}}
-                    />
-                    {/* Marcador días hábiles */}
-                    <circle cx="44" cy="44" r={r} fill="none"
-                      stroke="rgba(255,255,255,0.2)" strokeWidth="2"
-                      strokeDasharray={`2 ${circum - 2}`}
-                      strokeDashoffset={-(circum * pctDias / 100)}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <CanalIcon canal={c.canal} size={14} className="mb-0.5" color={c.color}
-                      animated delayMs={300 + i * 120} />
-                    <span className="text-sm font-bold font-title" style={{color: clr}}>
-                      {c.pct.toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-medium text-brand-text">{c.canal}</p>
-                  <p className="text-xs font-mono text-brand-subtle mt-0.5">{fmtCOP(c.neto)}</p>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        {/* Leyenda */}
-        <div className="flex items-center gap-6 mt-6 pt-4 border-t border-brand-border">
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-400"/><span className="text-xs font-mono text-brand-subtle">Óptimo</span></div>
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-400"/><span className="text-xs font-mono text-brand-subtle">Aceptable</span></div>
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"/><span className="text-xs font-mono text-brand-subtle">Deficiente</span></div>
-          <div className="flex items-center gap-2 ml-auto"><div className="w-4 h-0.5 bg-white/20"/><span className="text-xs font-mono text-brand-subtle">↑ {fmtPct(pctDias)} días hábiles</span></div>
-        </div>
-      </Panel>
-
-      {/* ── Tabla por canal ── */}
-      <Panel>
-        <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-          Detalle por canal · {todasActivo ? 'Todas las sedes' : Array.from(sedes).join(' + ')}
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-brand-border">
-                {['Canal','Presupuesto','Neto','% Avance','Costo','Utilidad','% Util','$/Día','Necesario/día','Pronóstico','Estado'].map(h => (
-                  <th key={h} className="text-left font-mono text-xs text-brand-subtle uppercase tracking-wider pb-3 pr-4 whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {canalesData.map(c => (
-                <tr key={c.canal} className="border-b border-brand-border/40 hover:bg-brand-surface/50 transition-colors">
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center gap-2">
-                      <CanalIcon canal={c.canal} color={c.color} />
-                      <span className="font-medium text-brand-text">{c.canal}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.ppto)}</td>
-                  <td className="py-3 pr-4 font-mono text-xs font-semibold" style={{ color: c.color }}>{fmtCOP(c.neto)}</td>
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center gap-2 min-w-[110px]">
-                      <div className="w-14 h-1.5 bg-brand-border rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, c.pct)}%`, background: c.color }} />
-                      </div>
-                      <span className="font-mono text-xs text-brand-subtle">{fmtPct(c.pct)}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.costo)}</td>
-                  <td className="py-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(c.util)}</td>
-                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(c.pctUtil)}</td>
-                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.porDia)}</td>
-                  <td className="py-3 pr-4 font-mono text-xs">
-                    <span className={c.neces === 0 ? 'text-green-400' : 'text-brand-subtle'}>
-                      {c.neces === 0 ? '✓ Cumplido' : fmtCOP(c.neces)}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(c.pron)}</td>
-                  <td className="py-3 pr-4"><Badge tipo={c.estado} /></td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-brand-border font-bold">
-                <td className="pt-3 pr-4 font-mono text-xs uppercase text-brand-text">Total</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(totalPpto)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-teal">{fmtCOP(totalNeto)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(totalPct)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(totalCosto)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-green-400">{fmtCOP(totalUtil)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtPct(totalPctUtil)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(porDiaTotal)}</td>
-                <td className="pt-3 pr-4 font-mono text-xs">
-                  <span className={necesTotal === 0 ? 'text-green-400' : 'text-brand-subtle'}>
-                    {necesTotal === 0 ? '✓ Cumplido' : fmtCOP(necesTotal)}
-                  </span>
-                </td>
-                <td className="pt-3 pr-4 font-mono text-xs text-brand-subtle">{fmtCOP(pronTotal)}</td>
-                <td className="pt-3 pr-4"><Badge tipo={estadoGeneral} /></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </Panel>
-
-      {/* ── Gráficas ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Panel>
-          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-            Facturado vs Presupuesto por canal
-          </h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={graficoCanales} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: '#718096', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#718096', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={v => fmtCOP(v)} width={110} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 11, color: '#718096' }} />
-              <Bar dataKey="Presupuesto" fill="#2D3748" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Facturado"   fill="#4FD1C5" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel>
-          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-            % Avance vs % Pronóstico por canal
-          </h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={graficoComparativo} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: '#718096', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#718096', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={v => `${v}%`} domain={[0, 100]} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 11, color: '#718096' }} />
-              <Bar dataKey="% Avance"     fill="#4FD1C5" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="% Pronóstico" fill="#F6AD55" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel>
-          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-            Utilidad por canal
-          </h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={graficoCanales} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2D3748" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: '#718096', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#718096', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={v => fmtCOP(v)} width={110} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="Utilidad" radius={[4, 4, 0, 0]}>
-                {graficoCanales.map((entry, i) => {
-                  const cfg = CANALES_CONFIG.find(c => c.canal === entry.name)
-                  return <Cell key={i} fill={cfg?.color ?? '#4FD1C5'} />
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel>
-          <h2 className="text-sm font-mono uppercase tracking-wider text-brand-subtle mb-4">
-            Resumen por canal
-          </h2>
-          <div className="grid grid-cols-2 gap-3">
-            {canalesData.map(c => (
-              <div key={c.canal} className={`rounded-lg border p-3 ${
-                c.estado === 'riesgo' ? 'border-red-500/30' :
-                c.estado === 'alerta' ? 'border-yellow-500/20' : 'border-brand-border'
-              }`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="flex items-center gap-2 text-sm font-medium text-brand-text">
-                    <CanalIcon canal={c.canal} color={c.color} />
-                    {c.canal}
-                  </span>
-                  <Badge tipo={c.estado} />
-                </div>
-                <ProgressBar pct={c.pct} color={c.color} />
-                <div className="flex justify-between mt-1 text-xs font-mono text-brand-subtle">
-                  <span>{fmtPct(c.pct)}</span>
-                  <span>Pron: {fmtPct(c.pctPron)}</span>
-                </div>
-              </div>
+            {SEDES_INDIVIDUALES.map(s => (
+              <button key={s} type="button" aria-pressed={!todasActivo && sedes.has(s)} onClick={() => toggleSede(s)}
+                className={`${segmento(!todasActivo && sedes.has(s))} shrink-0`}>
+                {s}
+              </button>
             ))}
           </div>
-        </Panel>
-      </div>
+          <button type="button" aria-pressed={sinColision} onClick={() => setSinColision(v => !v)}
+            className={`h-[42px] rounded-[10px] border px-3.5 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text ${
+              sinColision ? 'border-brand-text bg-brand-text font-semibold text-brand-bg' : 'border-brand-line bg-[#161E28] text-brand-soft hover:text-brand-text'
+            }`}>
+            Sin colisión
+          </button>
+          <div role="group" aria-label="Medir en" className={grupo}>
+            <button type="button" aria-pressed={vista === 'dias'} onClick={() => setVista('dias')} className={segmento(vista === 'dias')}>Días hábiles</button>
+            <button type="button" aria-pressed={vista === 'pct'} onClick={() => setVista('pct')} className={segmento(vista === 'pct')}>Porcentaje</button>
+          </div>
+          <select aria-label="Mes" value={mes} onChange={e => setMes(Number(e.target.value))} className={select}>
+            {MESES_LABEL.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <select aria-label="Año" value={anio} onChange={e => setAnio(Number(e.target.value))} className={select}>
+            {[2024, 2025, 2026].map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <button type="button" onClick={cargar}
+            className="h-[42px] rounded-[10px] border border-brand-line px-3.5 text-[13px] text-brand-soft transition-colors hover:text-brand-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-text">
+            Actualizar
+          </button>
+        </div>
+      </header>
 
-      <p className="text-xs text-brand-subtle font-mono text-center pb-4">
-        Datos desde Supabase · Sincronización automática diaria desde Google Sheets ·
-        Días hábiles lunes–sábado sin festivos Colombia
-      </p>
+      {error && (
+        <div role="alert" className="rounded-xl border border-estado-riesgo/40 bg-estado-riesgo/10 p-4 text-sm text-estado-riesgo">{error}</div>
+      )}
+
+      {sinDatos ? (
+        <section className="flex max-w-[62rem] flex-col items-start gap-4">
+          <p className="text-[15px] text-brand-muted-2">{nombreMes} {anio}</p>
+          <p className="text-[clamp(26px,3vw,36px)] font-semibold leading-tight">Todavía no hay facturas cargadas de {nombreMes.toLowerCase()}.</p>
+          {mesConDatos && mesConDatos !== mes && (
+            <button type="button" onClick={() => setMes(mesConDatos)}
+              className="h-11 rounded-[10px] bg-brand-text px-4 text-sm font-semibold text-brand-bg">
+              Ver {MESES_LABEL[mesConDatos - 1].toLowerCase()}
+            </button>
+          )}
+        </section>
+      ) : (
+        <>
+          {/* ── Conclusión ── */}
+          <section className="flex max-w-[62rem] flex-col gap-3.5">
+            <p className="text-[15px] text-brand-muted-2">{contexto}{alcance ? `, ${alcance}` : ''}</p>
+            <p className="text-balance text-[clamp(26px,3vw,36px)] font-semibold leading-tight tracking-[-0.01em]">
+              {textoConclusion(total, avance)}
+            </p>
+          </section>
+
+          <BandaKpi items={kpis} />
+
+          {/* ── Regla de cumplimiento por canal ── */}
+          <section className="flex flex-col gap-[18px]">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 className="text-lg font-semibold">
+                {vista === 'dias' ? 'Cumplimiento por canal, medido en días hábiles' : 'Cumplimiento por canal, en porcentaje del presupuesto'}
+              </h2>
+              <ul className="flex flex-wrap gap-4 text-[13px] text-brand-muted-2">
+                <li className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-estado-ok" />Cumplió (100% o más)</li>
+                <li className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-estado-alerta" />Aceptable (80% a 99%)</li>
+                <li className="inline-flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-estado-riesgo" />Deficiente (menos de 80%)</li>
+              </ul>
+            </div>
+            <p className="max-w-[70ch] text-sm text-brand-muted-2">
+              {vista === 'dias'
+                ? 'Cada marca de la regla es un día hábil de presupuesto; la barra muestra hasta qué día alcanzó lo facturado.'
+                : 'La línea blanca es el 100% del presupuesto; la diferencia se muestra en pesos.'}
+              {!avance.cerrado && ' La línea punteada es lo que el presupuesto esperaba a la fecha, y el color sale del cierre proyectado.'}
+              {' '}Toca un canal para abrir su tarjeta.
+            </p>
+
+            <div className="flex flex-col gap-1">
+              <EscalaRegla vista={vista} total={avance.total} transcurridos={avance.transcurridos} cerrado={avance.cerrado} tope={tope} />
+              {canales.map(c => {
+                const id = `tarjeta-${c.canal}`
+                const estaAbierto = abierto === c.canal
+                const subtitulo = `${c.sedes.length > 1 ? `${c.sedes.length} sedes` : c.sedes[0]?.sede ?? 'Sin sede'}, ${nombreMes.toLowerCase()} ${anio}`
+                return (
+                  <div key={c.canal}>
+                    <FilaCanal canal={c.canal} m={c.m} vista={vista} escala={escala} abierto={estaAbierto} idTarjeta={id}
+                      onToggle={() => setAbierto(estaAbierto ? null : c.canal)} />
+                    {estaAbierto && (
+                      <TarjetaCanal id={id} canal={c.canal} m={c.m} subtitulo={subtitulo} sedes={c.sedes} escala={escala} href={CANAL_HREF[c.canal]} />
+                    )}
+                  </div>
+                )
+              })}
+              <div className={`${GRILLA_REGLA} min-h-14 border-t border-brand-line-2 px-1 py-2`}>
+                <span className="flex flex-col gap-0.5 md:pl-[42px]">
+                  <span className="text-sm font-bold">Total</span>
+                  <span className="text-xs tabular-nums text-brand-muted-2">{fmtCOP(total.neto)}</span>
+                </span>
+                <span className="col-span-2 row-start-2 md:col-span-1 md:col-start-2 md:row-start-1">
+                  <BarraCumplimiento pct={total.pct} estado={total.estado} tope={tope} esperado={esperado} tamano="total" />
+                </span>
+                <span className={`col-start-2 row-start-1 text-right text-[15px] font-bold md:col-start-3 ${CIFRA} ${ESTADO_TEXT[total.estado]}`}>
+                  {vista === 'dias' ? fmtDias(total.difDias) : fmtCOPSigno(total.difPesos)}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Detalle por canal ── */}
+          <section className="flex flex-col gap-3.5">
+            <h2 className="text-lg font-semibold">Detalle por canal</h2>
+            <div className="overflow-x-auto rounded-xl border border-brand-line">
+              <table className="w-full min-w-[960px] border-collapse text-sm tabular-nums">
+                <thead>
+                  <tr className="bg-[#141C25] text-xs font-semibold text-brand-muted-2">
+                    <th scope="col" className="px-4 py-3 text-left">Canal</th>
+                    <th scope="col" className="px-4 py-3 text-right">Presupuesto</th>
+                    <th scope="col" className="px-4 py-3 text-right">Facturado</th>
+                    <th scope="col" className="px-4 py-3 text-right">Cumplimiento</th>
+                    <th scope="col" className="px-4 py-3 text-right">{avance.cerrado ? 'Diferencia' : 'Diferencia a la fecha'}</th>
+                    <th scope="col" className="px-4 py-3 text-right">Costo</th>
+                    <th scope="col" className="px-4 py-3 text-right">Utilidad</th>
+                    <th scope="col" className="px-4 py-3 text-right">Margen</th>
+                    <th scope="col" className="px-4 py-3 text-right">Ritmo diario</th>
+                    {!avance.cerrado && <th scope="col" className="px-4 py-3 text-right">Necesario por día</th>}
+                    {!avance.cerrado && <th scope="col" className="px-4 py-3 text-right">Cierre proyectado</th>}
+                    <th scope="col" className="px-4 py-3 text-left">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {canales.map(({ canal, m }) => (
+                    <FilaTabla key={canal} nombre={canal} canal={canal} m={m} cerrado={avance.cerrado} />
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-brand-line-2 font-bold">
+                  <FilaTabla nombre="Total" m={total} cerrado={avance.cerrado} />
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-xs text-brand-muted-2">
+              Datos desde Supabase (vista v_facturacion_general){ultimaAct ? `, consultados a las ${ultimaAct.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}` : ''}{' '}·
+              {' '}Días hábiles de lunes a sábado sin festivos de Colombia; en un mes en curso se cuentan hasta la última fecha con facturas cargadas.
+              {' '}Colisión no tiene sede: sale solo con todas las sedes.
+            </p>
+          </section>
+        </>
+      )}
     </div>
+  )
+}
+
+// ── Fila de la tabla de detalle ──────────────────────────────────────────────
+function Celda({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <td className={`whitespace-nowrap px-4 py-3 text-right ${className}`}>{children}</td>
+}
+
+function FilaTabla({ nombre, canal, m, cerrado }: { nombre: string; canal?: Canal; m: Metricas; cerrado: boolean }) {
+  return (
+    <tr className="border-t border-brand-track">
+      <th scope="row" className="whitespace-nowrap px-4 py-3 text-left font-semibold">
+        <span className="flex items-center gap-2">
+          {canal && <CanalIcon canal={canal} color={CANAL_COLOR[canal]} />}
+          {nombre}
+        </span>
+      </th>
+      <Celda className="text-brand-soft">{fmtCOP(m.ppto)}</Celda>
+      <Celda>{fmtCOP(m.neto)}</Celda>
+      <Celda className={ESTADO_TEXT[m.estado]}>{fmtPct(m.pct)}</Celda>
+      <Celda className={m.difPesos >= 0 ? 'text-estado-ok' : 'text-estado-riesgo'}>{fmtCOPSigno(m.difPesos)}</Celda>
+      <Celda className="text-brand-soft">{fmtCOP(m.costo)}</Celda>
+      <Celda className="text-brand-soft">{fmtCOP(m.util)}</Celda>
+      <Celda className="text-brand-soft">{fmtPct(m.margen)}</Celda>
+      <Celda className="text-brand-soft">{fmtCOP(m.porDia)}</Celda>
+      {!cerrado && <Celda className="text-brand-soft">{m.neces > 0 ? fmtCOP(m.neces) : 'Cumplido'}</Celda>}
+      {!cerrado && <Celda className="text-brand-soft">{fmtCOP(m.pron)}</Celda>}
+      <td className="px-4 py-3"><EstadoPill estado={m.estado} /></td>
+    </tr>
   )
 }
